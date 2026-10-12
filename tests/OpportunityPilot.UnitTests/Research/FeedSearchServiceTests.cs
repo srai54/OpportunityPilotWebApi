@@ -63,4 +63,12 @@ public class FeedSearchServiceTests
         Assert.False(FeedSearchService.Matches(j, "sales", "paris", false));
         Assert.False(FeedSearchService.Matches(j, "sales", null, true));
     }
+
+    [Fact]
+    public void Relevance_ranks_a_title_match_above_a_mention_in_the_text()
+    {
+        var inTitle = new JobBoardJobDto("a", "Sales Manager", "Acme", null, "https://x.test", null, false, null, null, null, null, null, null, null, "x");
+        var inText = new JobBoardJobDto("b", "Product Lead", "Acme", null, "https://x.test", null, false, null, null, null, null, null, null, null, "works with the sales manager");
+        Assert.True(FeedSearchService.Relevance(inTitle, "sales manager") > FeedSearchService.Relevance(inText, "sales manager"));
+    }
 }

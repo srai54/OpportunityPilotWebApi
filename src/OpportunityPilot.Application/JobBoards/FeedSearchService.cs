@@ -50,8 +50,8 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
             statuses.Add(status with { Matched = matched.Count });
             jobs.AddRange(matched);
         }
-        // Newest first; the same title at the same company on two sites is shown once.
-        var merged = jobs.OrderByDescending(j => j.Job.PostedAt ?? DateTime.MinValue)
+        // Best matches first (words in the title count most), then newest; the same title at the same company on two sites is shown once.
+        var merged = jobs.OrderByDescending(j => Relevance(j.Job, query)).ThenByDescending(j => j.Job.PostedAt ?? DateTime.MinValue)
             .GroupBy(j => (j.Job.Title.Trim().ToLowerInvariant(), j.Job.CompanyName.Trim().ToLowerInvariant()))
             .Select(g => g.First()).Take(take).ToList();
         return new FeedSearchResult(statuses, merged, now);
@@ -103,6 +103,19 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var id = $"{site}:{c.ExternalId ?? c.Title}";
         return new FeedJobDto(site.ToString(), name,
             new JobBoardJobDto(id, c.Title, c.Organization, null, url, c.Location, remote, null, null, null, null, null, c.PostedAt, snippet, description));
+    }
+
+    /// <summary>How well a posting fits the words: 4 per word in the title, 2 per word in the company, 1 per word in the text.</summary>
+    public static int Relevance(JobBoardJobDto job, string query)
+    {
+        var score = 0;
+        foreach (var word in query.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (job.Title.Contains(word, StringComparison.OrdinalIgnoreCase)) score += 4;
+            if (job.CompanyName.Contains(word, StringComparison.OrdinalIgnoreCase)) score += 2;
+            if ((job.Description ?? job.Snippet ?? string.Empty).Contains(word, StringComparison.OrdinalIgnoreCase)) score += 1;
+        }
+        return score;
     }
 
     /// <summary>Every word of the query must appear in the title, company or text; the place (if given) must appear in the location or text.</summary>
