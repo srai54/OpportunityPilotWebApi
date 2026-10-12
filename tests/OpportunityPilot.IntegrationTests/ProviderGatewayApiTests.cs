@@ -58,6 +58,9 @@ public class ProviderGatewayApiTests(PostgresApiFactory factory) : IClassFixture
         Assert.Equal("Sent", (await user.GetJson($"/api/v1/opportunities/{opportunityId}/drafts")).EnumerateArray().Single().Str("state"));
         Assert.Equal("Sent", (await user.GetJson("/api/v1/drafts?take=50")).GetProperty("items").EnumerateArray().Single().Str("state"));  // the inbox list agrees
         Assert.Equal("Contacted", (await user.GetJson($"/api/v1/opportunities/{opportunityId}")).Str("status"));
+        // Recording the send schedules one follow-up reminder, so nothing goes quiet.
+        var followUps = (await user.GetJson($"/api/v1/opportunities/{opportunityId}/next-actions")).EnumerateArray().ToList();
+        Assert.Single(followUps, f => f.Str("kind") == "FollowUp" && f.Str("state") == "Open");
 
         Assert.Equal(HttpStatusCode.Conflict, (await user.PostAsJsonAsync($"/api/v1/executions/{first.Id()}/confirm", new { receipt = "twice" })).StatusCode);
         var edit = await user.PutAsJsonAsync($"/api/v1/drafts/{draft.Id()}", new { recipient = "ops@northwind.example", subject = "x", body = "changed", expectedVersion = draft.Int("version") });
