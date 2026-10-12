@@ -42,6 +42,10 @@ public sealed class DraftsController(DraftService drafts) : ControllerBase
     [HttpPost("drafts/{id:guid}/revoke-approval")]
     public async Task<ActionResult<DraftDto>> Revoke(Guid id, CancellationToken ct) => await drafts.RevokeAsync(id, ct);
 
+    /// <summary>Turns a sent draft into a new editable version ("edit and send again").</summary>
+    [HttpPost("drafts/{id:guid}/reopen")]
+    public async Task<ActionResult<DraftDto>> Reopen(Guid id, CancellationToken ct) => await drafts.ReopenAsync(id, ct);
+
     [HttpDelete("drafts/{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {

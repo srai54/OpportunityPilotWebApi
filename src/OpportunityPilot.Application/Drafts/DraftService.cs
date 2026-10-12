@@ -169,6 +169,20 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         return ToDto(draft, await OpportunityFactsAsync(draft.OpportunityId, ct));
     }
 
+    /// <summary>"Edit and send again": a sent draft becomes a new editable version. It needs a new approval and a new send record.</summary>
+    public async Task<DraftDto> ReopenAsync(Guid id, CancellationToken ct)
+    {
+        var draft = await FindAsync(id, ct);
+        var now = clock.GetUtcNow().UtcDateTime;
+        try { draft.Reopen(now); }
+        catch (InvalidOperationException ex) { throw new ConflictException(ex.Message); }
+        db.Activities.Add(new Activity(user.OwnerId, draft.OpportunityId, "Note", now,
+            $"{draft.Channel} message reopened to edit and send again (new version {draft.Version}). The earlier send stays on record."));
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new ConflictException("Draft was changed elsewhere. Reload and try again."); }
+        return ToDto(draft, await OpportunityFactsAsync(draft.OpportunityId, ct));
+    }
+
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
         db.OutreachDrafts.Remove(await FindAsync(id, ct));
@@ -181,7 +195,8 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
 
     public Task<int> CountApprovedAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Approved, ct);
 
-    public Task<int> CountSentAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Sent, ct);
+    /// <summary>Drafts that have been sent at least once (a reopened draft keeps its last send time).</summary>
+    public Task<int> CountSentAsync(CancellationToken ct) => Owned.CountAsync(d => d.SentAt != null, ct);
 
     private async Task<OutreachDraft> FindAsync(Guid id, CancellationToken ct) =>
         await Owned.FirstOrDefaultAsync(d => d.Id == id, ct) ?? throw new NotFoundException("Draft not found.");

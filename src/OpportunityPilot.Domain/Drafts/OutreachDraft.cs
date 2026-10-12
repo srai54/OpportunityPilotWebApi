@@ -121,6 +121,18 @@ public sealed class OutreachDraft : IOwned
         UpdatedAt = utcNow;
     }
 
+    /// <summary>
+    /// A sent message cannot change, so editing it again starts a new version: back to Draft, approval cleared. SentAt keeps the last
+    /// send time; the earlier send stays on record in its execution and the opportunity's activity.
+    /// </summary>
+    public void Reopen(DateTime utcNow)
+    {
+        if (State != DraftState.Sent) throw new InvalidOperationException("Only a message that was sent needs to be reopened.");
+        ClearApproval();
+        Version++;
+        UpdatedAt = utcNow;
+    }
+
     public void RevokeApproval(DateTime utcNow)
     {
         if (State == DraftState.Sent) throw new InvalidOperationException("A sent message cannot be un-approved.");
