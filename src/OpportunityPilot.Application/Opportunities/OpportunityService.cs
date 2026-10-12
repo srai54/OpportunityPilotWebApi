@@ -30,8 +30,13 @@ public sealed class OpportunityService(IAppDbContext db, ICurrentUser user, Time
         if (status is { } st) query = query.Where(o => o.Status == st);
 
         var total = await query.CountAsync(ct);
+        // "found" / "oldest" order by when each job or lead was first found, so it is clear which came first.
         var ordered = string.Equals(sort, "recent", StringComparison.OrdinalIgnoreCase)
             ? query.OrderByDescending(o => o.UpdatedAt).ThenBy(o => o.Id)
+            : string.Equals(sort, "found", StringComparison.OrdinalIgnoreCase)
+                ? query.OrderByDescending(o => o.CreatedAt).ThenBy(o => o.Id)
+            : string.Equals(sort, "oldest", StringComparison.OrdinalIgnoreCase)
+                ? query.OrderBy(o => o.CreatedAt).ThenBy(o => o.Id)
             // Qualified first, then Needs verification, then Excluded — a high-scoring excluded job must not top the list.
             : query.OrderBy(o => o.Outcome == FilterOutcome.Qualified ? 0 : o.Outcome == FilterOutcome.NeedsVerification ? 1 : 2)
                 .ThenByDescending(o => o.Score).ThenByDescending(o => o.Coverage).ThenByDescending(o => o.UpdatedAt).ThenBy(o => o.Id);
@@ -164,7 +169,7 @@ public sealed class OpportunityService(IAppDbContext db, ICurrentUser user, Time
 
     public static OpportunitySummaryDto ToSummary(Opportunity o) => new(
         o.Id, o.CampaignId, o.Mode, o.Title, o.Organization, o.Location, o.Url, o.ApplyUrl, o.Platform, o.Score, o.Coverage,
-        o.Outcome, o.OutcomeReason, o.Status, o.GapsCount, o.UpdatedAt);
+        o.Outcome, o.OutcomeReason, o.Status, o.GapsCount, o.UpdatedAt, o.CreatedAt);
 
     private static T? Deserialize<T>(string json) where T : class
     {
