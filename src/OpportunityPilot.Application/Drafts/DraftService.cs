@@ -179,6 +179,10 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
 
     public Task<int> CountAwaitingReviewAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Draft, ct);
 
+    public Task<int> CountApprovedAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Approved, ct);
+
+    public Task<int> CountSentAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Sent, ct);
+
     private async Task<OutreachDraft> FindAsync(Guid id, CancellationToken ct) =>
         await Owned.FirstOrDefaultAsync(d => d.Id == id, ct) ?? throw new NotFoundException("Draft not found.");
 

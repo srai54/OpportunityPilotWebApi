@@ -37,6 +37,19 @@ public class ProviderGatewayApiTests(PostgresApiFactory factory) : IClassFixture
     }
 
     [Fact]
+    public async Task Marking_an_opportunity_applied_schedules_one_follow_up()
+    {
+        var (user, opportunityId) = await ShortlistedCompanyAsync(factory, "applied-follow-up@example.test");
+
+        await (await user.PatchAsJsonAsync($"/api/v1/opportunities/{opportunityId}/status", new { status = "Applied" })).Json(HttpStatusCode.OK);
+        await (await user.PatchAsJsonAsync($"/api/v1/opportunities/{opportunityId}/status", new { status = "Applied" })).Json(HttpStatusCode.OK);
+
+        var open = (await user.GetJson($"/api/v1/opportunities/{opportunityId}/next-actions")).EnumerateArray().Where(f => f.Str("state") == "Open").ToList();
+        Assert.Single(open);
+        Assert.Equal("FollowUp", open[0].Str("kind"));
+    }
+
+    [Fact]
     public async Task An_approved_email_is_sent_once_and_only_a_receipt_marks_it_sent()
     {
         var (user, opportunityId) = await ShortlistedCompanyAsync(factory, "gateway-email@example.test");
@@ -58,6 +71,9 @@ public class ProviderGatewayApiTests(PostgresApiFactory factory) : IClassFixture
         Assert.Equal("Sent", (await user.GetJson($"/api/v1/opportunities/{opportunityId}/drafts")).EnumerateArray().Single().Str("state"));
         Assert.Equal("Sent", (await user.GetJson("/api/v1/drafts?take=50")).GetProperty("items").EnumerateArray().Single().Str("state"));  // the inbox list agrees
         Assert.Equal("Contacted", (await user.GetJson($"/api/v1/opportunities/{opportunityId}")).Str("status"));
+        // Recording the send schedules one follow-up reminder, so nothing goes quiet.
+        var followUps = (await user.GetJson($"/api/v1/opportunities/{opportunityId}/next-actions")).EnumerateArray().ToList();
+        Assert.Single(followUps, f => f.Str("kind") == "FollowUp" && f.Str("state") == "Open");
 
         Assert.Equal(HttpStatusCode.Conflict, (await user.PostAsJsonAsync($"/api/v1/executions/{first.Id()}/confirm", new { receipt = "twice" })).StatusCode);
         var edit = await user.PutAsJsonAsync($"/api/v1/drafts/{draft.Id()}", new { recipient = "ops@northwind.example", subject = "x", body = "changed", expectedVersion = draft.Int("version") });

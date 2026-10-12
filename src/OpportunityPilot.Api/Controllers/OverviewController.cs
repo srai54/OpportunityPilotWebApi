@@ -18,7 +18,7 @@ public sealed class OverviewController(
 {
     /// <param name="AwaitingApproval">Suggested opportunities waiting in the approval queue.</param>
     public sealed record OverviewDto(int Profiles, int Applied, int NeedsManual, int Campaigns, int Shortlisted, int AwaitingApproval,
-        int DraftsAwaitingReview, int FollowUpsDue);
+        int DraftsAwaitingReview, int FollowUpsDue, int DraftsApproved, int DraftsSent, int FollowUpsOpen);
 
     [HttpGet]
     public async Task<ActionResult<OverviewDto>> Get(CancellationToken ct)
@@ -26,6 +26,7 @@ public sealed class OverviewController(
         var summary = await applications.SummaryAsync(ct);
         return new OverviewDto(await profiles.CountAsync(ct), summary.Applied, summary.NeedsManual,
             await campaigns.CountAsync(ct), await opportunities.CountShortlistedAsync(ct), await approvals.CountAsync(ct),
-            await drafts.CountAwaitingReviewAsync(ct), await outreach.CountDueAsync(ct));
+            await drafts.CountAwaitingReviewAsync(ct), await outreach.CountDueAsync(ct),
+            await drafts.CountApprovedAsync(ct), await drafts.CountSentAsync(ct), await outreach.CountOpenAsync(ct));
     }
 }

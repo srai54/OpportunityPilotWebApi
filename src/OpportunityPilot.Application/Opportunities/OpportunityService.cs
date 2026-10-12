@@ -6,6 +6,7 @@ using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.Imports;
 using OpportunityPilot.Application.Research.Rules;
 using OpportunityPilot.Domain.Opportunities;
+using OpportunityPilot.Domain.Outreach;
 
 namespace OpportunityPilot.Application.Opportunities;
 
@@ -59,6 +60,15 @@ public sealed class OpportunityService(IAppDbContext db, ICurrentUser user, Time
         if (activity is not null)
         {
             db.Activities.Add(activity);
+            // Applying is only the start: remind the person to check back, unless a follow-up is already open for it.
+            if (request.Status == OpportunityStatus.Applied
+                && !await db.NextActions.AnyAsync(x => x.OwnerId == user.OwnerId && x.OpportunityId == opportunity.Id
+                    && x.State == NextActionState.Open && x.Kind == NextActionKind.FollowUp, ct))
+            {
+                var now = clock.GetUtcNow().UtcDateTime;
+                db.NextActions.Add(new NextAction(user.OwnerId, opportunity.Id, NextActionKind.FollowUp,
+                    "Check on this application (scheduled when you marked it applied).", now.AddDays(7), "UTC", now));
+            }
             try
             {
                 await db.SaveChangesAsync(ct);

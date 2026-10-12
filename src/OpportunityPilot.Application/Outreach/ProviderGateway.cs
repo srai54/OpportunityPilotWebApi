@@ -14,7 +14,8 @@ public sealed record ProviderExecutionDto(
     string Instructions, bool Reused);
 
 public sealed record StartExecutionRequest(int Version);
-public sealed record ConfirmExecutionRequest(string Receipt, string? ProviderReference);
+/// <param name="FollowUpInDays">Days until the automatic follow-up reminder after a sent message: null = 5, 0 = none.</param>
+public sealed record ConfirmExecutionRequest(string Receipt, string? ProviderReference, int? FollowUpInDays = null);
 public sealed record FailExecutionRequest(string Reason);
 
 /// <summary>
@@ -27,6 +28,7 @@ public sealed record FailExecutionRequest(string Reason);
 public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimeProvider clock)
 {
     public const int DailyExecutionLimit = 100;
+    public const int DefaultFollowUpDays = 5;
 
     public async Task<ProviderExecutionDto> StartDraftAsync(Guid draftId, StartExecutionRequest r, CancellationToken ct)
     {
@@ -73,6 +75,12 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
                         $"{draft.Channel} sent by you ({execution.Provider}): {execution.Receipt}"));
                     if (opportunity.Status is OpportunityStatus.New or OpportunityStatus.Suggested or OpportunityStatus.Shortlisted)
                         if (opportunity.ChangeStatus(OpportunityStatus.Contacted, Now) is { } moved) db.Activities.Add(moved);
+                    // A message nobody follows up on is a message wasted: schedule a reminder unless one is already open.
+                    var days = Math.Clamp(r.FollowUpInDays ?? DefaultFollowUpDays, 0, 60);
+                    if (days > 0 && !await db.NextActions.AnyAsync(x => x.OwnerId == user.OwnerId && x.OpportunityId == opportunity.Id
+                            && x.State == NextActionState.Open && x.Kind == NextActionKind.FollowUp, ct))
+                        db.NextActions.Add(new NextAction(user.OwnerId, opportunity.Id, NextActionKind.FollowUp,
+                            "Follow up if there is no reply (scheduled when you recorded the send).", Now.AddDays(days), "UTC", Now));
                     break;
                 case ExecutionSubject.SalesBid:
                     var bid = await db.SalesBids.FirstAsync(b => b.Id == execution.SubjectId && b.OwnerId == user.OwnerId, ct);
