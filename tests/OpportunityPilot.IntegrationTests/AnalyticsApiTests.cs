@@ -56,6 +56,15 @@ public class AnalyticsApiTests(PostgresApiFactory factory) : IClassFixture<Postg
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/analytics/trend?workspace=Sales&days=3")).StatusCode);
     }
 
+    [Fact]
+    public async Task Feed_search_requires_sign_in_and_validates_its_input()
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync("/api/v1/jobboards/feeds?query=sales")).StatusCode);
+        var client = factory.ClientFor($"feeds-{Guid.NewGuid():N}@example.test");
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/jobboards/feeds?query=")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/jobboards/feeds?query=sales&sites=nowhere")).StatusCode);
+    }
+
     [Theory]
     [InlineData("Unknown", 30)]
     [InlineData("Candidate", 0)]
