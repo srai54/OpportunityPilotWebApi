@@ -16,7 +16,7 @@ namespace OpportunityPilot.Application.Analytics;
 /// Read-only, owner-scoped, EF LINQ only (InMemory demo mode and Postgres alike), every query bounded by the owner and,
 /// where the contract says so, the window. Nothing is estimated: what stored data cannot answer is null.
 /// </summary>
-public sealed class AnalyticsService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed partial class AnalyticsService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
 {
     public const int DefaultDays = 30;
     public const int MinDays = 1;

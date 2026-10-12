@@ -96,3 +96,42 @@ public class AnalyticsTests
         Assert.Equal([("skills", 2), ("location", 1)], result.Select(x => (x.Criterion, x.UnknownCount)));
     }
 }
+
+public class TrendBuilderTests
+{
+    private static DateTime At(string d) => DateTime.SpecifyKind(DateTime.Parse(d + "T10:00:00"), DateTimeKind.Utc);
+
+    [Fact]
+    public void Buckets_events_by_day_and_totals_both_windows()
+    {
+        var today = new DateOnly(2026, 10, 12);
+        var events = new Application.Analytics.TrendEvents(
+            Found: [(At("2026-10-12"), true), (At("2026-10-12"), false), (At("2026-10-10"), true), (At("2026-10-04"), true)],
+            Approved: [At("2026-10-11")],
+            Reached: [At("2026-10-12"), At("2026-10-05")],
+            Replied: [],
+            Sent: [At("2026-10-12")]);
+
+        var (points, current, previous) = Application.Analytics.TrendBuilder.Build(events, today, 7);
+
+        Assert.Equal(7, points.Count);
+        Assert.Equal(new DateOnly(2026, 10, 6), points[0].Date);
+        Assert.Equal(today, points[^1].Date);
+        Assert.Equal(2, points[^1].Found);
+        Assert.Equal(1, points[^1].Qualified);
+        Assert.Equal(1, points[^2].Approved);
+        Assert.Equal(new Application.Analytics.TrendTotalsDto(3, 2, 1, 1, 0, 1), current);
+        // 2026-10-05 and 2026-10-04 fall in the previous window (Sep 29 – Oct 5).
+        Assert.Equal(new Application.Analytics.TrendTotalsDto(1, 1, 0, 1, 0, 0), previous);
+    }
+
+    [Fact]
+    public void An_empty_history_gives_zero_points_not_gaps()
+    {
+        var (points, current, previous) = Application.Analytics.TrendBuilder.Build(
+            new Application.Analytics.TrendEvents([], [], [], [], []), new DateOnly(2026, 10, 12), 14);
+        Assert.Equal(14, points.Count);
+        Assert.All(points, p => Assert.Equal(0, p.Found + p.Qualified + p.Approved + p.Reached + p.Replied + p.Sent));
+        Assert.Equal(current, previous);
+    }
+}

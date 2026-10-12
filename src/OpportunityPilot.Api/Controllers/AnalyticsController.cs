@@ -14,4 +14,9 @@ public sealed class AnalyticsController(AnalyticsService analytics) : Controller
         [FromQuery] string? workspace, [FromQuery] int days = AnalyticsService.DefaultDays,
         [FromQuery] Domain.Common.OpportunityMode? mode = null, CancellationToken ct = default) =>
         await analytics.OverviewAsync(workspace, days, ct, mode);
+
+    /// <summary>Daily activity for the last 7–90 days (default 30) with the window before it, for the Insights trend chart.</summary>
+    [HttpGet("trend")]
+    public async Task<ActionResult<AnalyticsTrendDto>> Trend([FromQuery] string? workspace, [FromQuery] int days = 30, CancellationToken ct = default) =>
+        await analytics.TrendAsync(workspace, days, ct);
 }
