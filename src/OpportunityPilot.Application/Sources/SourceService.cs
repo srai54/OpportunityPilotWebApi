@@ -46,7 +46,8 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
                 else if (fetcher.CheckUrl(url) is { } reason) errors["url"] = [reason];
                 break;
             case SourceKind.Greenhouse or SourceKind.Lever or SourceKind.Adzuna or SourceKind.Ashby or SourceKind.SmartRecruiters or
-                SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.Remotive or SourceKind.RemoteOk when mode != OpportunityMode.Job:
+                SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.Remotive or SourceKind.RemoteOk or SourceKind.Arbeitnow or SourceKind.Jobicy or
+                SourceKind.WeWorkRemotely when mode != OpportunityMode.Job:
                 errors["kind"] = [$"{request.Kind} sources list jobs, so they can only be added to Job campaigns."];
                 break;
             case SourceKind.Greenhouse:
@@ -87,7 +88,7 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
                         ? "Enter the company's Workday careers URL, e.g. https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite."
                         : "Enter a public careers URL on myworkdayjobs.com (https://<company>.wd<N>.myworkdayjobs.com/<site>); sign-in and account pages are not accepted."];
                 break;
-            case SourceKind.Remotive or SourceKind.RemoteOk:
+            case SourceKind.Remotive or SourceKind.RemoteOk or SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely:
                 break;
             case SourceKind.JobSearch:
                 // The board is stored; the search itself uses the campaign's keywords and first location at run time.
@@ -174,6 +175,9 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
             SourceKind.Workday => $"Workday careers {url}",
             SourceKind.Remotive => "Remotive remote jobs",
             SourceKind.RemoteOk => "Remote OK jobs",
+            SourceKind.Arbeitnow => "Arbeitnow jobs (Germany, Europe, remote)",
+            SourceKind.Jobicy => "Jobicy remote jobs",
+            SourceKind.WeWorkRemotely => "We Work Remotely jobs",
             _ => kind.ToString()
         };
     }

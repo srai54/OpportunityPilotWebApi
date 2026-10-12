@@ -21,5 +21,8 @@ public enum JobPlatform
     RemoteOk,
     Indeed,
     Seek,
-    Workday
+    Workday,
+    Arbeitnow,
+    Jobicy,
+    WeWorkRemotely
 }

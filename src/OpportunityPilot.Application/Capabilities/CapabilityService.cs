@@ -121,6 +121,9 @@ public sealed class CapabilityService(
             PublicBoard("workday", "Workday careers sites", "a company's public Workday careers site (myworkdayjobs.com), searched with your keywords"),
             PublicBoard("remotive", "Remotive remote jobs", "the public Remotive remote-jobs feed", company: false),
             PublicBoard("remoteok", "Remote OK jobs", "the public Remote OK jobs feed", company: false),
+            PublicBoard("arbeitnow", "Arbeitnow jobs", "the free public Arbeitnow job board (Germany, Europe and remote)", company: false),
+            PublicBoard("jobicy", "Jobicy remote jobs", "the free public Jobicy remote-jobs feed", company: false),
+            PublicBoard("weworkremotely", "We Work Remotely jobs", "We Work Remotely's public RSS feed of remote jobs", company: false),
 
             new("upwork", "Upwork projects", "Sources", CapabilityStatus.NotBuilt,
                 "Upwork's official API can search marketplace projects for the Sales workspace, but each app needs Upwork's approval and your Upwork account connected (OAuth). Upwork retired its job RSS feeds in 2024.",

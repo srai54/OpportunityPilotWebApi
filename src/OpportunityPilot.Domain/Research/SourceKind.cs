@@ -43,5 +43,14 @@ public enum SourceKind
     Remotive,
 
     /// <summary>The public, board-wide Remote OK jobs feed.</summary>
-    RemoteOk
+    RemoteOk,
+
+    /// <summary>The free public Arbeitnow job-board API (Germany, Europe and remote).</summary>
+    Arbeitnow,
+
+    /// <summary>The free public Jobicy remote-jobs API.</summary>
+    Jobicy,
+
+    /// <summary>We Work Remotely's public RSS feed of remote jobs.</summary>
+    WeWorkRemotely
 }

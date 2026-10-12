@@ -40,6 +40,9 @@ public sealed class ResearchOptions
     /// <summary>Empty in real use (each source names its own <c>*.myworkdayjobs.com</c> host); tests point it at a loopback server.</summary>
     public string WorkdayApiBase { get; set; } = "";
     public string RemoteOkApiBase { get; set; } = DefaultRemoteOkApiBase;
+    public string ArbeitnowApiBase { get; set; } = DefaultArbeitnowApiBase;
+    public string JobicyApiBase { get; set; } = DefaultJobicyApiBase;
+    public string WeWorkRemotelyBase { get; set; } = DefaultWeWorkRemotelyBase;
 
     public const string DefaultGreenhouseApiBase = "https://boards-api.greenhouse.io";
     public const string DefaultLeverApiBase = "https://api.lever.co";
@@ -50,6 +53,12 @@ public sealed class ResearchOptions
     public const string DefaultWorkableApiBase = "https://apply.workable.com";
     public const string DefaultRemotiveApiBase = "https://remotive.com";
     public const string DefaultRemoteOkApiBase = "https://remoteok.com";
+    public const string DefaultArbeitnowApiBase = "https://www.arbeitnow.com";
+    public const string DefaultJobicyApiBase = "https://jobicy.com";
+    public const string DefaultWeWorkRemotelyBase = "https://weworkremotely.com";
+
+    /// <summary>Some public feeds (Arbeitnow, about 3 MB a page) are bigger than the usual 1 MB read limit; those few get this larger ceiling.</summary>
+    public const int LargeFeedBytes = 5 * 1024 * 1024;
 
     public int EffectiveCandidates => Math.Clamp(MaxCandidates, 1, CeilingCandidates);
     public int EffectiveFetches => Math.Clamp(MaxFetches, 1, CeilingFetches);

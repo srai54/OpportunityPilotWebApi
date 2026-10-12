@@ -21,13 +21,13 @@ public interface IWebFetcher
     string? CheckUrl(string url);
 
     /// <summary>Reads HTML, plain text and RSS/Atom (Url and Feed sources).</summary>
-    Task<FetchResult> FetchAsync(string url, CancellationToken ct);
+    Task<FetchResult> FetchAsync(string url, CancellationToken ct, int? maxBytes = null);
 
     /// <summary>
     /// Reads <c>application/json</c> only, with the same address, size, timeout and redirect rules. Used solely for the
     /// documented public job-board APIs (Greenhouse, Lever, Adzuna); user-supplied Url and Feed sources never get JSON.
     /// </summary>
-    Task<FetchResult> FetchJsonAsync(string url, CancellationToken ct);
+    Task<FetchResult> FetchJsonAsync(string url, CancellationToken ct, int? maxBytes = null);
 
     /// <summary>
     /// POSTs a JSON body and reads <c>application/json</c> only, with the same address, size, timeout and retry rules.

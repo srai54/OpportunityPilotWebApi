@@ -344,4 +344,53 @@ public class BoardMappingTests
             SourceOf(SourceKind.RemoteOk, null, "Remote OK"), Parser)!.Single();
         Assert.Equal((JobPlatform.RemoteOk, "2", "Rust"), (remoteOk.Platform, remoteOk.ExternalId, remoteOk.Text));
     }
+
+    // Shapes below are copied from the real responses seen on 2026-10-12 (trimmed to one job each).
+    [Fact]
+    public void Arbeitnow_maps_a_job_with_remote_flag_and_unix_date()
+    {
+        var c = BoardMapping.ArbeitnowCandidates("""{"data":[{"slug":"cs-manager-nuremberg-188405","company_name":"Galvanek Energiesysteme","title":"Customer Success Manager (m/w/d)","description":"<p>30 Kunden taeglich.</p>","remote":true,"url":"https://www.arbeitnow.com/jobs/companies/galvanek/cs-manager-nuremberg-188405","tags":["customer service"],"job_types":["full time"],"location":"Nuremberg","created_at":1791795600}],"links":{},"meta":{"current_page":1}}""",
+            SourceOf(SourceKind.Arbeitnow, null, "Arbeitnow"), Parser)!.Single();
+        Assert.Equal((JobPlatform.Arbeitnow, "cs-manager-nuremberg-188405", "Galvanek Energiesysteme", "Nuremberg"), (c.Platform, c.ExternalId, c.Organization, c.Location));
+        Assert.Contains("Workplace: Remote", c.Text);
+        Assert.Contains("30 Kunden", c.Text);
+        Assert.Equal(new DateTime(2026, 10, 12, 9, 0, 0, DateTimeKind.Utc), c.PostedAt);
+        Assert.Null(BoardMapping.ArbeitnowCandidates("""{"oops":1}""", SourceOf(SourceKind.Arbeitnow, null, "A"), Parser));
+    }
+
+    [Fact]
+    public void Jobicy_maps_pay_and_remote()
+    {
+        var c = BoardMapping.JobicyCandidates("""{"apiVersion":"2.2.19","jobCount":1,"jobs":[{"id":155094,"url":"https://jobicy.com/jobs/155094-enterprise-account-executive-iberia-2","jobSlug":"x","jobTitle":"Enterprise Account Executive, Iberia","companyName":"Cresta","jobIndustry":["Sales"],"jobType":["Full-Time"],"jobGeo":"Spain","jobLevel":"Director","jobExcerpt":"Sell.","jobDescription":"<p>Own the Iberia market.</p>","pubDate":"2026-10-12T07:02:38+00:00","salaryMin":80000,"salaryMax":100000,"salaryCurrency":"EUR","salaryPeriod":"yearly"}]}""",
+            SourceOf(SourceKind.Jobicy, null, "Jobicy"), Parser)!.Single();
+        Assert.Equal((JobPlatform.Jobicy, "155094", "Cresta", "Spain"), (c.Platform, c.ExternalId, c.Organization, c.Location));
+        Assert.Contains("Salary: EUR 80000 - 100000 yearly", c.Text);
+        Assert.Contains("Own the Iberia market.", c.Text);
+        Assert.Contains("Workplace: Remote", c.Text);
+    }
+
+    [Fact]
+    public void WeWorkRemotely_reads_the_rss_and_splits_company_from_title()
+    {
+        const string rss = """
+            <?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>We Work Remotely</title>
+            <item><title>Amwell: Sr Product Marketing Manager</title><region>Anywhere in the World</region><category>Sales and Marketing</category><type>Full-Time</type>
+            <description>&lt;p&gt;Headquarters: Remote US&lt;/p&gt;</description><pubDate>Mon, 12 Oct 2026 06:00:00 +0000</pubDate>
+            <link>https://weworkremotely.com/remote-jobs/amwell-sr-product-marketing-manager</link><guid>https://weworkremotely.com/remote-jobs/amwell-sr-product-marketing-manager</guid></item>
+            </channel></rss>
+            """;
+        var c = BoardMapping.WeWorkRemotelyCandidates(rss, SourceOf(SourceKind.WeWorkRemotely, null, "WWR"), Parser)!.Single();
+        Assert.Equal((JobPlatform.WeWorkRemotely, "Amwell", "Sr Product Marketing Manager", "Anywhere in the World"), (c.Platform, c.Organization, c.Title, c.Location));
+        Assert.Contains("Headquarters: Remote US", c.Text);
+        Assert.Equal(new DateTime(2026, 10, 12, 6, 0, 0, DateTimeKind.Utc), c.PostedAt);
+    }
+
+    [Fact]
+    public void WeWorkRemotely_refuses_a_feed_with_a_dtd_and_junk()
+    {
+        const string evil = """<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel><item><title>A: B</title><link>https://x.test/1</link></item></channel></rss>""";
+        Assert.Null(BoardMapping.WeWorkRemotelyCandidates(evil, SourceOf(SourceKind.WeWorkRemotely, null, "WWR"), Parser));
+        Assert.Null(BoardMapping.WeWorkRemotelyCandidates("not xml", SourceOf(SourceKind.WeWorkRemotely, null, "WWR"), Parser));
+        Assert.Null(BoardMapping.WeWorkRemotelyCandidates("", SourceOf(SourceKind.WeWorkRemotely, null, "WWR"), Parser));
+    }
 }
