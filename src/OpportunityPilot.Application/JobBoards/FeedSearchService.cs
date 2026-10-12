@@ -21,7 +21,7 @@ public sealed record FeedJobDto(string Site, string SiteName, JobBoardJobDto Job
 /// "Search all": reads the free public feeds (Arbeitnow, Jobicy, We Work Remotely, Remotive, Remote OK), keeps each feed's
 /// text for 30 minutes so repeated searches cost nothing, and filters it by the person's words and place. Read-only.
 /// </summary>
-public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser, IOptions<ResearchOptions> research, TimeProvider clock)
+public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser, IOptions<ResearchOptions> research, TimeProvider clock, IRapidApiBoardSearch? regional = null)
 {
     public static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(30);
     public const int MaxTake = 100;
@@ -43,7 +43,15 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var now = clock.GetUtcNow().UtcDateTime;
         var statuses = new List<FeedSiteStatus>();
         var jobs = new List<FeedJobDto>();
+        var regionalTask = regional is null || regional.Boards.Count == 0 ? Task.FromResult<RapidApiBoardResult[]>([])
+            : Task.WhenAll(regional.Boards.Select(b => regional.SearchAsync(b.Id, query, location, ct)));
         var reads = await Task.WhenAll(sites.Distinct().Select(s => ReadAsync(s, now, ct)));
+        foreach (var r in await regionalTask)
+        {
+            var ofBoard = r.Jobs.Where(j => Matches(j, query, null, remoteOnly)).Select(j => new FeedJobDto(r.BoardId, r.Name, j)).ToList();
+            statuses.Add(new FeedSiteStatus(r.Name, r.Status == "Ready" ? "Ready" : "Failed", r.Jobs.Count, ofBoard.Count, r.Message, r.FromCache));
+            jobs.AddRange(ofBoard);
+        }
         foreach (var (site, jobsOfSite, status) in reads)
         {
             var matched = jobsOfSite.Where(j => Matches(j.Job, query, location, remoteOnly)).ToList();
