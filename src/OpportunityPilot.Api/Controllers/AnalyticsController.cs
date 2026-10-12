@@ -15,6 +15,11 @@ public sealed class AnalyticsController(AnalyticsService analytics) : Controller
         [FromQuery] Domain.Common.OpportunityMode? mode = null, CancellationToken ct = default) =>
         await analytics.OverviewAsync(workspace, days, ct, mode);
 
+    /// <summary>The caller's own recorded actions, newest first (take 1–100, default 30).</summary>
+    [HttpGet("activity")]
+    public async Task<ActionResult<IReadOnlyList<ActivityFeedItemDto>>> Activity([FromQuery] string? workspace, [FromQuery] int take = 30, CancellationToken ct = default) =>
+        Ok(await analytics.ActivityFeedAsync(workspace, take, ct));
+
     /// <summary>Daily activity for the last 7–90 days (default 30) with the window before it, for the Insights trend chart.</summary>
     [HttpGet("trend")]
     public async Task<ActionResult<AnalyticsTrendDto>> Trend([FromQuery] string? workspace, [FromQuery] int days = 30, CancellationToken ct = default) =>

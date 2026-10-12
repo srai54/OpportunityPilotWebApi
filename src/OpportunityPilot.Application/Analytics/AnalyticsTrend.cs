@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Common;
-using OpportunityPilot.Domain.Drafts;
 using OpportunityPilot.Domain.Opportunities;
 
 namespace OpportunityPilot.Application.Analytics;
@@ -102,7 +101,7 @@ public sealed partial class AnalyticsService
 
         var sent = await (from d in db.OutreachDrafts
                           join o in db.Opportunities on d.OpportunityId equals o.Id
-                          where d.OwnerId == owner && o.OwnerId == owner && modes.Contains(o.Mode) && d.State == DraftState.Sent && d.SentAt != null && d.SentAt >= rangeStart
+                          where d.OwnerId == owner && o.OwnerId == owner && modes.Contains(o.Mode) && d.SentAt != null && d.SentAt >= rangeStart
                           select d.SentAt!.Value).ToListAsync(ct);
 
         var events = new TrendEvents(

@@ -30,7 +30,8 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
     public const int DailyExecutionLimit = 100;
     public const int DefaultFollowUpDays = 5;
 
-    public async Task<ProviderExecutionDto> StartDraftAsync(Guid draftId, StartExecutionRequest r, CancellationToken ct)
+    /// <param name="provider">Manual unless a connected mailbox is about to send the message itself.</param>
+    public async Task<ProviderExecutionDto> StartDraftAsync(Guid draftId, StartExecutionRequest r, CancellationToken ct, ExecutionProvider provider = ExecutionProvider.Manual)
     {
         var draft = await db.OutreachDrafts.FirstOrDefaultAsync(d => d.Id == draftId && d.OwnerId == user.OwnerId, ct)
             ?? throw new NotFoundException("Draft not found.");
@@ -40,7 +41,7 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
         if (!draft.HasValidApproval()) throw Invalid("draft", "Approve this exact version before sending it.");
         if (draft.Recipient is { } recipient && await SuppressedAsync(recipient, ct))
             throw Invalid("recipient", "This recipient is on your suppression list (they asked not to be contacted).");
-        return await CreateAsync(ExecutionSubject.OutreachDraft, draft.Id, draft.Version, draft.ApprovedHash!, ct);
+        return await CreateAsync(ExecutionSubject.OutreachDraft, draft.Id, draft.Version, draft.ApprovedHash!, ct, provider);
     }
 
     public async Task<ProviderExecutionDto> StartBidAsync(Guid bidId, StartExecutionRequest r, CancellationToken ct)
@@ -72,7 +73,9 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
                     draft.MarkSent(Now);
                     var opportunity = await db.Opportunities.FirstAsync(o => o.Id == draft.OpportunityId && o.OwnerId == user.OwnerId, ct);
                     db.Activities.Add(new Activity(user.OwnerId, opportunity.Id, ActivityKinds.StatusChanged, Now,
-                        $"{draft.Channel} sent by you ({execution.Provider}): {execution.Receipt}"));
+                        execution.Provider == ExecutionProvider.Manual
+                            ? $"{draft.Channel} sent by you ({execution.Provider}): {execution.Receipt}"
+                            : $"{draft.Channel} sent from your connected mailbox ({execution.Provider}): {execution.Receipt}"));
                     if (opportunity.Status is OpportunityStatus.New or OpportunityStatus.Suggested or OpportunityStatus.Shortlisted)
                         if (opportunity.ChangeStatus(OpportunityStatus.Contacted, Now) is { } moved) db.Activities.Add(moved);
                     // A message nobody follows up on is a message wasted: schedule a reminder unless one is already open.
@@ -116,14 +119,15 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
         (await db.ProviderExecutions.Where(e => e.OwnerId == user.OwnerId && e.SubjectId == subjectId)
             .OrderByDescending(e => e.CreatedAt).ToListAsync(ct)).Select(e => ToDto(e, reused: false)).ToList();
 
-    private async Task<ProviderExecutionDto> CreateAsync(ExecutionSubject subject, Guid subjectId, int version, string hash, CancellationToken ct)
+    private async Task<ProviderExecutionDto> CreateAsync(ExecutionSubject subject, Guid subjectId, int version, string hash, CancellationToken ct,
+        ExecutionProvider provider = ExecutionProvider.Manual)
     {
         var prefix = ProviderExecution.KeyFor(subject, subjectId, hash) + ":";
         var attempt = await db.ProviderExecutions.CountAsync(e => e.OwnerId == user.OwnerId && e.IdempotencyKey.StartsWith(prefix), ct) + 1;
         var dayStart = Now.Date;
         if (await db.ProviderExecutions.CountAsync(e => e.OwnerId == user.OwnerId && e.CreatedAt >= dayStart, ct) >= DailyExecutionLimit)
             throw Invalid("quota", $"You reached today's limit of {DailyExecutionLimit} sends and placements. Try again tomorrow.");
-        var execution = new ProviderExecution(user.OwnerId, subject, subjectId, version, hash, ExecutionProvider.Manual, Now, attempt);
+        var execution = new ProviderExecution(user.OwnerId, subject, subjectId, version, hash, provider, Now, attempt);
         db.ProviderExecutions.Add(execution);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException)

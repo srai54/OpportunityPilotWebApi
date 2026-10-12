@@ -21,9 +21,13 @@ public class JobBoardGathererTests
         public List<string> Urls { get; } = [];
         public List<(string Url, string Body)> Posts { get; } = [];
         public string? CheckUrl(string url) => null;
-        public Task<FetchResult> FetchAsync(string url, CancellationToken ct) => throw new InvalidOperationException("Job boards must use FetchJsonAsync.");
+        public Task<FetchResult> FetchAsync(string url, CancellationToken ct, int? maxBytes = null)
+        {
+            Urls.Add(url);
+            return Task.FromResult(respond(url));
+        }
 
-        public Task<FetchResult> FetchJsonAsync(string url, CancellationToken ct)
+        public Task<FetchResult> FetchJsonAsync(string url, CancellationToken ct, int? maxBytes = null)
         {
             Urls.Add(url);
             return Task.FromResult(respond(url));

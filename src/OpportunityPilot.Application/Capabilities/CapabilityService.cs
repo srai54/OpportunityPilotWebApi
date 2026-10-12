@@ -35,7 +35,8 @@ public sealed class CapabilityService(
     IOptions<DatabaseOptions> database,
     IOptions<AdzunaOptions> adzuna,
     IOptions<JsearchOptions> jsearch,
-    SetupState setup)
+    SetupState setup,
+    IOptions<JobBoards.RapidApiBoardsOptions>? rapid = null)
 {
     public CapabilitiesDto Get(string environment)
     {
@@ -121,6 +122,16 @@ public sealed class CapabilityService(
             PublicBoard("workday", "Workday careers sites", "a company's public Workday careers site (myworkdayjobs.com), searched with your keywords"),
             PublicBoard("remotive", "Remotive remote jobs", "the public Remotive remote-jobs feed", company: false),
             PublicBoard("remoteok", "Remote OK jobs", "the public Remote OK jobs feed", company: false),
+            rapid?.Value.Configured == true
+                ? new("regional-boards", "Regional job boards (RapidAPI)", "Sources", CapabilityStatus.Ready,
+                    $"Searched together in Find → All sites: {string.Join(", ", rapid.Value.Active.Select(b => b.Value.Name))}. The key is set on the server and never shown.",
+                    ["Search these boards with every other site", "Show each job linked to its own page"], ["Apply for you", "Read pages behind a login"])
+                : new("regional-boards", "Regional job boards (RapidAPI)", "Sources", CapabilityStatus.NotConfigured,
+                    "Not set up. Subscribe to a regional board's RapidAPI listing, then set RapidApi__Key and that board's host, path and field names on the server.",
+                    [], ["Search Gulf, Southeast Asia or DACH boards"]),
+            PublicBoard("arbeitnow", "Arbeitnow jobs", "the free public Arbeitnow job board (Germany, Europe and remote)", company: false),
+            PublicBoard("jobicy", "Jobicy remote jobs", "the free public Jobicy remote-jobs feed", company: false),
+            PublicBoard("weworkremotely", "We Work Remotely jobs", "We Work Remotely's public RSS feed of remote jobs", company: false),
 
             new("upwork", "Upwork projects", "Sources", CapabilityStatus.NotBuilt,
                 "Upwork's official API can search marketplace projects for the Sales workspace, but each app needs Upwork's approval and your Upwork account connected (OAuth). Upwork retired its job RSS feeds in 2024.",

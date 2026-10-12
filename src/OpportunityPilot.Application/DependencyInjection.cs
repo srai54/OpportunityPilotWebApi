@@ -54,9 +54,12 @@ public static class DependencyInjection
         services.AddSingleton<Common.OperationalMetrics>();
         services.AddScoped<Common.RetentionService>();
         services.AddScoped<Outreach.ProviderGateway>();
+        services.AddSingleton<Mail.TokenProtector>();
+        services.AddScoped<Mail.MailboxService>();
         services.AddScoped<Capabilities.ProviderReadinessService>();
         services.AddScoped<WellfoundService>();
         services.AddScoped<JobBoardGatherer>();
+        services.AddScoped<JobBoards.FeedSearchService>();
         services.AddScoped<IResearchRunner, ResearchRunner>();
         services.AddSingleton<CapabilityService>();
         return services;

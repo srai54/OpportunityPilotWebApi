@@ -238,6 +238,92 @@ public static class BoardMapping
         return Aggregate(rows, source, JobPlatform.RemoteOk, parser, "id", "position", "company", "location", "url", "description", "date");
     }
 
+    /// <summary>Arbeitnow's free job-board API: <c>{ data: [ { slug, company_name, title, description, remote, url, tags, job_types, location, created_at } ] }</c>.</summary>
+    public static IReadOnlyList<Candidate>? ArbeitnowCandidates(string? json, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root ||
+            Child(root, "data") is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            var slug = Text(row, "slug");
+            var title = Text(row, "title");
+            if (slug is null || title is null) continue;
+            var url = HttpUrl(Text(row, "url"));
+            var description = Text(row, "description") is { } html ? HtmlToText(html, parser) : null;
+            var remote = Child(row, "remote") is { ValueKind: JsonValueKind.True };
+            result.Add(Build(source, JobPlatform.Arbeitnow, slug, title, Text(row, "company_name") ?? string.Empty, Text(row, "location"),
+                remote ? "remote" : null, url, url, null, description, UnixDate(row, "created_at")));
+        }
+        return result;
+    }
+
+    /// <summary>Jobicy's free remote-jobs API: <c>{ jobs: [ { id, url, jobTitle, companyName, jobGeo, jobDescription, pubDate, salary… } ] }</c>.</summary>
+    public static IReadOnlyList<Candidate>? JobicyCandidates(string? json, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root ||
+            Child(root, "jobs") is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            var id = Text(row, "id");
+            var title = Text(row, "jobTitle");
+            if (id is null || title is null) continue;
+            var url = HttpUrl(Text(row, "url"));
+            var description = Text(row, "jobDescription") is { } html ? HtmlToText(html, parser) : Text(row, "jobExcerpt");
+            var pay = Child(row, "salaryMin") is { ValueKind: JsonValueKind.Number } min && Child(row, "salaryMax") is { ValueKind: JsonValueKind.Number } max
+                ? $"Salary: {Text(row, "salaryCurrency")} {min.GetDecimal():0} - {max.GetDecimal():0} {Text(row, "salaryPeriod")}".Trim() : null;
+            result.Add(Build(source, JobPlatform.Jobicy, id, title, Text(row, "companyName") ?? string.Empty, Text(row, "jobGeo"),
+                "remote", url, url, null, pay is null ? description : pay + "\n" + description, Date(Text(row, "pubDate"))));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// We Work Remotely's public RSS feed. An item's title is "Company: Job title"; its link is the posting. DTDs are refused
+    /// so a hostile feed cannot expand entities.
+    /// </summary>
+    public static IReadOnlyList<Candidate>? WeWorkRemotelyCandidates(string? xml, Source source, IContentParser parser)
+    {
+        if (string.IsNullOrWhiteSpace(xml)) return null;
+        System.Xml.Linq.XDocument doc;
+        try
+        {
+            using var reader = System.Xml.XmlReader.Create(new System.IO.StringReader(xml), new System.Xml.XmlReaderSettings
+            {
+                DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersFromEntities = 0
+            });
+            doc = System.Xml.Linq.XDocument.Load(reader);
+        }
+        catch (System.Xml.XmlException) { return null; }
+        var items = doc.Descendants("item").ToList();
+        if (doc.Root is null) return null;
+        var result = new List<Candidate>();
+        foreach (var item in items)
+        {
+            string? Get(string name) => item.Element(name)?.Value;
+            var raw = Get("title")?.Trim();
+            var url = HttpUrl(Get("link")?.Trim());
+            var guid = Get("guid")?.Trim() ?? url;
+            if (string.IsNullOrEmpty(raw) || guid is null) continue;
+            var colon = raw.IndexOf(':');
+            var company = colon > 0 ? raw[..colon].Trim() : string.Empty;
+            var title = colon > 0 ? raw[(colon + 1)..].Trim() : raw;
+            var description = Get("description") is { } html ? HtmlToText(html, parser) : null;
+            DateTime? posted = DateTime.TryParse(Get("pubDate"), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var d) ? d : null;
+            result.Add(Build(source, JobPlatform.WeWorkRemotely, guid, title, company, Get("region"), "remote", url, url, null, description, posted));
+        }
+        return result;
+    }
+
+    /// <summary>A JSON number of Unix seconds as UTC; null when absent or not a number.</summary>
+    private static DateTime? UnixDate(JsonElement row, string name) =>
+        Child(row, name) is { ValueKind: JsonValueKind.Number } n && n.TryGetInt64(out var seconds) && seconds > 0
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime : null;
+
     private static IReadOnlyList<Candidate> Aggregate(JsonElement rows, Source source, JobPlatform platform, IContentParser parser,
         string idName, string titleName, string companyName, string locationName, string urlName, string descriptionName, string dateName)
     {

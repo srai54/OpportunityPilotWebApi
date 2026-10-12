@@ -74,13 +74,13 @@ public sealed class SafeFetcher(
         return CheckShape(uri);
     }
 
-    public Task<FetchResult> FetchAsync(string url, CancellationToken ct) => FetchAsync(url, Pages, ct);
+    public Task<FetchResult> FetchAsync(string url, CancellationToken ct, int? maxBytes = null) => FetchAsync(url, Pages, ct, null, maxBytes);
 
-    public Task<FetchResult> FetchJsonAsync(string url, CancellationToken ct) => FetchAsync(url, Json, ct);
+    public Task<FetchResult> FetchJsonAsync(string url, CancellationToken ct, int? maxBytes = null) => FetchAsync(url, Json, ct, null, maxBytes);
 
     public Task<FetchResult> PostJsonAsync(string url, string jsonBody, CancellationToken ct) => FetchAsync(url, Json, ct, jsonBody);
 
-    private async Task<FetchResult> FetchAsync(string url, Reading reading, CancellationToken ct, string? body = null)
+    private async Task<FetchResult> FetchAsync(string url, Reading reading, CancellationToken ct, string? body = null, int? maxBytes = null)
     {
         if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)) return FetchResult.Fail("The URL is not a valid absolute URL.");
 
@@ -95,7 +95,7 @@ public sealed class SafeFetcher(
                 Attempt attempt = default!;
                 for (var retry = 0; ; retry++)
                 {
-                    attempt = await AttemptAsync(uri, reading, ct, body);
+                    attempt = await AttemptAsync(uri, reading, ct, body, maxBytes);
                     requests++;
                     if (!attempt.Transient || retry >= MaxRetries) break;
                     // Exponential backoff with jitter: 0.5 s, 1 s, 2 s (+ up to 250 ms).
@@ -125,7 +125,7 @@ public sealed class SafeFetcher(
 
     private sealed record Attempt(string? Content, string? ContentType, Uri? Redirect, string? Failure, bool Transient, int? Status = null);
 
-    private async Task<Attempt> AttemptAsync(Uri uri, Reading reading, CancellationToken ct, string? body = null)
+    private async Task<Attempt> AttemptAsync(Uri uri, Reading reading, CancellationToken ct, string? body = null, int? maxBytes = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(_limits.EffectiveTimeout);
@@ -155,7 +155,7 @@ public sealed class SafeFetcher(
             if (mediaType is null || !reading.Types.Contains(mediaType))
                 return new(null, null, null, $"Content type {mediaType ?? "(none)"} is not read; {reading.Rejected}", false);
 
-            var max = _limits.EffectiveBytes;
+            var max = maxBytes is { } large ? Math.Clamp(large, _limits.EffectiveBytes, ResearchOptions.LargeFeedBytes) : _limits.EffectiveBytes;
             if (response.Content.Headers.ContentLength > max)
                 return new(null, null, null, $"The page is larger than {max / 1024} KB.", false);
 

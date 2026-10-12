@@ -20,7 +20,8 @@ public sealed record OpportunitySummaryDto(
     string? OutcomeReason,
     OpportunityStatus Status,
     int GapsCount,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    DateTime FoundAt);
 
 /// <param name="Total">Matching rows after filters, before paging.</param>
 public sealed record OpportunityPageDto(int Total, IReadOnlyList<OpportunitySummaryDto> Items);

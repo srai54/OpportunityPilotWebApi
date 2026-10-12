@@ -9,7 +9,7 @@ namespace OpportunityPilot.Api.Controllers;
 [Route("api/v1/opportunities")]
 public sealed class OpportunitiesController(OpportunityService opportunities) : ControllerBase
 {
-    /// <summary>sort = score (default) or recent; take 1–200 (default 50).</summary>
+    /// <summary>sort = score (default), recent (last updated), found (newest first) or oldest (first found first); take 1–200 (default 50).</summary>
     [HttpGet("/api/v1/campaigns/{campaignId:guid}/opportunities")]
     public async Task<ActionResult<OpportunityPageDto>> List(
         Guid campaignId, [FromQuery] FilterOutcome? outcome, [FromQuery] OpportunityStatus? status, [FromQuery] string? sort,

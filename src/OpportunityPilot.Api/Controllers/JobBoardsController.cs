@@ -8,8 +8,27 @@ namespace OpportunityPilot.Api.Controllers;
 [ApiController]
 [Route("api/v1/jobboards")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
-public sealed class JobBoardsController(IJobBoardSearch search) : ControllerBase
+public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchService feeds) : ControllerBase
 {
+    /// <summary>"Search all": the free public feeds (no key, no quota), merged and de-duplicated. <c>sites</c> is a comma list; empty means all.</summary>
+    [HttpGet("feeds")]
+    public async Task<ActionResult<FeedSearchResult>> Feeds([FromQuery] string query, [FromQuery] string? sites = null, [FromQuery] string? location = null,
+        [FromQuery] bool remoteOnly = false, [FromQuery] int take = 60, CancellationToken ct = default)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(query) || query.Length > 200) errors["query"] = ["Enter a search of 1–200 characters."];
+        if (location is { Length: > 100 }) errors["location"] = ["Location is at most 100 characters."];
+        var chosen = new List<FeedSite>();
+        foreach (var name in (sites ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Enum.TryParse<FeedSite>(name, ignoreCase: true, out var site) && Enum.IsDefined(site)) chosen.Add(site);
+            else errors["sites"] = [$"Unknown site '{name}'. Use {string.Join(", ", Enum.GetNames<FeedSite>())}."];
+        }
+        if (errors.Count > 0) throw new RequestValidationException(errors);
+        if (chosen.Count == 0) chosen.AddRange(Enum.GetValues<FeedSite>());
+        return await feeds.SearchAsync(chosen, query.Trim(), location?.Trim(), remoteOnly, take, ct);
+    }
+
     [HttpGet("status")]
     public ActionResult<object> Status() => Ok(new { configured = search.Configured, boards = Enum.GetNames<JobBoard>() });
 
@@ -42,13 +61,13 @@ public sealed class JobBoardsController(IJobBoardSearch search) : ControllerBase
 [ApiController]
 [Route("api/v1/indeed")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
-public sealed class IndeedController(IJobBoardSearch search) : ControllerBase
+public sealed class IndeedController(IJobBoardSearch search, FeedSearchService feeds) : ControllerBase
 {
     [HttpGet("jobs")]
     public Task<ActionResult<JobBoardSearchResult>> Jobs(
         [FromQuery] string query, [FromQuery] string? location = null, [FromQuery] bool remoteOnly = false,
         [FromQuery] string datePosted = "week", [FromQuery] string? country = null, [FromQuery] int page = 1,
         CancellationToken ct = default) =>
-        new JobBoardsController(search) { ControllerContext = ControllerContext }
+        new JobBoardsController(search, feeds) { ControllerContext = ControllerContext }
             .Jobs(query, JobBoard.Indeed, location, remoteOnly, datePosted, country, page, null, null, null, null, ct);
 }

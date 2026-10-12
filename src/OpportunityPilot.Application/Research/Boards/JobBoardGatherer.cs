@@ -57,6 +57,15 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
         SourceKind.RemoteOk => AggregateAsync(source, room, fetchesLeft,
             $"{Base(_limits.RemoteOkApiBase, ResearchOptions.DefaultRemoteOkApiBase)}/api",
             json => BoardMapping.RemoteOkCandidates(json, source, parser), ct),
+        SourceKind.Arbeitnow => ReadOneAsync(source, room, fetchesLeft,
+            $"{Base(_limits.ArbeitnowApiBase, ResearchOptions.DefaultArbeitnowApiBase)}/api/job-board-api",
+            json => BoardMapping.ArbeitnowCandidates(json, source, parser), ct, ResearchOptions.LargeFeedBytes),
+        SourceKind.Jobicy => ReadOneAsync(source, room, fetchesLeft,
+            $"{Base(_limits.JobicyApiBase, ResearchOptions.DefaultJobicyApiBase)}/api/v2/remote-jobs?count=50",
+            json => BoardMapping.JobicyCandidates(json, source, parser), ct),
+        SourceKind.WeWorkRemotely => ReadOneAsync(source, room, fetchesLeft,
+            $"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss",
+            xml => BoardMapping.WeWorkRemotelyCandidates(xml, source, parser), ct, ResearchOptions.LargeFeedBytes, rss: true),
         _ => throw new ArgumentOutOfRangeException(nameof(source), "Not a job-board source.")
     };
 
@@ -74,10 +83,10 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
     }
 
     private async Task<BoardGathered> ReadOneAsync(Source source, int room, int fetchesLeft, string url,
-        Func<string?, IReadOnlyList<Candidate>?> map, CancellationToken ct)
+        Func<string?, IReadOnlyList<Candidate>?> map, CancellationToken ct, int? maxBytes = null, bool rss = false)
     {
         if (fetchesLeft <= 0) return FetchLimitReached(source);
-        var response = await fetcher.FetchJsonAsync(url, ct);
+        var response = rss ? await fetcher.FetchAsync(url, ct, maxBytes) : await fetcher.FetchJsonAsync(url, ct, maxBytes);
         if (!response.Ok) return Failed(source, response.StatusCode == 404
             ? $"No public {source.Kind} jobs were found. Check the source identifier."
             : response.FailureReason ?? $"{source.Kind} could not be read.", response.Requests);
