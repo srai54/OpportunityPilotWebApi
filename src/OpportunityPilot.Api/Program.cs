@@ -23,6 +23,8 @@ builder.Services.Configure<AdzunaOptions>(builder.Configuration.GetSection(Adzun
 builder.Services.Configure<JsearchOptions>(builder.Configuration.GetSection(JsearchOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.JobBoards.RapidApiBoardsOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.JobBoards.RapidApiBoardsOptions.Section));
 
+builder.Services.Configure<OpportunityPilot.Application.Mail.MailOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Mail.MailOptions.Section));
+
 // Missing configuration does not stop the process. Without a connection string data is kept in memory;
 // without a Supabase URL visitors continue as random guests. /api/v1/capabilities reports both (demo mode).
 var setup = new SetupState();

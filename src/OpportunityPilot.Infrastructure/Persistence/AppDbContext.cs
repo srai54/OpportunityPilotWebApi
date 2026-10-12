@@ -66,6 +66,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<WellfoundJob> WellfoundJobs => Set<WellfoundJob>();
     public DbSet<WellfoundApplication> WellfoundApplications => Set<WellfoundApplication>();
     public DbSet<WellfoundActivity> WellfoundActivities => Set<WellfoundActivity>();
+    public DbSet<Domain.Mail.MailboxConnection> MailboxConnections => Set<Domain.Mail.MailboxConnection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -128,6 +129,18 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             // Two requests racing to execute the same approved content: the database lets only one through.
             e.HasIndex(x => new { x.OwnerId, x.IdempotencyKey }).IsUnique();
             e.HasIndex(x => new { x.OwnerId, x.SubjectId });
+        });
+
+        modelBuilder.Entity<Domain.Mail.MailboxConnection>(e =>
+        {
+            e.ToTable("mailbox_connections");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Provider).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.EmailAddress).HasMaxLength(Domain.Mail.MailboxConnection.MaxEmailLength).IsRequired();
+            e.Property(x => x.EncryptedRefreshToken).HasMaxLength(Domain.Mail.MailboxConnection.MaxTokenLength).IsRequired();
+            e.HasIndex(x => new { x.OwnerId, x.Provider }).IsUnique();
         });
 
         modelBuilder.Entity<Domain.Ai.AiUsage>(e =>

@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IWellfoundPublicJobReader, WellfoundPublicJobReader>();
         services.AddHttpClient<IJobBoardSearch, JsearchBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<IRapidApiBoardSearch, RapidApiBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<Application.Mail.IMailTransport, Mail.MailTransport>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<Application.Trends.ITrendSource, JsearchTrendClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<IWebFetcher, SafeFetcher>(SafeFetcher.ClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(sp => SafeFetcher.CreateHandler(sp.GetRequiredService<IFetchAddressPolicy>()))

@@ -432,6 +432,48 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.ToTable("outreach_drafts", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Mail.MailboxConnection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ConnectedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EmailAddress")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
+                    b.Property<string>("EncryptedRefreshToken")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "Provider")
+                        .IsUnique();
+
+                    b.ToTable("mailbox_connections", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Opportunities.Activity", b =>
                 {
                     b.Property<Guid>("Id")
