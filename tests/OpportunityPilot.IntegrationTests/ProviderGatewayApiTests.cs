@@ -37,6 +37,35 @@ public class ProviderGatewayApiTests(PostgresApiFactory factory) : IClassFixture
     }
 
     [Fact]
+    public async Task A_sent_message_can_be_reopened_edited_and_sent_again_as_a_new_send()
+    {
+        var (user, opportunityId) = await ShortlistedCompanyAsync(factory, "reopen@example.test");
+        var draft = await ApprovedEmailAsync(user, opportunityId, "ops@northwind.example");
+        var first = await (await user.PostAsJsonAsync($"/api/v1/executions/drafts/{draft.Id()}", new { version = draft.Int("version") })).Json(HttpStatusCode.OK);
+        await (await user.PostAsJsonAsync($"/api/v1/executions/{first.Id()}/confirm", new { receipt = "Outlook Sent Items: first" })).Json(HttpStatusCode.OK);
+
+        // Only a sent message can be reopened, and it comes back as an editable new version that needs a fresh approval.
+        var reopened = await (await user.PostAsync($"/api/v1/drafts/{draft.Id()}/reopen", null)).Json(HttpStatusCode.OK);
+        Assert.Equal("Draft", reopened.Str("state"));
+        Assert.Equal(draft.Int("version") + 1, reopened.Int("version"));
+        Assert.Equal(HttpStatusCode.Conflict, (await user.PostAsync($"/api/v1/drafts/{draft.Id()}/reopen", null)).StatusCode);
+
+        // Changed words = a new send, with its own record; the first send stays on record.
+        var edited = await (await user.PutAsJsonAsync($"/api/v1/drafts/{draft.Id()}", new
+        {
+            recipient = "ops@northwind.example", subject = "Following up", body = "Hello again, a short follow-up. Regards, Asha", expectedVersion = reopened.Int("version")
+        })).Json(HttpStatusCode.OK);
+        var approved = await (await user.PostAsJsonAsync($"/api/v1/drafts/{draft.Id()}/approve", new { version = edited.Int("version") })).Json(HttpStatusCode.OK);
+        var second = await (await user.PostAsJsonAsync($"/api/v1/executions/drafts/{draft.Id()}", new { version = approved.Int("version") })).Json(HttpStatusCode.OK);
+        Assert.NotEqual(first.Id(), second.Id());
+        Assert.False(second.GetProperty("reused").GetBoolean());
+        await (await user.PostAsJsonAsync($"/api/v1/executions/{second.Id()}/confirm", new { receipt = "Outlook Sent Items: second" })).Json(HttpStatusCode.OK);
+        Assert.Equal("Sent", (await user.GetJson($"/api/v1/opportunities/{opportunityId}/drafts")).EnumerateArray().Single().Str("state"));
+        var executions = (await user.GetJson($"/api/v1/executions?subjectId={draft.Id()}")).EnumerateArray().ToList();
+        Assert.Equal(2, executions.Count(e => e.Str("state") == "Succeeded"));
+    }
+
+    [Fact]
     public async Task Marking_an_opportunity_applied_schedules_one_follow_up()
     {
         var (user, opportunityId) = await ShortlistedCompanyAsync(factory, "applied-follow-up@example.test");
