@@ -39,6 +39,10 @@ public sealed class OpportunityService(IAppDbContext db, ICurrentUser user, Time
         return new OpportunityPageDto(total, items.Select(ToSummary).ToList());
     }
 
+    /// <summary>Qualified opportunities nobody has decided on yet (status New): the review queue of campaigns that do not suggest for approval, such as Sales.</summary>
+    public async Task<int> CountQualifiedNewAsync(CancellationToken ct) =>
+        await Owned.CountAsync(o => o.Status == OpportunityStatus.New && o.Outcome == FilterOutcome.Qualified, ct);
+
     public async Task<int> CountShortlistedAsync(CancellationToken ct) =>
         await Owned.CountAsync(o => o.Status == OpportunityStatus.Shortlisted, ct);
 
