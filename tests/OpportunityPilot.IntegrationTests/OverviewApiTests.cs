@@ -6,7 +6,7 @@ namespace OpportunityPilot.IntegrationTests;
 
 public class OverviewApiTests(PostgresApiFactory factory) : IClassFixture<PostgresApiFactory>
 {
-    private record OverviewResponse(int Profiles);
+    private record OverviewResponse(int Profiles, int DraftsApproved, int DraftsSent, int FollowUpsOpen);
 
     [Fact]
     public async Task Capabilities_are_readable_before_sign_in_and_contain_no_secrets()
@@ -42,6 +42,8 @@ public class OverviewApiTests(PostgresApiFactory factory) : IClassFixture<Postgr
         }
 
         Assert.Equal(2, (await carol.GetFromJsonAsync<OverviewResponse>("/api/v1/overview"))!.Profiles);
-        Assert.Equal(0, (await dave.GetFromJsonAsync<OverviewResponse>("/api/v1/overview"))!.Profiles);
+        var daveView = (await dave.GetFromJsonAsync<OverviewResponse>("/api/v1/overview"))!;
+        Assert.Equal(0, daveView.Profiles);
+        Assert.Equal(0, daveView.DraftsApproved + daveView.DraftsSent + daveView.FollowUpsOpen);
     }
 }

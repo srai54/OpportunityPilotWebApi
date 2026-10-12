@@ -17,6 +17,10 @@ public sealed class OutreachService(IAppDbContext db, ICurrentUser user, TimePro
         return db.NextActions.CountAsync(x => x.OwnerId == OwnerId && x.State == NextActionState.Open && x.DueAt <= due, ct);
     }
 
+    /// <summary>All follow-ups still open, due or not.</summary>
+    public Task<int> CountOpenAsync(CancellationToken ct) =>
+        db.NextActions.CountAsync(x => x.OwnerId == OwnerId && x.State == NextActionState.Open, ct);
+
     public async Task<IReadOnlyList<SuppressionDto>> ListSuppressionsAsync(CancellationToken ct) =>
         await db.Suppressions.Where(x => x.OwnerId == OwnerId).OrderBy(x => x.NormalizedRecipient)
             .Select(x => new SuppressionDto(x.Id, x.NormalizedRecipient, x.Reason, x.CreatedAt)).ToListAsync(ct);
