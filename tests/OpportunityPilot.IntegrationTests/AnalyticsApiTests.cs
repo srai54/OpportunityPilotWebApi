@@ -32,6 +32,30 @@ public class AnalyticsApiTests(PostgresApiFactory factory) : IClassFixture<Postg
         Assert.Equal(0, sales.GetProperty("qualifiedByIndustry").GetArrayLength());
     }
 
+    [Fact]
+    public async Task Trend_returns_one_point_per_day_and_counts_what_was_found()
+    {
+        var unauth = await factory.CreateClient().GetAsync("/api/v1/analytics/trend?workspace=Candidate");
+        Assert.Equal(HttpStatusCode.Unauthorized, unauth.StatusCode);
+
+        var client = factory.ClientFor($"analytics-trend-{Guid.NewGuid():N}@example.test");
+        var empty = await client.GetJson("/api/v1/analytics/trend?workspace=Sales&days=14");
+        Assert.Equal(14, empty.GetProperty("points").GetArrayLength());
+        Assert.Equal(0, empty.GetProperty("current").Int("found"));
+
+        var campaign = await ResearchApi.CreateCampaignAsync(client, "Customer", new { keywords = new[] { "React" } });
+        await ResearchApi.AddPasteAsync(client, campaign.Id(), "Contoso\nLocation: London\nContoso is hiring React developers.");
+        await ResearchApi.QueueAsync(client, campaign.Id());
+        await PostgresApiFactory.RunResearchAsync(factory.Services);
+
+        var trend = await client.GetJson("/api/v1/analytics/trend?workspace=Sales&days=14");
+        Assert.Equal(1, trend.GetProperty("current").Int("found"));
+        Assert.Equal(1, trend.GetProperty("points")[13].Int("found"));   // today is the last point
+        Assert.Equal(0, trend.GetProperty("previous").Int("found"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v1/analytics/trend?workspace=Sales&days=3")).StatusCode);
+    }
+
     [Theory]
     [InlineData("Unknown", 30)]
     [InlineData("Candidate", 0)]
