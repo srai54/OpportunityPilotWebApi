@@ -38,6 +38,7 @@ public sealed class ResearchRunner(
 
     /// <summary>Suggestions made in this run but not yet saved, so a concurrent user status change can withdraw them.</summary>
     private readonly Dictionary<Guid, Activity> _pendingSuggestions = [];
+    private readonly HashSet<Guid> _autoApproved = [];
 
     private sealed class LeaseLostException : Exception;
 
@@ -235,7 +236,8 @@ public sealed class ResearchRunner(
         AddEvent(job, ResearchStage.Score, EventLevel.Info,
             $"Saved {created} new and updated {updated} existing opportunit{(created + updated == 1 ? "y" : "ies")}." +
             (overLimit > 0 ? $" {overLimit} more new one{Plural(overLimit)} beyond the campaign's result limit ({campaign.ResultLimit}) were not saved." : "") +
-            (suggested > 0 ? $" {suggested} suggested for your approval (score ≥ {campaign.AutoSuggestMinScore})." : ""));
+            (suggested - _autoApproved.Count > 0 ? $" {suggested - _autoApproved.Count} suggested for your approval (score ≥ {campaign.AutoSuggestMinScore})." : "") +
+            (_autoApproved.Count > 0 ? $" {_autoApproved.Count} approved automatically (score ≥ {campaign.AutoApproveMinScore})." : ""));
         job.Progress(ResearchStage.Score, counts.ToJson(), Now(), Lease);
         await SaveAsync(job, ct);
 
@@ -468,6 +470,14 @@ public sealed class ResearchRunner(
     /// <summary>New → Suggested when the campaign's auto-suggest rule holds (see <see cref="Opportunity.SuggestForApproval"/>).</summary>
     private void Suggest(Opportunity o, Campaign campaign, DateTime now)
     {
+        if (o.ApproveAutomatically(campaign.AutoApproveMinScore, now) is { } approved)
+        {
+            db.Activities.Add(approved);
+            // Tracked with the suggestions: if the person moves it first, their status wins and this is withdrawn.
+            _pendingSuggestions[o.Id] = approved;
+            _autoApproved.Add(o.Id);
+            return;
+        }
         if (o.SuggestForApproval(campaign.AutoSuggestMinScore, now) is not { } activity) return;
         db.Activities.Add(activity);
         _pendingSuggestions[o.Id] = activity;
@@ -503,6 +513,7 @@ public sealed class ResearchRunner(
             {
                 await db.SaveChangesAsync(ct);
                 _pendingSuggestions.Clear();
+                _autoApproved.Clear();
                 return;
             }
             catch (DbUpdateConcurrencyException ex) when (attempt < 3)
@@ -527,6 +538,7 @@ public sealed class ResearchRunner(
                         entry.Property(nameof(Opportunity.Status)).IsModified = false;
                         db.Activities.Remove(suggestion);
                         _pendingSuggestions.Remove(o.Id);
+                        _autoApproved.Remove(o.Id);
                     }
 
                     foreach (var property in entry.Properties)

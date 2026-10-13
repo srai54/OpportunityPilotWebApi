@@ -297,6 +297,9 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int?>("AutoApproveMinScore")
+                        .HasColumnType("int");
+
                     b.Property<int?>("AutoSuggestMinScore")
                         .HasColumnType("int");
 
