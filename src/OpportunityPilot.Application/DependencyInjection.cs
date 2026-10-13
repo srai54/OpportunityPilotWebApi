@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<ImportService>();
         services.AddScoped<ResearchService>();
         services.AddScoped<OpportunityService>();
+        services.AddScoped<ContactFinder>();
         services.AddScoped<AgentResearchService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
