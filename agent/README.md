@@ -73,6 +73,40 @@ npm run agent -- sync                                    # re-upload results the
 Naukri sends an application the moment Apply is clicked, so its dry run stops *before*
 Apply; its recruiter questionnaire is only exercised with `--submit`.
 
+## Scheduling (run the campaign and apply on a timer)
+
+A **cycle** is: for each target, `collect` new postings for the campaign (research then scores them), then `apply` to the jobs **you already approved** in the web app. Nothing is applied to that you did not approve, and a cycle is a **dry run** unless you turn `schedule.submit` on.
+
+Add this to `config.json`:
+
+```json
+"schedule": {
+  "targets": [{ "platform": "linkedin", "campaignId": "<id from: npm run agent -- campaigns>" }],
+  "everyHours": 24,
+  "window": "09:00-18:00",
+  "jitterMinutes": 20,
+  "submit": false,
+  "applyLimit": 5
+}
+```
+
+```bash
+npm run agent -- cycle       # one round now (what the timer runs)
+npm run agent -- watch       # keep running: next cycle every everyHours, only inside the window, random delay added
+npm run agent -- schedule    # prints the Windows Task Scheduler / cron line that starts `cycle` for you
+npm run agent -- status      # shows the last cycle and its result
+```
+
+| Rule | Behaviour |
+|---|---|
+| One at a time | A lock file stops two cycles overlapping; a crashed run's lock expires after 6 hours |
+| Stops on trouble | A security check, a logged-out session or a daily limit ends the cycle (exit code 2); `watch` exits and waits for you |
+| No retry storm | A failed collect/apply stops the cycle; three failed cycles in a row stop `watch` |
+| Real applications | Only when `schedule.submit` is `true` **and** `iUnderstandAccountRisk` is `true`; still capped by `applyLimit`, `maxApplicationsPerRun` and `maxApplicationsPerDay` |
+| Your computer | The browser window opens on your desktop; keep the computer on and signed in at the scheduled time |
+
+Verified: the timing, window, lock, ordering and stop rules are unit-tested. **Not verified:** a scheduled run against the live LinkedIn/Naukri sites (the agent has not been run live yet).
+
 ## What each result means
 
 | Status | Meaning |
@@ -98,6 +132,7 @@ limit, `limits.maxApplicationsPerDay`, or three failures in a row.
 | `limits.maxPages` | result pages per keyword when collecting |
 | `limits.maxPostingsPerCollect` | postings opened and sent per collect run |
 | `search.postedWithinDays` | only postings this recent |
+| `schedule.*` | targets, everyHours, window, jitterMinutes, submit, applyLimit (see Scheduling) |
 | `profile.resumePath` | uploaded only when a form demands a resume |
 | `profile.followCompanies` | LinkedIn's "follow company" box (default off) |
 | `profile.acceptTermsCheckboxes` | tick "I agree / I confirm" boxes for you (default **off** — such forms become *Needs you*) |

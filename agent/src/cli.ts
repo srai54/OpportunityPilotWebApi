@@ -3,13 +3,17 @@ import { createInterface } from 'node:readline/promises'
 import { agentCampaigns, report, sendPostings, shortlist } from './api.ts'
 import { collectPostings } from './collect.ts'
 import { openBrowser } from './browser.ts'
-import { CONFIG_PATH, DATA_DIR, loadConfig, writeExampleConfig } from './config.ts'
+import { AGENT_DIR, CONFIG_PATH, DATA_DIR, loadConfig, writeExampleConfig } from './config.ts'
 import { linkedIn } from './platforms/linkedin.ts'
 import { naukri } from './platforms/naukri.ts'
 import { instahyre } from './platforms/instahyre.ts'
 import type { PlatformAdapter } from './platforms/types.ts'
 import { applyToShortlist } from './run.ts'
 import { Store } from './store.ts'
+import {
+  acquireLock, inWindow, nextRun, readState, runCycle, schedulerLines, validateSchedule, writeState,
+  type ScheduleTarget,
+} from './schedule.ts'
 
 const HELP = `OpportunityPilot agent — research input and applications from your own logged-in browser.
 
@@ -23,6 +27,10 @@ const HELP = `OpportunityPilot agent — research input and applications from yo
         --submit      send real applications (needs "iUnderstandAccountRisk": true)
         --limit N     at most N applications this run
         --headless    no visible window (not recommended)
+  npm run agent -- cycle                     one scheduled round now: for each schedule.targets entry, collect, then apply
+                                             to the jobs you approved (a dry run unless schedule.submit is true)
+  npm run agent -- watch                     keep running: a cycle every schedule.everyHours inside schedule.window
+  npm run agent -- schedule                  print the Task Scheduler / cron line that starts a cycle for you
   npm run agent -- sync                      upload results the web app has not received
   npm run agent -- status                    summary of the local log
 `
@@ -38,6 +46,118 @@ function adapterFor(name: string | undefined): PlatformAdapter {
 }
 
 const store = () => new Store(join(DATA_DIR, 'applications.jsonl'))
+
+async function collectRun(platform: string | undefined, campaignId: string | undefined, opts: { headless: boolean; limit?: number }): Promise<{ sent: number }> {
+  const adapter = adapterFor(platform)
+  const config = loadConfig()
+  if (!campaignId) throw new Error('Which campaign? Add --campaign <id> (see: npm run agent -- campaigns)')
+  const campaigns = await agentCampaigns(config.api)
+  if (!campaigns.ok) throw new Error(`Could not read the campaign: ${campaigns.reason}`)
+  const campaign = campaigns.data.find((c) => c.id === campaignId)
+  if (!campaign) throw new Error(`No Job campaign ${campaignId}. See: npm run agent -- campaigns`)
+
+  const { context, page } = await openBrowser({ headless: opts.headless })
+  try {
+    if (!(await adapter.isLoggedIn(page))) throw new Error(`Not logged in to ${adapter.platform}. Run: npm run agent -- login ${platform}`)
+    const jobs = await collectPostings({
+      adapter,
+      page,
+      campaign,
+      postedWithinDays: config.search.postedWithinDays,
+      maxPages: config.limits.maxPages,
+      limit: opts.limit ?? config.limits.maxPostingsPerCollect,
+      pauseSeconds: config.limits.pauseSeconds,
+      skip: (id) => store().isDone(adapter.platform, id),
+    })
+    if (jobs.length === 0) { console.log('No new postings found.'); return { sent: 0 } }
+    let jobId: string | null | undefined
+    for (let i = 0; i < jobs.length; i += 100) {
+      const batch = jobs.slice(i, i + 100)
+      const sent = await sendPostings(config.api, campaign.id, adapter.platform, batch, i + 100 >= jobs.length)
+      if (!sent.ok) throw new Error(`Could not send postings: ${sent.reason}`)
+      jobId = sent.data.jobId ?? jobId
+    }
+    console.log(`Sent ${jobs.length} posting(s) to "${campaign.name}"${jobId ? ' and queued research' : ''}.`)
+    console.log(`Next: open the campaign's Opportunities in the web app, shortlist the jobs you want, then run: npm run agent -- apply ${platform}`)
+    return { sent: jobs.length }
+  } finally {
+    await context.close()
+  }
+}
+
+async function applyRun(platform: string | undefined, opts: { submit: boolean; limit?: number; headless: boolean }): Promise<{ stoppedBecause: string | null; refused?: boolean }> {
+  const adapter = adapterFor(platform)
+  const config = loadConfig()
+  if (opts.submit && !config.iUnderstandAccountRisk) {
+    console.error(`${RISK}
+
+To send real applications, set "iUnderstandAccountRisk": true in config.json, then run again.`)
+    return { stoppedBecause: null, refused: true }
+  }
+  const list = await shortlist(config.api, adapter.platform)
+  if (!list.ok) throw new Error(`Could not read your shortlist: ${list.reason}`)
+  console.log(`${RISK}
+`)
+  const jobs = list.data.map((x) => ({
+    externalJobId: x.externalId,
+    url: x.url,
+    title: x.title,
+    company: x.organization,
+    location: null,
+    opportunityId: x.opportunityId,
+    coverNote: x.coverNote ?? undefined,
+  }))
+  const summary = await applyToShortlist({ adapter, config, store: store(), jobs, submit: opts.submit, limit: opts.limit, headless: opts.headless })
+  return { stoppedBecause: summary.stoppedBecause }
+}
+
+const STATE_PATH = join(DATA_DIR, 'schedule-state.json')
+const LOCK_PATH = join(DATA_DIR, 'schedule.lock')
+
+/** One scheduled round over every target. Returns the process exit code: 0 ok, 1 failed, 2 stopped by a guard. */
+async function cycleOnce(): Promise<number> {
+  const config = loadConfig()
+  const problems = validateSchedule(config.schedule)
+  if (problems.length) throw new Error(`The schedule in config.json needs fixing:\n  - ${problems.join('\n  - ')}`)
+  const release = acquireLock(LOCK_PATH, new Date(), process.pid)
+  if (!release) { console.log('Another cycle is already running; this one was skipped.'); return 0 }
+  try {
+    const state = await runCycle(config.schedule, { accountRiskAccepted: config.iUnderstandAccountRisk, maxPerRun: config.limits.maxApplicationsPerRun, now: () => new Date() }, {
+      collect: (t: ScheduleTarget) => collectRun(t.platform, t.campaignId, { headless: false }),
+      apply: async (t: ScheduleTarget, o) => {
+        const r = await applyRun(t.platform, { submit: o.submit, limit: o.limit, headless: false })
+        return { stoppedBecause: r.stoppedBecause }
+      },
+      log: (line) => console.log(line),
+    }, readState(STATE_PATH))
+    writeState(STATE_PATH, state)
+    console.log(`Cycle ${state.cycles}: ${state.lastResult}. ${state.lastMessage ?? ''}`)
+    return state.lastResult === 'ok' ? 0 : state.lastResult === 'stopped' ? 2 : 1
+  } finally {
+    release()
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Keeps running: waits for the next allowed time, runs a cycle, repeats. Stops by itself after a guard stop or three failed cycles. */
+async function watch(): Promise<number> {
+  const config = loadConfig()
+  const problems = validateSchedule(config.schedule)
+  if (problems.length) throw new Error(`The schedule in config.json needs fixing:\n  - ${problems.join('\n  - ')}`)
+  let failures = 0
+  for (;;) {
+    const state = readState(STATE_PATH)
+    const when = nextRun(new Date(), state.lastStart ? new Date(state.lastStart) : null, config.schedule)
+    console.log(`Next cycle at ${when.toLocaleString()} (window ${config.schedule.window}). Press Ctrl+C to stop.`)
+    while (Date.now() < when.getTime()) await sleep(Math.min(60_000, when.getTime() - Date.now()))
+    if (!inWindow(new Date(), config.schedule.window)) continue
+    const code = await cycleOnce()
+    if (code === 2) { console.log('Stopped by a guard (security check, logged out or a limit). Fix it, then start watch again.'); return 2 }
+    failures = code === 1 ? failures + 1 : 0
+    if (failures >= 3) { console.log('Three cycles in a row failed. Stopping so nothing keeps retrying.'); return 1 }
+  }
+}
 
 async function main(argv: string[]) {
   const [command, platform, ...rest] = argv
@@ -84,70 +204,33 @@ async function main(argv: string[]) {
     }
 
     case 'collect': {
-      const adapter = adapterFor(platform)
-      const config = loadConfig()
-      const campaignId = option('--campaign')
-      if (!campaignId) throw new Error('Which campaign? Add --campaign <id> (see: npm run agent -- campaigns)')
-      const campaigns = await agentCampaigns(config.api)
-      if (!campaigns.ok) throw new Error(`Could not read the campaign: ${campaigns.reason}`)
-      const campaign = campaigns.data.find((c) => c.id === campaignId)
-      if (!campaign) throw new Error(`No Job campaign ${campaignId}. See: npm run agent -- campaigns`)
-
-      const { context, page } = await openBrowser({ headless: flag('--headless') })
-      try {
-        if (!(await adapter.isLoggedIn(page))) throw new Error(`Not logged in to ${adapter.platform}. Run: npm run agent -- login ${platform}`)
-        const jobs = await collectPostings({
-          adapter,
-          page,
-          campaign,
-          postedWithinDays: config.search.postedWithinDays,
-          maxPages: config.limits.maxPages,
-          limit: limit ?? config.limits.maxPostingsPerCollect,
-          pauseSeconds: config.limits.pauseSeconds,
-          skip: (id) => store().isDone(adapter.platform, id),
-        })
-        if (jobs.length === 0) return console.log('No new postings found.')
-        let jobId: string | null | undefined
-        for (let i = 0; i < jobs.length; i += 100) {
-          const batch = jobs.slice(i, i + 100)
-          const sent = await sendPostings(config.api, campaign.id, adapter.platform, batch, i + 100 >= jobs.length)
-          if (!sent.ok) throw new Error(`Could not send postings: ${sent.reason}`)
-          jobId = sent.data.jobId ?? jobId
-        }
-        console.log(`Sent ${jobs.length} posting(s) to "${campaign.name}"${jobId ? ' and queued research' : ''}.`)
-        console.log(`Next: open the campaign's Opportunities in the web app, shortlist the jobs you want, then run: npm run agent -- apply ${platform}`)
-      } finally {
-        await context.close()
-      }
+      await collectRun(platform, option('--campaign'), { headless: flag('--headless'), limit })
       return
     }
 
     case 'apply': {
-      const adapter = adapterFor(platform)
-      const config = loadConfig()
-      const submit = flag('--submit')
-      if (submit && !config.iUnderstandAccountRisk) {
-        console.error(`${RISK}
+      const r = await applyRun(platform, { submit: flag('--submit'), limit, headless: flag('--headless') })
+      if (r.refused) process.exitCode = 1
+      else if (r.stoppedBecause) process.exitCode = 2
+      return
+    }
 
-To send real applications, set "iUnderstandAccountRisk": true in config.json, then run again.`)
-        process.exitCode = 1
-        return
-      }
-      const list = await shortlist(config.api, adapter.platform)
-      if (!list.ok) throw new Error(`Could not read your shortlist: ${list.reason}`)
-      console.log(`${RISK}
-`)
-      const jobs = list.data.map((s) => ({
-        externalJobId: s.externalId,
-        url: s.url,
-        title: s.title,
-        company: s.organization,
-        location: null,
-        opportunityId: s.opportunityId,
-        coverNote: s.coverNote ?? undefined,
-      }))
-      const summary = await applyToShortlist({ adapter, config, store: store(), jobs, submit, limit, headless: flag('--headless') })
-      if (summary.stoppedBecause) process.exitCode = 2
+    case 'cycle': {
+      process.exitCode = await cycleOnce()
+      return
+    }
+
+    case 'watch': {
+      process.exitCode = await watch()
+      return
+    }
+
+    case 'schedule': {
+      const config = loadConfig()
+      const w = config.schedule.window.split('-')[0] ?? '09:00'
+      console.log('Edit "schedule" in config.json first (targets, everyHours, window, submit). Then add this so your computer starts a cycle for you:\n')
+      for (const line of schedulerLines(AGENT_DIR, w, process.platform)) console.log('  ' + line)
+      console.log('\nThe agent window opens on your desktop when it runs, so keep the computer on and signed in. Applying stays a dry run until schedule.submit is true.')
       return
     }
 
@@ -176,6 +259,8 @@ To send real applications, set "iUnderstandAccountRisk": true in config.json, th
       for (const r of s.all) rows.set(`${r.platform} ${r.status}`, (rows.get(`${r.platform} ${r.status}`) ?? 0) + 1)
       console.log(`Local log: ${s.all.length} record(s), ${s.all.filter((r) => !r.synced).length} not yet synced, ${s.appliedToday()} applied today.`)
       for (const [k, v] of [...rows].sort()) console.log(`  ${k.padEnd(24)} ${v}`)
+      const cycle = readState(STATE_PATH)
+      if (cycle.cycles > 0) console.log(`Last scheduled cycle (#${cycle.cycles}): ${cycle.lastResult} at ${cycle.lastEnd ?? cycle.lastStart}. ${cycle.lastMessage ?? ''}`)
       return
     }
 
