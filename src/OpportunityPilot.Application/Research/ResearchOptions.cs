@@ -42,6 +42,7 @@ public sealed class ResearchOptions
     public string RemoteOkApiBase { get; set; } = DefaultRemoteOkApiBase;
     public string ArbeitnowApiBase { get; set; } = DefaultArbeitnowApiBase;
     public string JobicyApiBase { get; set; } = DefaultJobicyApiBase;
+    public string HimalayasApiBase { get; set; } = DefaultHimalayasApiBase;
     public string WeWorkRemotelyBase { get; set; } = DefaultWeWorkRemotelyBase;
 
     public const string DefaultGreenhouseApiBase = "https://boards-api.greenhouse.io";
@@ -55,6 +56,7 @@ public sealed class ResearchOptions
     public const string DefaultRemoteOkApiBase = "https://remoteok.com";
     public const string DefaultArbeitnowApiBase = "https://www.arbeitnow.com";
     public const string DefaultJobicyApiBase = "https://jobicy.com";
+    public const string DefaultHimalayasApiBase = "https://himalayas.app";
     public const string DefaultWeWorkRemotelyBase = "https://weworkremotely.com";
 
     /// <summary>Some public feeds (Arbeitnow, about 3 MB a page) are bigger than the usual 1 MB read limit; those few get this larger ceiling.</summary>

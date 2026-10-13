@@ -393,4 +393,19 @@ public class BoardMappingTests
         Assert.Null(BoardMapping.WeWorkRemotelyCandidates("not xml", SourceOf(SourceKind.WeWorkRemotely, null, "WWR"), Parser));
         Assert.Null(BoardMapping.WeWorkRemotelyCandidates("", SourceOf(SourceKind.WeWorkRemotely, null, "WWR"), Parser));
     }
+
+    [Fact]
+    public void Himalayas_maps_a_remote_job_with_its_country_list_and_unix_date()
+    {
+        // Shape copied from a real response seen on 2026-10-13 (trimmed to one job, three countries).
+        var c = BoardMapping.HimalayasCandidates("""{"offset":0,"limit":1,"totalCount":4780,"jobs":[{"title":"Senior React Full-stack Developer","excerpt":"Remote role.","companyName":"lemon.io","employmentType":"Full Time","minSalary":null,"maxSalary":null,"salaryPeriod":"annual","currency":"USD","locationRestrictions":["Germany","France","Spain"],"description":"<p>Build things in React.</p>","pubDate":1790075996,"applicationLink":"https://himalayas.app/companies/lemon-io/jobs/senior-full-stack-developer-4016266853","guid":"https://himalayas.app/companies/lemon-io/jobs/senior-full-stack-developer-4016266853"}]}""",
+            SourceOf(SourceKind.Remotive, null, "Himalayas"), Parser)!.Single();
+        Assert.Equal("lemon.io", c.Organization);
+        Assert.Equal("Remote — Germany, France, Spain", c.Location);
+        Assert.Contains("Build things in React.", c.Text);
+        Assert.Contains("Open to: Germany, France, Spain", c.Text);
+        Assert.StartsWith("https://himalayas.app/", c.ApplyUrl);
+        Assert.NotNull(c.PostedAt);
+        Assert.Null(BoardMapping.HimalayasCandidates("""{"oops":1}""", SourceOf(SourceKind.Remotive, null, "H"), Parser));
+    }
 }
