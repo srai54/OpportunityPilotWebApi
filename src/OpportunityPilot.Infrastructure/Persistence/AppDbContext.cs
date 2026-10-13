@@ -67,6 +67,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<WellfoundApplication> WellfoundApplications => Set<WellfoundApplication>();
     public DbSet<WellfoundActivity> WellfoundActivities => Set<WellfoundActivity>();
     public DbSet<Domain.Mail.MailboxConnection> MailboxConnections => Set<Domain.Mail.MailboxConnection>();
+    public DbSet<UserEvent> UserEvents => Set<UserEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -345,6 +346,17 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.HasOne<Opportunity>().WithMany().HasForeignKey(a => a.OpportunityId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => new { a.OpportunityId, a.OccurredAt });
             e.HasIndex(a => a.OwnerId);
+        });
+
+        modelBuilder.Entity<UserEvent>(e =>
+        {
+            e.ToTable("user_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasMaxLength(32).IsRequired();
+            e.Property(x => x.Detail).HasMaxLength(UserEvent.MaxDetailLength).IsRequired();
+            e.Property(x => x.Title).HasMaxLength(UserEvent.MaxTitleLength);
+            e.HasIndex(x => new { x.OwnerId, x.OccurredAt });
         });
 
         modelBuilder.Entity<OutreachDraft>(e =>

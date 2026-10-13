@@ -2,10 +2,12 @@ using System.Net.Mail;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OpportunityPilot.Application.Abstractions;
+using OpportunityPilot.Application.Analytics;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.Outreach;
 using OpportunityPilot.Domain.Drafts;
 using OpportunityPilot.Domain.Mail;
+using OpportunityPilot.Domain.Opportunities;
 using OpportunityPilot.Domain.Outreach;
 
 namespace OpportunityPilot.Application.Mail;
@@ -62,6 +64,8 @@ public sealed class MailboxService(
         var existing = await db.MailboxConnections.FirstOrDefaultAsync(m => m.OwnerId == s.OwnerId && m.Provider == provider, ct);
         if (existing is null) db.MailboxConnections.Add(new MailboxConnection(s.OwnerId, provider, tokens.EmailAddress, encrypted, Now));
         else existing.Reconnect(tokens.EmailAddress, encrypted, Now);
+        // Written for the person who started the sign-in (the callback carries no signed-in user).
+        db.UserEvents.Add(new UserEvent(s.OwnerId, UserEventKinds.MailboxConnected, Now, $"Connected {Name(provider)} ({tokens.EmailAddress})"));
         await db.SaveChangesAsync(ct);
         return Result("connected");
     }

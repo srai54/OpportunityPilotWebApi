@@ -3,11 +3,13 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Abstractions;
 using OpportunityPilot.Application.Common;
+using OpportunityPilot.Application.Analytics;
+using OpportunityPilot.Domain.Opportunities;
 using OpportunityPilot.Domain.Profiles;
 
 namespace OpportunityPilot.Application.Profiles;
 
-public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProvider clock, UserEventLog events)
 {
     public const int MaxNameLength = 200;
     public const int MaxDataBytes = 32 * 1024;
@@ -40,6 +42,7 @@ public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProv
         var profile = new Profile(user.OwnerId, request.Type, request.Name, data, request.Confirmed, clock.GetUtcNow().UtcDateTime);
         db.Profiles.Add(profile);
         db.ProfileVersions.Add(new ProfileVersion(profile, profile.UpdatedAt));
+        events.Add(UserEventKinds.ProfileSaved, $"Created profile \"{profile.Name}\"");
         await db.SaveChangesAsync(ct);
         return ToDto(profile);
     }
@@ -53,6 +56,7 @@ public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProv
 
         profile.Update(request.Name, data, request.Confirmed, clock.GetUtcNow().UtcDateTime);
         db.ProfileVersions.Add(new ProfileVersion(profile, profile.UpdatedAt));
+        events.Add(UserEventKinds.ProfileSaved, $"Saved profile \"{profile.Name}\" as version {profile.Version}");
         try
         {
             await db.SaveChangesAsync(ct);

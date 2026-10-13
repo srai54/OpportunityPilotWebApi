@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<Outreach.ProviderGateway>();
         services.AddSingleton<Mail.TokenProtector>();
         services.AddScoped<Mail.MailboxService>();
+        services.AddScoped<Analytics.UserEventLog>();
         services.AddScoped<Capabilities.ProviderReadinessService>();
         services.AddScoped<WellfoundService>();
         services.AddScoped<JobBoardGatherer>();

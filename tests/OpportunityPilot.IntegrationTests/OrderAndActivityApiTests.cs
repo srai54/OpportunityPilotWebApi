@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace OpportunityPilot.IntegrationTests;
 
@@ -46,12 +47,77 @@ public class OrderAndActivityApiTests(PostgresApiFactory factory) : IClassFixtur
 
         var mine = (await user.GetJson("/api/v1/analytics/activity?workspace=Sales")).EnumerateArray().ToList();
         Assert.NotEmpty(mine);
-        Assert.All(mine, x => Assert.Equal(id, x.GetProperty("opportunityId").GetGuid()));
+        // Lines about a job or lead point at it; lines about the person's own actions (a saved profile, a run) point at nothing.
+        Assert.All(mine.Where(x => x.GetProperty("opportunityId").ValueKind != JsonValueKind.Null), x => Assert.Equal(id, x.GetProperty("opportunityId").GetGuid()));
         var dates = mine.Select(x => x.GetProperty("at").GetDateTime()).ToList();
         Assert.Equal(dates.OrderByDescending(d => d), dates);
-        Assert.Empty((await other.GetJson("/api/v1/analytics/activity?workspace=Sales")).EnumerateArray());
+        Assert.DoesNotContain((await other.GetJson("/api/v1/analytics/activity?workspace=Sales")).EnumerateArray(), x => x.GetProperty("opportunityId").ValueKind != JsonValueKind.Null);
         // The other workspace has none of these (they are Sales leads), and a bad workspace is refused.
-        Assert.Empty((await user.GetJson("/api/v1/analytics/activity?workspace=Candidate")).EnumerateArray());
+        Assert.DoesNotContain((await user.GetJson("/api/v1/analytics/activity?workspace=Candidate")).EnumerateArray(), x => x.GetProperty("opportunityId").ValueKind != JsonValueKind.Null);
         Assert.Equal(HttpStatusCode.BadRequest, (await user.GetAsync("/api/v1/analytics/activity?workspace=Nope")).StatusCode);
+    }
+
+    private static async Task<(Guid CampaignId, Guid OpportunityId)> OneLeadAsync(HttpClient user)
+    {
+        var campaign = await ResearchApi.CreateCampaignAsync(user, "Customer", new { keywords = new[] { "Dynamics 365" }, locations = new[] { "London" } });
+        await ResearchApi.AddPasteAsync(user, campaign.Id(), Company("Northwind Integrations"));
+        return (campaign.Id(), Guid.Empty);
+    }
+
+    [Fact]
+    public async Task What_the_person_does_is_recorded_with_kind_filters_and_paging_and_nobody_else_sees_it()
+    {
+        var user = PostgresApiFactory.ClientFor(factory, "events-a@example.test");
+        var other = PostgresApiFactory.ClientFor(factory, "events-b@example.test");
+        var (campaignId, _) = await OneLeadAsync(user);
+        await ResearchApi.QueueAsync(user, campaignId);
+        await ResearchApi.QueueAsync(user, campaignId); // a second click while queued is not a second action
+        await PostgresApiFactory.RunResearchAsync(factory.Services);
+        var oppId = Assert.Single(await ResearchApi.OpportunitiesAsync(user, campaignId)).Id();
+        await (await user.PatchAsJsonAsync($"/api/v1/opportunities/{oppId}/status", new { status = "Shortlisted" })).Json(HttpStatusCode.OK);
+        var draft = await (await user.PostAsJsonAsync($"/api/v1/opportunities/{oppId}/drafts", new { channel = "Email", recipient = "ops@northwind.example" })).Json(HttpStatusCode.Created);
+        draft = await (await user.PutAsJsonAsync($"/api/v1/drafts/{draft.Id()}", new { recipient = "ops@northwind.example", subject = "Hello", body = "Hello Northwind team, we deliver .NET work. Regards, Asha", expectedVersion = draft.Int("version") })).Json(HttpStatusCode.OK);
+        await (await user.PostAsJsonAsync($"/api/v1/drafts/{draft.Id()}/approve", new { version = draft.Int("version") })).Json(HttpStatusCode.OK);
+
+        var all = (await user.GetJson("/api/v1/analytics/activity?workspace=Sales&take=100")).EnumerateArray().ToList();
+        var kinds = all.Select(x => x.Str("kind")).ToList();
+        Assert.Contains("ProfileSaved", kinds);
+        Assert.Equal(1, kinds.Count(k => k == "RunStarted"));
+        Assert.Contains("DraftCreated", kinds);
+        Assert.Contains("DraftEdited", kinds);
+        Assert.Contains("DraftApproved", kinds);
+        var approved = all.First(x => x.Str("kind") == "DraftApproved");
+        Assert.Equal(oppId, approved.GetProperty("opportunityId").GetGuid());
+        Assert.Contains("email draft", approved.Str("detail"));
+        Assert.Equal("Northwind Integrations", approved.Str("organization"));
+        var times = all.Select(x => x.GetProperty("at").GetDateTime()).ToList();
+        Assert.Equal(times.OrderByDescending(t => t), times);
+
+        // Filter by kind, by date and by cursor.
+        var onlyDrafts = (await user.GetJson("/api/v1/analytics/activity?workspace=Sales&kinds=DraftCreated,DraftApproved")).EnumerateArray().ToList();
+        Assert.All(onlyDrafts, x => Assert.Contains(x.Str("kind"), new[] { "DraftCreated", "DraftApproved" }));
+        Assert.Equal(2, onlyDrafts.Count);
+        Assert.Empty((await user.GetJson($"/api/v1/analytics/activity?workspace=Sales&from={Uri.EscapeDataString(DateTime.UtcNow.AddDays(1).ToString("O"))}")).EnumerateArray());
+        var newest = all[0].GetProperty("at").GetDateTime();
+        var older = (await user.GetJson($"/api/v1/analytics/activity?workspace=Sales&take=100&before={Uri.EscapeDataString(newest.ToUniversalTime().ToString("O"))}")).EnumerateArray().ToList();
+        Assert.True(older.Count < all.Count);
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.GetAsync("/api/v1/analytics/activity?workspace=Sales&kinds=Nonsense")).StatusCode);
+
+        Assert.DoesNotContain((await other.GetJson("/api/v1/analytics/activity?workspace=Sales&take=100")).EnumerateArray(), x => x.Str("kind") == "DraftApproved");
+    }
+
+    [Fact]
+    public async Task Exporting_includes_the_activity_and_never_a_mailbox_token_and_deleting_removes_both()
+    {
+        var user = PostgresApiFactory.ClientFor(factory, "events-export@example.test");
+        await ResearchApi.CreateProfileAsync(user);
+        var export = await (await user.GetAsync("/api/v1/account-data/export")).Content.ReadAsStringAsync();
+        Assert.Contains("userEvents", export);
+        Assert.Contains("mailboxes", export);
+        Assert.DoesNotContain("EncryptedRefreshToken", export);
+        Assert.Contains("ProfileSaved", export);
+        var del = await user.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/api/v1/account-data") { Content = JsonContent.Create(new { confirm = true }) });
+        Assert.True(del.IsSuccessStatusCode, await del.Content.ReadAsStringAsync());
+        Assert.Empty((await user.GetJson("/api/v1/analytics/activity?workspace=Sales")).EnumerateArray());
     }
 }

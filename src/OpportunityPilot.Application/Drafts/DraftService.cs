@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Abstractions;
+using OpportunityPilot.Application.Analytics;
 using OpportunityPilot.Application.Campaigns;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.Research.Rules;
@@ -11,7 +12,7 @@ using OpportunityPilot.Domain.Opportunities;
 
 namespace OpportunityPilot.Application.Drafts;
 
-public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvider clock, UserEventLog events)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -45,6 +46,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         var draft = new OutreachDraft(ownerId, opportunity.Id, request.Channel, request.Recipient, recipientEvidence is not null, null,
             generated.Body, DraftSource.Template, JsonSerializer.Serialize(generated.Claims, Json), now);
         db.OutreachDrafts.Add(draft);
+        events.Add(UserEventKinds.DraftCreated, $"Wrote {WithArticle(ChannelName(request.Channel))} draft", opportunity.Id, opportunity.Title);
         try
         {
             await db.SaveChangesAsync(ct);
@@ -114,6 +116,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         {
             var verified = RecipientEvidence(request.Recipient, await OpportunityFactsAsync(draft.OpportunityId, ct)) is not null;
             draft.Update(request.Recipient, verified, request.Subject, request.Body, clock.GetUtcNow().UtcDateTime);
+            await LogDraftAsync(UserEventKinds.DraftEdited, $"Edited the {ChannelName(draft.Channel)} draft (version {draft.Version})", draft.OpportunityId, ct);
             await db.SaveChangesAsync(ct);
         }
         catch (ArgumentException ex) { throw Invalid("body", ex.Message); }
@@ -132,6 +135,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         try
         {
             draft.Approve(request.Version, clock.GetUtcNow().UtcDateTime);
+            await LogDraftAsync(UserEventKinds.DraftApproved, $"Approved the {ChannelName(draft.Channel)} draft (version {draft.Version})", draft.OpportunityId, ct);
             await db.SaveChangesAsync(ct);
         }
         catch (InvalidOperationException ex) { throw Invalid("draft", ex.Message); }
@@ -158,6 +162,14 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
             }
         }
         return results;
+    }
+
+    private static string WithArticle(string noun) => noun.Length > 0 && "aeiou".Contains(char.ToLowerInvariant(noun[0])) ? $"an {noun}" : $"a {noun}";
+
+    private async Task LogDraftAsync(string kind, string detail, Guid opportunityId, CancellationToken ct)
+    {
+        var title = await db.Opportunities.AsNoTracking().Where(o => o.Id == opportunityId && o.OwnerId == user.OwnerId).Select(o => o.Title).FirstOrDefaultAsync(ct);
+        events.Add(kind, detail, opportunityId, title);
     }
 
     public async Task<DraftDto> RevokeAsync(Guid id, CancellationToken ct)
