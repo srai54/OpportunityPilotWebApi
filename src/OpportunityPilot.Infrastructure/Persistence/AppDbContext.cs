@@ -67,6 +67,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<WellfoundApplication> WellfoundApplications => Set<WellfoundApplication>();
     public DbSet<WellfoundActivity> WellfoundActivities => Set<WellfoundActivity>();
     public DbSet<Domain.Mail.MailboxConnection> MailboxConnections => Set<Domain.Mail.MailboxConnection>();
+    public DbSet<CandidateProgressLink> CandidateProgressLinks => Set<CandidateProgressLink>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -142,6 +143,18 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.EmailAddress).HasMaxLength(Domain.Mail.MailboxConnection.MaxEmailLength).IsRequired();
             e.Property(x => x.EncryptedRefreshToken).HasMaxLength(Domain.Mail.MailboxConnection.MaxTokenLength).IsRequired();
             e.HasIndex(x => new { x.OwnerId, x.Provider }).IsUnique();
+        });
+
+        modelBuilder.Entity<CandidateProgressLink>(e =>
+        {
+            e.ToTable("candidate_progress_links");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Show).HasConversion<int>();
+            // The public page finds a link by the hash of the token, so it must be unique and fast to look up.
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.OwnerId, x.CandidateId });
         });
 
         modelBuilder.Entity<Domain.Ai.AiUsage>(e =>

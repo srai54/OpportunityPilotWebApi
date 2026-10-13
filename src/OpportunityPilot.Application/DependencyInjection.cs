@@ -51,6 +51,8 @@ public static class DependencyInjection
         services.AddScoped<ScheduleService>();
         services.AddScoped<StaffingService>();
         services.AddScoped<StaffingPipelineService>();
+        services.AddScoped<ProgressLinkService>();
+        services.AddScoped<ProgressViewService>();
         services.AddScoped<Auth.SecurityAudit>();
         services.AddSingleton<Common.OperationalMetrics>();
         services.AddScoped<Common.RetentionService>();

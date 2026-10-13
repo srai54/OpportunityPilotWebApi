@@ -1466,6 +1466,41 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.ToTable("upwork_opportunities", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Staffing.CandidateProgressLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Show")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerId", "CandidateId");
+
+                    b.ToTable("candidate_progress_links", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Staffing.StaffingAccount", b =>
                 {
                     b.Property<Guid>("Id")

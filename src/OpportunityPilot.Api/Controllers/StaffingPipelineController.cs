@@ -6,8 +6,17 @@ namespace OpportunityPilot.Api.Controllers;
 /// <summary>Candidates, submissions, interviews, feedback, offers, rate cards, proposals and KPIs of the staffing CRM.</summary>
 [ApiController]
 [Route("api/v1/staffing")]
-public sealed class StaffingPipelineController(StaffingPipelineService pipeline) : ControllerBase
+public sealed class StaffingPipelineController(StaffingPipelineService pipeline, ProgressLinkService progress) : ControllerBase
 {
+    [HttpGet("candidates/{id:guid}/progress-link")]
+    public async Task<ActionResult<ProgressLinkDto>> ProgressLink(Guid id, CancellationToken ct) => Ok(await progress.GetAsync(id, ct));
+
+    [HttpPost("candidates/{id:guid}/progress-link")]
+    public async Task<ActionResult<ProgressLinkDto>> CreateProgressLink(Guid id, CreateProgressLinkRequest request, CancellationToken ct) => Ok(await progress.CreateAsync(id, request, ct));
+
+    [HttpDelete("candidates/{id:guid}/progress-link")]
+    public async Task<IActionResult> RevokeProgressLink(Guid id, CancellationToken ct) { await progress.RevokeAsync(id, ct); return NoContent(); }
+
     [HttpGet("candidates")]
     public async Task<ActionResult<IReadOnlyList<StaffingCandidateDto>>> Candidates(CancellationToken ct) => Ok(await pipeline.ListCandidatesAsync(ct));
 
