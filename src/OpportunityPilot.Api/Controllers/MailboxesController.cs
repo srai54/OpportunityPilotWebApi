@@ -26,6 +26,9 @@ public sealed class MailboxesController(MailboxService mailboxes) : ControllerBa
     public async Task<IActionResult> Callback(MailProvider provider, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct) =>
         Redirect(await mailboxes.CompleteAsync(provider, code, state, error, ct));
 
+    [HttpPost("drafts/send-via-mailbox-batch")]
+    public async Task<ActionResult<IReadOnlyList<BatchSendResultItem>>> SendBatch(BatchSendRequest request, CancellationToken ct) => Ok(await mailboxes.SendBatchAsync(request, ct));
+
     [HttpPost("drafts/{id:guid}/send-via-mailbox")]
     public async Task<ActionResult<ProviderExecutionDto>> Send(Guid id, SendViaMailboxRequest request, CancellationToken ct) => await mailboxes.SendDraftAsync(id, request, ct);
 }
