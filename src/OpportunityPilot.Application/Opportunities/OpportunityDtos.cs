@@ -48,6 +48,7 @@ public sealed record OpportunityDetailDto(
     OpportunityStatus Status,
     int GapsCount,
     DateTime UpdatedAt,
+    DateTime FoundAt,
     string? Description,
     int Version,
     IReadOnlyList<BreakdownRow> Breakdown,

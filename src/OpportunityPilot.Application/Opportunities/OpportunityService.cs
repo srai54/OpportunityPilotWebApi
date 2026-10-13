@@ -154,7 +154,7 @@ public sealed class OpportunityService(IAppDbContext db, ICurrentUser user, Time
             .ToListAsync(ct);
 
         return new OpportunityDetailDto(o.Id, o.CampaignId, o.Mode, o.Title, o.Organization, o.Location, o.Url, o.ApplyUrl, o.Platform,
-            o.Score, o.Coverage, o.Outcome, o.OutcomeReason, o.Status, o.GapsCount, o.UpdatedAt, o.Description, o.Version,
+            o.Score, o.Coverage, o.Outcome, o.OutcomeReason, o.Status, o.GapsCount, o.UpdatedAt, o.CreatedAt, o.Description, o.Version,
             Deserialize<List<BreakdownRow>>(o.BreakdownJson) ?? [],
             Deserialize<List<FactRow>>(o.FactsJson) ?? [],
             Deserialize<List<string>>(o.GapsJson) ?? [],
