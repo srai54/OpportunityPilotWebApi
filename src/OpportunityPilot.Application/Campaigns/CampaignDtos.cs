@@ -19,7 +19,8 @@ public sealed record CampaignSummaryDto(
     int SourceCount,
     int OpportunityCount,
     LastJobDto? LastJob,
-    int? AutoSuggestMinScore);
+    int? AutoSuggestMinScore,
+    int? AutoApproveMinScore = null);
 
 /// <summary>CampaignSummary plus the editable criteria and the normalised weights.</summary>
 public sealed record CampaignDto(
@@ -37,7 +38,8 @@ public sealed record CampaignDto(
     LastJobDto? LastJob,
     CampaignCriteria Criteria,
     IReadOnlyDictionary<string, int> Weights,
-    int? AutoSuggestMinScore);
+    int? AutoSuggestMinScore,
+    int? AutoApproveMinScore = null);
 
 /// <param name="Weights">Optional; the mode's defaults when omitted. Normalised to sum 100.</param>
 /// <param name="AutoSuggestMinScore">Job only: 1–100 turns on the batch approval queue; null (or omitted) leaves it off.</param>
@@ -49,7 +51,8 @@ public sealed record CreateCampaignRequest(
     CampaignCriteria? Criteria,
     IReadOnlyDictionary<string, double>? Weights,
     int? ResultLimit,
-    int? AutoSuggestMinScore = null);
+    int? AutoSuggestMinScore = null,
+    int? AutoApproveMinScore = null);
 
 /// <summary>ExpectedVersion must match the stored version, otherwise the edit is rejected with 409.</summary>
 public sealed record UpdateCampaignRequest(
@@ -75,6 +78,22 @@ public sealed record UpdateCampaignRequest(
             AutoSuggestMinScoreSent = true;
         }
     }
+
+    private readonly int? _autoApproveMinScore;
+
+    /// <summary>Omitted keeps the stored value; null turns hands-off approval off; 1–100 is the score that approves automatically.</summary>
+    public int? AutoApproveMinScore
+    {
+        get => _autoApproveMinScore;
+        init
+        {
+            _autoApproveMinScore = value;
+            AutoApproveMinScoreSent = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool AutoApproveMinScoreSent { get; private init; }
 
     [JsonIgnore]
     public bool AutoSuggestMinScoreSent { get; private init; }

@@ -130,6 +130,21 @@ public class Opportunity : IOwned
     }
 
     /// <summary>
+    /// Hands-off approval: a New (or Suggested) Qualified Job opportunity scoring at least <paramref name="minScore"/> goes straight to
+    /// Shortlisted. Null (off), another mode, another status, or a lower score does nothing and returns null.
+    /// </summary>
+    public Activity? ApproveAutomatically(int? minScore, DateTime utcNow)
+    {
+        if (minScore is not { } threshold || Mode != OpportunityMode.Job || Outcome != FilterOutcome.Qualified || Score < threshold ||
+            Status is not (OpportunityStatus.New or OpportunityStatus.Suggested))
+            return null;
+        Status = OpportunityStatus.Shortlisted;
+        UpdatedAt = utcNow;
+        Version++;
+        return new Activity(OwnerId, Id, ActivityKinds.Approved, utcNow, $"Approved automatically: scored {Score} ≥ {threshold}.");
+    }
+
+    /// <summary>
     /// The user's decision in the approval queue: approve → Shortlisted, reject → Dismissed. Only a Suggested
     /// opportunity can be decided; anything else returns null and is left alone (it was decided or moved meanwhile).
     /// </summary>

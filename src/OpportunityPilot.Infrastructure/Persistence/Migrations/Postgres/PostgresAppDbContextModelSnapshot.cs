@@ -297,6 +297,9 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("AutoApproveMinScore")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("AutoSuggestMinScore")
                         .HasColumnType("integer");
 

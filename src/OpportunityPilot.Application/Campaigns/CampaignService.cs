@@ -17,7 +17,7 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
         {
             var s = stats.For(c.Id);
             return new CampaignSummaryDto(c.Id, c.ProfileId, c.Mode, c.Name, c.Goal, c.ResultLimit, c.Version,
-                c.CreatedAt, c.UpdatedAt, s.Sources, s.Opportunities, s.LastJob, c.AutoSuggestMinScore);
+                c.CreatedAt, c.UpdatedAt, s.Sources, s.Opportunities, s.LastJob, c.AutoSuggestMinScore, c.AutoApproveMinScore);
         }).ToList();
     }
 
@@ -39,10 +39,12 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
         var (criteria, weights, resultLimit) = ValidateFields(request.Mode, request.Name, request.Goal, request.Criteria,
             request.Weights, request.ResultLimit ?? Campaign.DefaultResultLimit, errors);
         ValidateAutoSuggest(request.Mode, request.AutoSuggestMinScore, errors);
+        ValidateAutoApprove(request.Mode, request.AutoApproveMinScore, errors);
         if (errors.Count > 0) throw new RequestValidationException(errors);
 
         var campaign = new Campaign(user.OwnerId, request.ProfileId, request.Mode, request.Name, request.Goal,
             criteria.ToJson(), CampaignWeights.ToJson(weights), resultLimit, clock.GetUtcNow().UtcDateTime, request.AutoSuggestMinScore);
+        campaign.SetAutoApprove(request.AutoApproveMinScore);
         db.Campaigns.Add(campaign);
         await db.SaveChangesAsync(ct);
         return await ToDtoAsync(campaign, ct);
@@ -62,11 +64,14 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
         // Left out of an edit, the threshold keeps its stored value; an explicit null turns auto-suggest off.
         var autoSuggest = request.AutoSuggestMinScoreSent ? request.AutoSuggestMinScore : campaign.AutoSuggestMinScore;
         ValidateAutoSuggest(campaign.Mode, autoSuggest, errors);
+        var autoApprove = request.AutoApproveMinScoreSent ? request.AutoApproveMinScore : campaign.AutoApproveMinScore;
+        ValidateAutoApprove(campaign.Mode, autoApprove, errors);
         if (errors.Count > 0) throw new RequestValidationException(errors);
 
         if (campaign.Version != request.ExpectedVersion)
             throw new ConflictException($"Campaign was changed elsewhere (now version {campaign.Version}). Reload before saving.");
 
+        campaign.SetAutoApprove(autoApprove);
         campaign.Update(request.Name, request.Goal, criteria.ToJson(), CampaignWeights.ToJson(weights), resultLimit, autoSuggest,
             clock.GetUtcNow().UtcDateTime);
         try
@@ -109,12 +114,21 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
             errors["autoSuggestMinScore"] = [$"Auto-suggest score must be between {Campaign.MinAutoSuggestScore} and {Campaign.MaxAutoSuggestScore}, or null to turn it off."];
     }
 
+    private static void ValidateAutoApprove(Domain.Common.OpportunityMode mode, int? minScore, Dictionary<string, string[]> errors)
+    {
+        if (minScore is null) return;
+        if (mode != Domain.Common.OpportunityMode.Job)
+            errors["autoApproveMinScore"] = ["Automatic approval is available for Job campaigns only."];
+        else if (minScore is < Campaign.MinAutoSuggestScore or > Campaign.MaxAutoSuggestScore)
+            errors["autoApproveMinScore"] = [$"Auto-approve score must be between {Campaign.MinAutoSuggestScore} and {Campaign.MaxAutoSuggestScore}, or null to turn it off."];
+    }
+
     private async Task<CampaignDto> ToDtoAsync(Campaign c, CancellationToken ct)
     {
         var s = (await StatsAsync([c.Id], ct)).For(c.Id);
         return new CampaignDto(c.Id, c.ProfileId, c.Mode, c.Name, c.Goal, c.ResultLimit, c.Version, c.CreatedAt, c.UpdatedAt,
             s.Sources, s.Opportunities, s.LastJob,
-            CampaignCriteria.FromJson(c.CriteriaJson), CampaignWeights.FromJson(c.Mode, c.WeightsJson), c.AutoSuggestMinScore);
+            CampaignCriteria.FromJson(c.CriteriaJson), CampaignWeights.FromJson(c.Mode, c.WeightsJson), c.AutoSuggestMinScore, c.AutoApproveMinScore);
     }
 
     private sealed record Stats(int Sources, int Opportunities, LastJobDto? LastJob);

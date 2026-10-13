@@ -52,6 +52,22 @@ public class Campaign : IOwned
     /// </summary>
     public int? AutoSuggestMinScore { get; private set; }
 
+    /// <summary>
+    /// Hands-off mode: research moves New, Qualified Job opportunities scoring at least this much straight to Shortlisted (approved),
+    /// with an activity line saying it was automatic. Null means off. Only Job campaigns may set it. Nothing is applied by this:
+    /// the desktop agent (LinkedIn, Naukri, Instahyre) or the person does that.
+    /// </summary>
+    public int? AutoApproveMinScore { get; private set; }
+
+    public void SetAutoApprove(int? minScore)
+    {
+        if (minScore is < MinAutoSuggestScore or > MaxAutoSuggestScore)
+            throw new ArgumentOutOfRangeException(nameof(minScore), $"Auto-approve score must be {MinAutoSuggestScore}–{MaxAutoSuggestScore}.");
+        if (minScore is not null && Mode != OpportunityMode.Job)
+            throw new ArgumentException("Only Job campaigns can auto-approve.", nameof(minScore));
+        AutoApproveMinScore = minScore;
+    }
+
     public int Version { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
