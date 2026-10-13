@@ -408,4 +408,16 @@ public class BoardMappingTests
         Assert.NotNull(c.PostedAt);
         Assert.Null(BoardMapping.HimalayasCandidates("""{"oops":1}""", SourceOf(SourceKind.Remotive, null, "H"), Parser));
     }
+
+    [Fact]
+    public void Free_feed_jobs_are_kept_only_when_every_word_of_one_keyword_appears()
+    {
+        var src = SourceOf(SourceKind.Remotive, null, "Remotive");
+        var react = BoardMapping.BuildCandidate(src, JobPlatform.Remotive, "1", "Senior React Developer", "Acme", "Remote", "remote", "https://x.test/1", "https://x.test/1", null, "Build UIs.");
+        var intern = BoardMapping.BuildCandidate(src, JobPlatform.Remotive, "2", "Compliance Engineer Intern", "CertiK", "Remote", "remote", "https://x.test/2", "https://x.test/2", null, "Audit work.");
+        Assert.True(JobBoardGatherer.MatchesKeywords(react, ["react developer"]));
+        Assert.False(JobBoardGatherer.MatchesKeywords(intern, ["react developer"]));
+        Assert.True(JobBoardGatherer.MatchesKeywords(intern, ["react developer", "compliance"]));
+        Assert.True(JobBoardGatherer.MatchesKeywords(intern, []));
+    }
 }

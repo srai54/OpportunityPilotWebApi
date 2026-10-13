@@ -51,27 +51,39 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
             $"{Base(_limits.WorkableApiBase, ResearchOptions.DefaultWorkableApiBase)}/api/v1/widget/accounts/{{0}}?details=true",
             (json, slug) => BoardMapping.WorkableCandidates(json, source, slug, parser), ct),
         SourceKind.Workday => WorkdayAsync(source, criteria, room, fetchesLeft, keepGoing, ct),
-        SourceKind.Remotive => AggregateAsync(source, room, fetchesLeft,
+        SourceKind.Remotive => AggregateAsync(source, room, fetchesLeft, criteria,
             $"{Base(_limits.RemotiveApiBase, ResearchOptions.DefaultRemotiveApiBase)}/api/remote-jobs",
             json => BoardMapping.RemotiveCandidates(json, source, parser), ct),
-        SourceKind.RemoteOk => AggregateAsync(source, room, fetchesLeft,
+        SourceKind.RemoteOk => AggregateAsync(source, room, fetchesLeft, criteria,
             $"{Base(_limits.RemoteOkApiBase, ResearchOptions.DefaultRemoteOkApiBase)}/api",
             json => BoardMapping.RemoteOkCandidates(json, source, parser), ct),
         SourceKind.Arbeitnow => ReadOneAsync(source, room, fetchesLeft,
             $"{Base(_limits.ArbeitnowApiBase, ResearchOptions.DefaultArbeitnowApiBase)}/api/job-board-api",
-            json => BoardMapping.ArbeitnowCandidates(json, source, parser), ct, ResearchOptions.LargeFeedBytes),
+            json => BoardMapping.ArbeitnowCandidates(json, source, parser), ct, ResearchOptions.LargeFeedBytes, criteria: criteria),
         SourceKind.Jobicy => ReadOneAsync(source, room, fetchesLeft,
             $"{Base(_limits.JobicyApiBase, ResearchOptions.DefaultJobicyApiBase)}/api/v2/remote-jobs?count=50",
-            json => BoardMapping.JobicyCandidates(json, source, parser), ct),
+            json => BoardMapping.JobicyCandidates(json, source, parser), ct, criteria: criteria),
         SourceKind.WeWorkRemotely => ReadOneAsync(source, room, fetchesLeft,
             $"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss",
-            xml => BoardMapping.WeWorkRemotelyCandidates(xml, source, parser), ct, ResearchOptions.LargeFeedBytes, rss: true),
+            xml => BoardMapping.WeWorkRemotelyCandidates(xml, source, parser), ct, ResearchOptions.LargeFeedBytes, rss: true, criteria: criteria),
         _ => throw new ArgumentOutOfRangeException(nameof(source), "Not a job-board source.")
     };
 
-    private Task<BoardGathered> AggregateAsync(Source source, int room, int fetchesLeft, string url,
+    private Task<BoardGathered> AggregateAsync(Source source, int room, int fetchesLeft, CampaignCriteria criteria, string url,
         Func<string?, IReadOnlyList<Candidate>?> map, CancellationToken ct) =>
-        ReadOneAsync(source, room, fetchesLeft, url, map, ct);
+        ReadOneAsync(source, room, fetchesLeft, url, map, ct, criteria: criteria);
+
+    /// <summary>
+    /// The free feeds list every job on the site, not just yours: keep the ones where every word of at least one campaign keyword
+    /// appears in the title, company or text. No keywords means nothing is dropped.
+    /// </summary>
+    public static bool MatchesKeywords(Candidate c, IReadOnlyList<string> keywords)
+    {
+        var terms = keywords.Select(k => k.Trim()).Where(k => k.Length > 0).ToList();
+        if (terms.Count == 0) return true;
+        var haystack = $"{c.Title} {c.Organization} {c.Text}";
+        return terms.Any(k => k.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries).All(w => haystack.Contains(w, StringComparison.OrdinalIgnoreCase)));
+    }
 
     private Task<BoardGathered> SimpleBoardAsync(Source source, int room, int fetchesLeft,
         Func<string?, string?> identify, string urlTemplate, Func<string?, string, IReadOnlyList<Candidate>?> map, CancellationToken ct)
@@ -83,7 +95,7 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
     }
 
     private async Task<BoardGathered> ReadOneAsync(Source source, int room, int fetchesLeft, string url,
-        Func<string?, IReadOnlyList<Candidate>?> map, CancellationToken ct, int? maxBytes = null, bool rss = false)
+        Func<string?, IReadOnlyList<Candidate>?> map, CancellationToken ct, int? maxBytes = null, bool rss = false, CampaignCriteria? criteria = null)
     {
         if (fetchesLeft <= 0) return FetchLimitReached(source);
         var response = rss ? await fetcher.FetchAsync(url, ct, maxBytes) : await fetcher.FetchJsonAsync(url, ct, maxBytes);
@@ -94,8 +106,17 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
         if (all is null) return Failed(source, $"{source.Kind} sent a response that could not be read.", response.Requests);
         if (all.Count == 0) return new(SourceStatus.Skipped, $"The {source.Kind} source has no open jobs.", [], response.Requests,
             $"{source.Label}: no open jobs.", EventLevel.Warning);
+        var listed = all.Count;
+        if (criteria is { Keywords.Count: > 0 })
+        {
+            all = all.Where(c => MatchesKeywords(c, criteria.Keywords)).ToList();
+            if (all.Count == 0) return new(SourceStatus.Skipped, $"None of the {Count(listed, "job")} on {source.Label} matched your keywords.", [], response.Requests,
+                $"{source.Label}: {Count(listed, "job")} listed, none matched your keywords.", EventLevel.Warning);
+        }
         var items = all.Take(room).ToList();
-        var message = $"{source.Label}: {Count(all.Count, "job")} listed, {items.Count} read.";
+        var message = criteria is { Keywords.Count: > 0 }
+            ? $"{source.Label}: {Count(listed, "job")} listed, {all.Count} matched your keywords, {items.Count} read."
+            : $"{source.Label}: {Count(all.Count, "job")} listed, {items.Count} read.";
         if (items.Count < all.Count) message += $" Stopped at the run's limit of {_limits.EffectiveCandidates} candidates.";
         return new(SourceStatus.Ok, null, items, response.Requests, message, items.Count < all.Count ? EventLevel.Warning : EventLevel.Info);
     }
