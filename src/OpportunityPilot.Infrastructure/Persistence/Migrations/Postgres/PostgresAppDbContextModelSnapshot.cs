@@ -637,6 +637,41 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.ToTable("opportunity_evidence", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Opportunities.UserEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("OpportunityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "OccurredAt");
+
+                    b.ToTable("user_events", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Outreach.NextAction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1429,6 +1464,41 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.HasIndex("OwnerId", "State", "ObservedAt");
 
                     b.ToTable("upwork_opportunities", "app");
+                });
+
+            modelBuilder.Entity("OpportunityPilot.Domain.Staffing.CandidateProgressLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Show")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerId", "CandidateId");
+
+                    b.ToTable("candidate_progress_links", "app");
                 });
 
             modelBuilder.Entity("OpportunityPilot.Domain.Staffing.StaffingAccount", b =>

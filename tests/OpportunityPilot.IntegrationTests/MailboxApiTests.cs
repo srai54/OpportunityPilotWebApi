@@ -23,6 +23,7 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
     {
         public List<OutgoingMail> Sent { get; } = [];
         public bool RefreshWorks { get; set; } = true;
+        public HashSet<string> RefuseTo { get; } = [];
         public MailSendResult NextResult { get; set; } = new(true, "msg-1", "Accepted by Gmail (message msg-1). Accepted is not a delivery confirmation.", null);
         public string AuthorizeUrl(MailProvider provider, string redirectUri, string state, string challenge) => $"https://login.example.test/authorize?state={Uri.EscapeDataString(state)}&redirect_uri={Uri.EscapeDataString(redirectUri)}";
         public Task<MailTokens> ExchangeCodeAsync(MailProvider provider, string code, string verifier, string redirectUri, CancellationToken ct) =>
@@ -30,6 +31,7 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         public Task<string?> RefreshAsync(MailProvider provider, string refreshToken, CancellationToken ct) => Task.FromResult(RefreshWorks && refreshToken == "refresh-secret" ? "access" : null);
         public Task<MailSendResult> SendAsync(MailProvider provider, string accessToken, OutgoingMail mail, CancellationToken ct)
         {
+            if (RefuseTo.Contains(mail.To)) return Task.FromResult(new MailSendResult(false, null, string.Empty, "The mail provider did not accept the message (HTTP 403). Nothing was sent."));
             if (NextResult.Accepted) Sent.Add(mail);
             return Task.FromResult(NextResult);
         }
@@ -122,6 +124,63 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         // Disconnecting removes the connection.
         Assert.Equal(HttpStatusCode.NoContent, (await user.DeleteAsync("/api/v1/mailboxes/Google")).StatusCode);
         Assert.False((await user.GetJson("/api/v1/mailboxes")).EnumerateArray().Single(m => m.Str("provider") == "Google").GetProperty("connected").GetBoolean());
+    }
+
+    private static async Task<(Guid Id, int Version)> ApprovedWithVersionAsync(HttpClient user, string recipient)
+    {
+        var id = await ApprovedDraftAsync(user, recipient);
+        return (id, (await user.GetJson($"/api/v1/drafts/{id}")).Int("version"));
+    }
+
+    [Fact]
+    public async Task Send_all_sends_each_approved_message_once_and_stops_at_the_first_failure()
+    {
+        var fake = new FakeTransport();
+        await using var app = App(fake);
+        PostgresApiFactoryServices.Current = app.Services;
+        var user = PostgresApiFactory.ClientFor(app, "mail-batch@example.test");
+        await ConnectAsync(app, user);
+        var a = await ApprovedWithVersionAsync(user, "a@northwind.example");
+        var b = await ApprovedWithVersionAsync(user, "b@northwind.example");
+        var c = await ApprovedWithVersionAsync(user, "c@northwind.example");
+
+        var first = (await (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new { provider = "Google", items = new[] { new { id = a.Id, version = a.Version } } })).Json(HttpStatusCode.OK)).EnumerateArray().ToList();
+        Assert.Equal("Sent", Assert.Single(first).Str("outcome"));
+        Assert.Single(fake.Sent);
+
+        // The second message is refused by the provider: the first (already sent) is not repeated, the third is not attempted.
+        fake.RefuseTo.Add("b@northwind.example");
+        var run = (await (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new
+        {
+            provider = "Google", items = new[] { new { id = a.Id, version = a.Version }, new { id = b.Id, version = b.Version }, new { id = c.Id, version = c.Version } }
+        })).Json(HttpStatusCode.OK)).EnumerateArray().ToList();
+        Assert.Equal(["Failed", "NotAttempted", "NotAttempted"], run.Select(x => x.Str("outcome")).ToArray());
+        Assert.Contains("already sent", run[0].Str("reason"));
+        Assert.Equal(["a@northwind.example"], fake.Sent.Select(m => m.To).ToArray());
+
+        // Without the already-sent one, the refused message fails on its own and the last is not attempted.
+        var second = (await (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new { provider = "Google", items = new[] { new { id = b.Id, version = b.Version }, new { id = c.Id, version = c.Version } } })).Json(HttpStatusCode.OK)).EnumerateArray().ToList();
+        Assert.Equal(["Failed", "NotAttempted"], second.Select(x => x.Str("outcome")).ToArray());
+        Assert.Contains("Nothing was sent", second[0].Str("reason"));
+        Assert.NotEqual("Sent", (await user.GetJson($"/api/v1/drafts/{c.Id}")).Str("state"));
+
+        // Once the provider accepts, the remaining two go out in one action.
+        fake.RefuseTo.Clear();
+        var rest = (await (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new { provider = "Google", items = new[] { new { id = b.Id, version = b.Version }, new { id = c.Id, version = c.Version } } })).Json(HttpStatusCode.OK)).EnumerateArray().ToList();
+        Assert.All(rest, x => Assert.Equal("Sent", x.Str("outcome")));
+        Assert.Equal(3, fake.Sent.Count);
+    }
+
+    [Fact]
+    public async Task Send_all_refuses_an_empty_oversized_or_duplicated_list()
+    {
+        await using var app = App(new FakeTransport());
+        var user = PostgresApiFactory.ClientFor(app, "mail-batch-bad@example.test");
+        var id = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new { provider = "Google", items = Array.Empty<object>() })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new { provider = "Google", items = new[] { new { id, version = 1 }, new { id, version = 1 } } })).StatusCode);
+        var many = Enumerable.Range(0, 26).Select(_ => new { id = Guid.NewGuid(), version = 1 }).ToArray();
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsJsonAsync("/api/v1/drafts/send-via-mailbox-batch", new { provider = "Google", items = many })).StatusCode);
     }
 
     [Fact]

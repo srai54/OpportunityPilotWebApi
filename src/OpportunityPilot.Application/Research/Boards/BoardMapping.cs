@@ -281,6 +281,31 @@ public static class BoardMapping
         return result;
     }
 
+    /// <summary>Himalayas' free remote-jobs search: <c>{ jobs: [ { title, companyName, excerpt, description, employmentType, minSalary, maxSalary, currency, locationRestrictions[], pubDate, applicationLink } ] }</c>.</summary>
+    public static IReadOnlyList<Candidate>? HimalayasCandidates(string? json, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root ||
+            Child(root, "jobs") is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            var title = Text(row, "title");
+            var url = HttpUrl(Text(row, "applicationLink") ?? Text(row, "guid"));
+            if (title is null || url is null) continue;
+            var places = Child(row, "locationRestrictions") is { ValueKind: JsonValueKind.Array } arr
+                ? arr.EnumerateArray().Select(e => e.GetString()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList() : [];
+            var where = places.Count == 0 ? "Remote (worldwide)" : places.Count > 6 ? $"Remote ({places.Count} countries)" : "Remote — " + string.Join(", ", places);
+            var description = Text(row, "description") is { } html ? HtmlToText(html, parser) : Text(row, "excerpt") ?? string.Empty;
+            var pay = Child(row, "minSalary") is { ValueKind: JsonValueKind.Number } min && Child(row, "maxSalary") is { ValueKind: JsonValueKind.Number } max
+                ? $"Salary: {Text(row, "currency")} {min.GetDecimal():0} - {max.GetDecimal():0} {Text(row, "salaryPeriod")}".Trim() : null;
+            var open = places.Count > 0 ? "\nOpen to: " + string.Join(", ", places) : string.Empty;
+            result.Add(Build(source, JobPlatform.Other, url, title, Text(row, "companyName") ?? string.Empty, where, "remote", url, url, null,
+                (pay is null ? description : pay + "\n" + description) + open, UnixDate(row, "pubDate")));
+        }
+        return result;
+    }
+
     /// <summary>
     /// We Work Remotely's public RSS feed. An item's title is "Company: Job title"; its link is the posting. DTDs are refused
     /// so a hostile feed cannot expand entities.

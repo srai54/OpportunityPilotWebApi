@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Answers } from './answers.ts'
+import { DEFAULT_SCHEDULE, type ScheduleConfig } from './schedule.ts'
 
 export const AGENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const CONFIG_PATH = join(AGENT_DIR, 'config.json')
@@ -31,6 +32,8 @@ export interface Config {
   /** acceptTermsCheckboxes: tick "I agree / I confirm" boxes on application forms. Off = such forms become "Needs you". */
   profile: { resumePath: string; followCompanies: boolean; acceptTermsCheckboxes: boolean }
   answers: Answers
+  /** Used only by `agent cycle` and `agent watch`; empty targets = nothing is scheduled. */
+  schedule: ScheduleConfig
 }
 
 export const EXAMPLE_CONFIG: Config = {
@@ -39,6 +42,7 @@ export const EXAMPLE_CONFIG: Config = {
   limits: { maxApplicationsPerRun: 10, maxApplicationsPerDay: 25, pauseSeconds: [8, 20], maxPages: 2, maxPostingsPerCollect: 30 },
   search: { postedWithinDays: 7 },
   profile: { resumePath: '', followCompanies: false, acceptTermsCheckboxes: false },
+  schedule: DEFAULT_SCHEDULE,
   answers: {
     fields: [
       { match: ['notice period'], value: '30' },
@@ -80,6 +84,7 @@ export function loadConfig(path = CONFIG_PATH): Config {
   c.search = { ...EXAMPLE_CONFIG.search, ...raw.search }
   c.profile = { ...EXAMPLE_CONFIG.profile, ...raw.profile }
   c.api = { ...EXAMPLE_CONFIG.api, ...raw.api }
+  c.schedule = { ...DEFAULT_SCHEDULE, ...raw.schedule }
   c.answers = {
     fields: raw.answers?.fields ?? [],
     skills: raw.answers?.skills ?? {},
@@ -94,6 +99,7 @@ export function loadConfig(path = CONFIG_PATH): Config {
   if (!Array.isArray(c.answers.fields) || c.answers.fields.some((r) => !Array.isArray(r.match) || typeof r.value !== 'string'))
     problems.push('answers.fields must be a list of { "match": ["..."], "value": "..." }')
   if (c.profile.resumePath && !existsSync(c.profile.resumePath)) problems.push(`profile.resumePath does not exist: ${c.profile.resumePath}`)
+  // An empty schedule is fine (nothing scheduled); a half-filled one is reported when it is used, by `cycle` and `watch`.
   if (problems.length) throw new Error(`config.json needs fixing:\n  - ${problems.join('\n  - ')}`)
   return c
 }

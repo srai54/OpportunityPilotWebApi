@@ -1,13 +1,15 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Abstractions;
+using OpportunityPilot.Application.Analytics;
 using OpportunityPilot.Application.Common;
+using OpportunityPilot.Domain.Opportunities;
 using OpportunityPilot.Domain.Research;
 
 namespace OpportunityPilot.Application.Research;
 
 /// <summary>User-facing research jobs: queue, list, read and cancel. The work itself happens in <see cref="ResearchRunner"/>.</summary>
-public sealed class ResearchService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class ResearchService(IAppDbContext db, ICurrentUser user, TimeProvider clock, UserEventLog events)
 {
     public const int MaxListedJobs = 20;
     public const int MaxEvents = 100;
@@ -18,9 +20,13 @@ public sealed class ResearchService(IAppDbContext db, ICurrentUser user, TimePro
     public async Task<QueuedResearchDto> QueueAsync(Guid campaignId, CancellationToken ct)
     {
         var ownerId = user.OwnerId;
-        if (!await db.Campaigns.AnyAsync(c => c.Id == campaignId && c.OwnerId == ownerId, ct))
-            throw new NotFoundException("Campaign not found.");
-        return new QueuedResearchDto(await QueueForOwnerAsync(db, ownerId, campaignId, clock.GetUtcNow().UtcDateTime, ct));
+        var name = await db.Campaigns.AsNoTracking().Where(c => c.Id == campaignId && c.OwnerId == ownerId).Select(c => c.Name).FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("Campaign not found.");
+        var alreadyRunning = await ActiveJobIdAsync(db, ownerId, campaignId, ct) is not null;
+        var id = await QueueForOwnerAsync(db, ownerId, campaignId, clock.GetUtcNow().UtcDateTime, ct);
+        // Only a new run is a new action: clicking again while one is queued or running returns the same run.
+        if (!alreadyRunning) await events.RecordAsync(UserEventKinds.RunStarted, $"Started a search run for \"{name}\"", ct);
+        return new QueuedResearchDto(id);
     }
 
     /// <summary>Shared with the agent endpoint. The caller has already checked the campaign belongs to <paramref name="ownerId"/>.</summary>

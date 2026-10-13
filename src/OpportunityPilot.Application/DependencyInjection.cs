@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<ImportService>();
         services.AddScoped<ResearchService>();
         services.AddScoped<OpportunityService>();
+        services.AddScoped<ContactFinder>();
         services.AddScoped<AgentResearchService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
@@ -50,12 +51,15 @@ public static class DependencyInjection
         services.AddScoped<ScheduleService>();
         services.AddScoped<StaffingService>();
         services.AddScoped<StaffingPipelineService>();
+        services.AddScoped<ProgressLinkService>();
+        services.AddScoped<ProgressViewService>();
         services.AddScoped<Auth.SecurityAudit>();
         services.AddSingleton<Common.OperationalMetrics>();
         services.AddScoped<Common.RetentionService>();
         services.AddScoped<Outreach.ProviderGateway>();
         services.AddSingleton<Mail.TokenProtector>();
         services.AddScoped<Mail.MailboxService>();
+        services.AddScoped<Analytics.UserEventLog>();
         services.AddScoped<Capabilities.ProviderReadinessService>();
         services.AddScoped<WellfoundService>();
         services.AddScoped<JobBoardGatherer>();

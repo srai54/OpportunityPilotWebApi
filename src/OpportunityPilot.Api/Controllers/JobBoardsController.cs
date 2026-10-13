@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using OpportunityPilot.Application.Analytics;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.JobBoards;
+using OpportunityPilot.Domain.Opportunities;
 
 namespace OpportunityPilot.Api.Controllers;
 
@@ -8,7 +10,7 @@ namespace OpportunityPilot.Api.Controllers;
 [ApiController]
 [Route("api/v1/jobboards")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
-public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchService feeds) : ControllerBase
+public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchService feeds, UserEventLog events) : ControllerBase
 {
     /// <summary>"Search all": the free public feeds (no key, no quota), merged and de-duplicated. <c>sites</c> is a comma list; empty means all.</summary>
     [HttpGet("feeds")]
@@ -26,7 +28,9 @@ public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchServic
         }
         if (errors.Count > 0) throw new RequestValidationException(errors);
         if (chosen.Count == 0) chosen.AddRange(Enum.GetValues<FeedSite>());
-        return await feeds.SearchAsync(chosen, query.Trim(), location?.Trim(), remoteOnly, take, ct);
+        var result = await feeds.SearchAsync(chosen, query.Trim(), location?.Trim(), remoteOnly, take, ct);
+        await events.RecordAsync(UserEventKinds.Searched, $"Searched {(chosen.Count == Enum.GetValues<FeedSite>().Length ? "all free sites" : string.Join(", ", chosen))} for \"{query.Trim()}\"{(string.IsNullOrWhiteSpace(location) ? "" : $" in {location.Trim()}")}: {result.Jobs.Count} results", ct);
+        return result;
     }
 
     [HttpGet("status")]
@@ -53,7 +57,11 @@ public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchServic
         if (radiusKm is < 1 or > 500) errors["radiusKm"] = ["Radius is 1–500 km."];
         if (cursor is { Length: > 4000 }) errors["cursor"] = ["Cursor is too long."];
         if (errors.Count > 0) throw new RequestValidationException(errors);
-        return Ok(await search.SearchAsync(new(board, query.Trim(), location?.Trim(), remoteOnly, datePosted, country, page, string.IsNullOrWhiteSpace(cursor) ? null : cursor, employmentType, experience, radiusKm), ct));
+        var found = await search.SearchAsync(new(board, query.Trim(), location?.Trim(), remoteOnly, datePosted, country, page, string.IsNullOrWhiteSpace(cursor) ? null : cursor, employmentType, experience, radiusKm), ct);
+        // Only the first page is an action of its own; paging through the same search is not logged again.
+        if (page == 1 && string.IsNullOrWhiteSpace(cursor))
+            await events.RecordAsync(UserEventKinds.Searched, $"Searched {board} for \"{query.Trim()}\"{(string.IsNullOrWhiteSpace(location) ? "" : $" in {location.Trim()}")}: {found.Jobs.Count} results", ct);
+        return Ok(found);
     }
 }
 
@@ -61,13 +69,13 @@ public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchServic
 [ApiController]
 [Route("api/v1/indeed")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
-public sealed class IndeedController(IJobBoardSearch search, FeedSearchService feeds) : ControllerBase
+public sealed class IndeedController(IJobBoardSearch search, FeedSearchService feeds, UserEventLog events) : ControllerBase
 {
     [HttpGet("jobs")]
     public Task<ActionResult<JobBoardSearchResult>> Jobs(
         [FromQuery] string query, [FromQuery] string? location = null, [FromQuery] bool remoteOnly = false,
         [FromQuery] string datePosted = "week", [FromQuery] string? country = null, [FromQuery] int page = 1,
         CancellationToken ct = default) =>
-        new JobBoardsController(search, feeds) { ControllerContext = ControllerContext }
+        new JobBoardsController(search, feeds, events) { ControllerContext = ControllerContext }
             .Jobs(query, JobBoard.Indeed, location, remoteOnly, datePosted, country, page, null, null, null, null, ct);
 }

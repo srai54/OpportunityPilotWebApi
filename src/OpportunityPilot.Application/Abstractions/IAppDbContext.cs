@@ -60,6 +60,8 @@ public interface IAppDbContext
     DbSet<WellfoundApplication> WellfoundApplications { get; }
     DbSet<WellfoundActivity> WellfoundActivities { get; }
     DbSet<Domain.Mail.MailboxConnection> MailboxConnections { get; }
+    DbSet<CandidateProgressLink> CandidateProgressLinks { get; }
+    DbSet<UserEvent> UserEvents { get; }
 
     /// <summary>The research runner clears tracked state before recording a failure, so a half-applied batch is not saved.</summary>
     Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }

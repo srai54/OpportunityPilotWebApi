@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Abstractions;
+using OpportunityPilot.Application.Analytics;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.Opportunities;
 using OpportunityPilot.Domain.Opportunities;
@@ -7,7 +8,7 @@ using OpportunityPilot.Domain.Outreach;
 
 namespace OpportunityPilot.Application.Outreach;
 
-public sealed class OutreachService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class OutreachService(IAppDbContext db, ICurrentUser user, TimeProvider clock, UserEventLog events)
 {
     private Guid OwnerId => user.OwnerId;
 
@@ -89,6 +90,7 @@ public sealed class OutreachService(IAppDbContext db, ICurrentUser user, TimePro
         var opportunity = await FindOpportunityAsync(row.OpportunityId, ct);
         try { row.Update(request.State, request.DueAt, clock.GetUtcNow().UtcDateTime); }
         catch (ArgumentOutOfRangeException) { throw Invalid("state", "Unknown next-action state."); }
+        events.Add(UserEventKinds.FollowUpUpdated, request.State is { } st ? $"Marked a follow-up {st.ToString().ToLowerInvariant()}" : "Moved a follow-up to a new date", opportunity.Id, opportunity.Title);
         await db.SaveChangesAsync(ct);
         return ToDto(row, opportunity.Title, opportunity.Organization);
     }

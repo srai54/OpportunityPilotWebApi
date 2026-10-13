@@ -7,8 +7,14 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/opportunities")]
-public sealed class OpportunitiesController(OpportunityService opportunities) : ControllerBase
+public sealed class OpportunitiesController(OpportunityService opportunities, ContactFinder contacts) : ControllerBase
 {
+    /// <summary>Suggests contact details that the posting or the company's own contact pages publish. Reads at most three public pages; nothing is stored.</summary>
+    [HttpPost("{id:guid}/contacts/find")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
+    public async Task<ActionResult<FindContactsResult>> FindContacts(Guid id, FindContactsRequest? request, CancellationToken ct) =>
+        await contacts.FindAsync(id, request, ct);
+
     /// <summary>sort = score (default), recent (last updated), found (newest first) or oldest (first found first); take 1–200 (default 50).</summary>
     [HttpGet("/api/v1/campaigns/{campaignId:guid}/opportunities")]
     public async Task<ActionResult<OpportunityPageDto>> List(

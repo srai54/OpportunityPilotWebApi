@@ -8,7 +8,7 @@ using OpportunityPilot.Domain.Research;
 namespace OpportunityPilot.Application.JobBoards;
 
 /// <summary>The free public job feeds that can be searched live, without any key or quota.</summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk }
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -18,7 +18,7 @@ public sealed record FeedSearchResult(IReadOnlyList<FeedSiteStatus> Sites, IRead
 public sealed record FeedJobDto(string Site, string SiteName, JobBoardJobDto Job);
 
 /// <summary>
-/// "Search all": reads the free public feeds (Arbeitnow, Jobicy, We Work Remotely, Remotive, Remote OK), keeps each feed's
+/// "Search all": reads the free public feeds (Arbeitnow, Jobicy, We Work Remotely, Remotive, Remote OK, Himalayas), keeps each feed's
 /// text for 30 minutes so repeated searches cost nothing, and filters it by the person's words and place. Read-only.
 /// </summary>
 public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser, IOptions<ResearchOptions> research, TimeProvider clock, IRapidApiBoardSearch? regional = null)
@@ -34,6 +34,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.Jobicy => "Jobicy",
         FeedSite.WeWorkRemotely => "We Work Remotely",
         FeedSite.Remotive => "Remotive",
+        FeedSite.Himalayas => "Himalayas",
         _ => "Remote OK"
     };
 
@@ -45,7 +46,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var jobs = new List<FeedJobDto>();
         var regionalTask = regional is null || regional.Boards.Count == 0 ? Task.FromResult<RapidApiBoardResult[]>([])
             : Task.WhenAll(regional.Boards.Select(b => regional.SearchAsync(b.Id, query, location, ct)));
-        var reads = await Task.WhenAll(sites.Distinct().Select(s => ReadAsync(s, now, ct)));
+        var reads = await Task.WhenAll(sites.Distinct().Select(s => ReadAsync(s, now, query, ct)));
         foreach (var r in await regionalTask)
         {
             var ofBoard = r.Jobs.Where(j => Matches(j, query, null, remoteOnly)).Select(j => new FeedJobDto(r.BoardId, r.Name, j)).ToList();
@@ -65,12 +66,13 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         return new FeedSearchResult(statuses, merged, now);
     }
 
-    private async Task<(FeedSite Site, List<FeedJobDto> Jobs, FeedSiteStatus Status)> ReadAsync(FeedSite site, DateTime now, CancellationToken ct)
+    private async Task<(FeedSite Site, List<FeedJobDto> Jobs, FeedSiteStatus Status)> ReadAsync(FeedSite site, DateTime now, string query, CancellationToken ct)
     {
         var name = Name(site);
         var fromCache = false;
         string? text;
-        if (Cache.TryGetValue(site, out var hit) && now - hit.At < CacheFor) { text = hit.Text; fromCache = true; }
+        // Himalayas is searched by the person's words, so its answer depends on them and is not shared between searches.
+        if (site != FeedSite.Himalayas && Cache.TryGetValue(site, out var hit) && now - hit.At < CacheFor) { text = hit.Text; fromCache = true; }
         else
         {
             var result = site switch
@@ -78,21 +80,23 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
                 FeedSite.Arbeitnow => await fetcher.FetchJsonAsync($"{Base(_limits.ArbeitnowApiBase, ResearchOptions.DefaultArbeitnowApiBase)}/api/job-board-api", ct, ResearchOptions.LargeFeedBytes),
                 FeedSite.Jobicy => await fetcher.FetchJsonAsync($"{Base(_limits.JobicyApiBase, ResearchOptions.DefaultJobicyApiBase)}/api/v2/remote-jobs?count=50", ct),
                 FeedSite.WeWorkRemotely => await fetcher.FetchAsync($"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss", ct, ResearchOptions.LargeFeedBytes),
+                FeedSite.Himalayas => await fetcher.FetchJsonAsync($"{Base(_limits.HimalayasApiBase, ResearchOptions.DefaultHimalayasApiBase)}/jobs/api/search?q={Uri.EscapeDataString(query)}&limit=60", ct, ResearchOptions.LargeFeedBytes),
                 FeedSite.Remotive => await fetcher.FetchJsonAsync($"{Base(_limits.RemotiveApiBase, ResearchOptions.DefaultRemotiveApiBase)}/api/remote-jobs", ct, ResearchOptions.LargeFeedBytes),
                 _ => await fetcher.FetchJsonAsync($"{Base(_limits.RemoteOkApiBase, ResearchOptions.DefaultRemoteOkApiBase)}/api", ct, ResearchOptions.LargeFeedBytes)
             };
             if (!result.Ok || result.Content is null)
                 return (site, [], new(name, "Failed", 0, 0, result.FailureReason ?? $"{name} could not be read.", false));
             text = result.Content;
-            Cache[site] = (now, text);
+            if (site != FeedSite.Himalayas) Cache[site] = (now, text);
         }
-        var kind = site switch { FeedSite.Arbeitnow => SourceKind.Arbeitnow, FeedSite.Jobicy => SourceKind.Jobicy, FeedSite.WeWorkRemotely => SourceKind.WeWorkRemotely, FeedSite.Remotive => SourceKind.Remotive, _ => SourceKind.RemoteOk };
+        var kind = site switch { FeedSite.Arbeitnow => SourceKind.Arbeitnow, FeedSite.Jobicy => SourceKind.Jobicy, FeedSite.WeWorkRemotely => SourceKind.WeWorkRemotely, FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, _ => SourceKind.RemoteOk };
         var source = new Source(Guid.NewGuid(), Guid.NewGuid(), kind, name, null, null, null, null, now);
         var candidates = site switch
         {
             FeedSite.Arbeitnow => BoardMapping.ArbeitnowCandidates(text, source, parser),
             FeedSite.Jobicy => BoardMapping.JobicyCandidates(text, source, parser),
             FeedSite.WeWorkRemotely => BoardMapping.WeWorkRemotelyCandidates(text, source, parser),
+            FeedSite.Himalayas => BoardMapping.HimalayasCandidates(text, source, parser),
             FeedSite.Remotive => BoardMapping.RemotiveCandidates(text, source, parser),
             _ => BoardMapping.RemoteOkCandidates(text, source, parser)
         };

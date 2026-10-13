@@ -637,6 +637,41 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.ToTable("opportunity_evidence", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Opportunities.UserEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("OpportunityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "OccurredAt");
+
+                    b.ToTable("user_events", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Outreach.NextAction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1430,6 +1465,41 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.HasIndex("OwnerId", "State", "ObservedAt");
 
                     b.ToTable("upwork_opportunities", "app");
+                });
+
+            modelBuilder.Entity("OpportunityPilot.Domain.Staffing.CandidateProgressLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Show")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerId", "CandidateId");
+
+                    b.ToTable("candidate_progress_links", "app");
                 });
 
             modelBuilder.Entity("OpportunityPilot.Domain.Staffing.StaffingAccount", b =>
