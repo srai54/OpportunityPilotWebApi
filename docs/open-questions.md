@@ -45,6 +45,7 @@ Audit date: 2026-10-05.
 | OQ-BE-029 | Sales discovery/provider accounts are not selected or connected | P1 | Shivanshu | Open |
 | OQ-BE-030 | Wellfound Recruit/Reach live OAuth is not authorized | P1 | Shivanshu | Open |
 | OQ-BE-031 | Indeed listing/application API is not approved | P1 | Shivanshu | Open |
+| OQ-BE-032 | Hanko sign-in not verified against a live Hanko project | P1 | Shivanshu | Open |
 
 ## Entries
 
@@ -212,3 +213,11 @@ Audit date: 2026-10-05.
   the applicable partner credentials. The documented Job Sync and Candidate APIs serve approved employer/ATS flows,
   not an unrestricted public-search feed. Until approval exists, keep Indeed as an official search handoff and do not
   scrape, copy listings, store account cookies, or claim provider-side applications/messages.
+
+### OQ-BE-032 — Hanko sign-in not verified against a live Hanko project
+- **Priority** P1 · **Owner** Shivanshu · **Status** Open
+- **Where** `Api/Auth/HankoAuth.cs`, `Api/Auth/AuthSetup.cs`; web `docs/AUTH_SETUP.md`
+- **What is needed** Set `Auth__HankoApiUrl` (and `Auth__HankoAudience`) on Render and `VITE_HANKO_API_URL` on Vercel, sign
+  in on the live site, and confirm the API accepts the token (no "session ended" right after sign-in). Validation is proven
+  only with locally generated keys. If Hanko Cloud sets an `iss` other than the API URL, set `Auth__HankoIssuer` to it.
+  Revocation in Hanko is not checked per request (token lifetime applies).

@@ -29,6 +29,12 @@ services:
       # https://<project-ref>.supabase.co
       - key: Auth__SupabaseUrl
         sync: false
+      # Optional, main sign-in when set: Hanko Cloud API URL (https://<id>.hanko.io). Set VITE_HANKO_API_URL on the web too.
+      - key: Auth__HankoApiUrl
+        sync: false
+      # Optional, recommended with Hanko: the web app's domain (passkey relying-party id), e.g. opportunitypilot.vercel.app
+      - key: Auth__HankoAudience
+        sync: false
       # The web app's public origin. Change if Render gave the static site a different URL.
       - key: Cors__AllowedOrigins__0
         value: https://opportunitypilot-web.onrender.com
