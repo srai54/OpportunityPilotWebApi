@@ -14,9 +14,12 @@ public class IntegrationsApiTests(PostgresApiFactory factory) : IClassFixture<Po
     {
         public List<ConnectorRequest> Calls { get; } = [];
         public bool SlackGone { get; set; }
+        /// <summary>Answers checked first; null falls through to the defaults below.</summary>
+        public Func<ConnectorRequest, ConnectorResponse?> Answer { get; init; } = _ => null;
         public Task<ConnectorResponse> SendAsync(ConnectorRequest r, CancellationToken ct)
         {
             Calls.Add(r);
+            if (Answer(r) is { } answer) return Task.FromResult(answer);
             return Task.FromResult(r.Url switch
             {
                 var u when u.StartsWith("https://hooks.slack.com/", StringComparison.Ordinal) => SlackGone ? new ConnectorResponse(404, "no_service") : new(200, "ok"),
@@ -103,5 +106,58 @@ public class IntegrationsApiTests(PostgresApiFactory factory) : IClassFixture<Po
 
         await user.DeleteAsync("/api/v1/integrations/CalendarFeed");
         Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync(url.PathAndQuery)).StatusCode);
+    }
+    private WebApplicationFactory<Program> OauthApp(FakeServices fake) => factory.WithWebHostBuilder(b =>
+    {
+        b.ConfigureTestServices(s => s.AddSingleton<IConnectorHttp>(fake));
+        b.UseSetting("Mail:TokenKey", Convert.ToBase64String(Enumerable.Range(1, 32).Select(i => (byte)i).ToArray()));
+        b.UseSetting("Mail:WebBase", "https://app.example.test");
+        b.UseSetting("Integrations:PublicApiBase", "https://api.example.test");
+        b.UseSetting("Integrations:Notion:ClientId", "notion-id");
+        b.UseSetting("Integrations:Notion:ClientSecret", "notion-secret");
+    });
+
+    [Fact]
+    public async Task Notion_connects_by_sign_in_never_returns_the_token_and_only_its_owner_picks_the_database()
+    {
+        var fake = new FakeServices { Answer = r => r.Url switch
+        {
+            "https://api.notion.com/v1/oauth/token" => new(200, """{"access_token":"ntn-access-secret","refresh_token":"ntn-refresh-secret","workspace_name":"Acme"}"""),
+            "https://api.notion.com/v1/search" => new(200, """{"results":[{"object":"database","id":"1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6","title":[{"plain_text":"Leads"}]}]}"""),
+            var u when u.StartsWith("https://api.notion.com/v1/databases/", StringComparison.Ordinal) => new(200, """{"title":[{"plain_text":"Leads"}],"properties":{"Company":{"type":"title"}}}"""),
+            _ => null
+        } };
+        await using var app = OauthApp(fake);
+        var user = PostgresApiFactory.ClientFor(app, "oauth-notion@example.test");
+        var other = PostgresApiFactory.ClientFor(app, "oauth-notion-other@example.test");
+
+        var list = await user.GetJson("/api/v1/integrations");
+        Assert.Contains(list.EnumerateArray(), k => k.Str("kind") == "Notion" && k.GetProperty("oauthConfigured").GetBoolean());
+        Assert.Contains(list.EnumerateArray(), k => k.Str("kind") == "HubSpot" && !k.GetProperty("oauthConfigured").GetBoolean());
+        Assert.Equal(HttpStatusCode.Conflict, (await user.PostAsync("/api/v1/integrations/HubSpot/oauth", null)).StatusCode);
+
+        var start = await (await user.PostAsync("/api/v1/integrations/Notion/oauth", null)).Json(HttpStatusCode.OK);
+        var url = new Uri(start.Str("url"));
+        Assert.Equal("api.notion.com", url.Host);
+        var state = System.Web.HttpUtility.ParseQueryString(url.Query)["state"]!;
+
+        // The browser comes back without a bearer token; a tampered state connects nothing.
+        var browser = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        var bad = await browser.GetAsync($"/api/v1/integrations/oauth/callback/Notion?code=c1&state={Uri.EscapeDataString(state[..^3] + "abc")}");
+        Assert.Equal("https://app.example.test/connectors?error=expired&service=Notion", bad.Headers.Location!.ToString());
+        var back = await browser.GetAsync($"/api/v1/integrations/oauth/callback/Notion?code=c1&state={Uri.EscapeDataString(state)}");
+        Assert.Equal(HttpStatusCode.Redirect, back.StatusCode);
+        Assert.Equal("https://app.example.test/connectors?connected=Notion", back.Headers.Location!.ToString());
+
+        var text = await user.GetStringAsync("/api/v1/integrations");
+        Assert.DoesNotContain("ntn-", text);
+        Assert.Contains("\"needsTarget\":true", text);
+        Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync("/api/v1/integrations/Notion/targets")).StatusCode);
+
+        var targets = await user.GetJson("/api/v1/integrations/Notion/targets");
+        Assert.Equal("Leads", targets[0].Str("name"));
+        var chosen = await (await user.PutAsJsonAsync("/api/v1/integrations/Notion/target", new { target = targets[0].Str("target") })).Json(HttpStatusCode.OK);
+        Assert.Equal("Notion: Leads", chosen.Str("label"));
+        Assert.False(chosen.GetProperty("needsTarget").GetBoolean());
     }
 }
