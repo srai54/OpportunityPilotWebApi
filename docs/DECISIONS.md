@@ -140,3 +140,18 @@ automation (CLAUDE.md guardrail); the agent already holds the person's own Linke
 restrict a LinkedIn account, hence dry-run default, low caps and the same explicit risk opt-in as applying. Not verified against
 live LinkedIn: selectors follow LinkedIn's known structure and are proven only against the mock site.
 
+## 2026-10-14 — One-click connectors by sign-in (Notion, HubSpot, Slack, Airtable)
+
+People could not create and paste access tokens. These four now also connect through the service's own consent screen (OAuth), the
+way ChatGPT's connectors do; the token/webhook form stays as "Use a token instead".
+
+- One provider table (`OauthProviders`) holds each service's addresses, scopes, PKCE and client-authentication style, taken from its docs.
+- The existing `integration_connections` row is reused, so no migration: the access token is the encrypted secret (as a pasted token was);
+  the refresh token is encrypted again inside `settings_json` under `oauth` with its expiry. Slack keeps only `incoming_webhook.url`, so
+  notifications are unchanged. Access tokens are refreshed 2 minutes before they expire (HubSpot 30 min, Airtable 60 min).
+- The sealed state reuses `TokenProtector` with a `connector` purpose, so a mailbox sign-in state cannot be replayed here.
+- Notion and Airtable need a second step: the person picks the database/table (`GET …/targets`, `PUT …/target`), then the same column
+  matching runs as for a pasted link.
+- Notion's search is called with the `Notion-Version` the rest of the connector uses (2022-06-28, filter `object = database`); the newest API
+  version renames databases to data sources, which would change every Notion call and is left for a separate change.
+
