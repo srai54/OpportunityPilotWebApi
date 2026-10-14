@@ -11,7 +11,7 @@ public sealed record IntegrationDto(
     string? FeedUrl);
 
 /// <param name="Url">Slack, Teams or Webhook: the incoming-webhook address.</param>
-/// <param name="Token">HubSpot private-app token, Notion integration secret or Airtable personal access token.</param>
+/// <param name="Token">HubSpot private-app token, Notion integration secret, Airtable personal access token, or the Hunter / Apollo API key.</param>
 /// <param name="Target">Notion: the database link or id. Airtable: the base link or id.</param>
 /// <param name="Table">Airtable: the table name or id (the first table when empty).</param>
 public sealed record ConnectIntegrationRequest(string? Url, string? Token, string? Target, string? Table, IReadOnlyList<string>? Events);
@@ -43,6 +43,7 @@ public static class IntegrationKinds
 {
     public static bool IsWebhook(IntegrationKind k) => k is IntegrationKind.Slack or IntegrationKind.Teams or IntegrationKind.Webhook;
     public static bool IsLeadTarget(IntegrationKind k) => k is IntegrationKind.HubSpot or IntegrationKind.Notion or IntegrationKind.Airtable;
+    public static bool IsPeopleSource(IntegrationKind k) => k is IntegrationKind.Hunter or IntegrationKind.Apollo;
 
     public static string Name(IntegrationKind k) => k switch
     {
@@ -52,6 +53,8 @@ public static class IntegrationKinds
         IntegrationKind.HubSpot => "HubSpot",
         IntegrationKind.Notion => "Notion",
         IntegrationKind.Airtable => "Airtable",
+        IntegrationKind.Hunter => "Hunter",
+        IntegrationKind.Apollo => "Apollo",
         _ => "Calendar feed"
     };
 }

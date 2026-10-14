@@ -15,7 +15,8 @@ namespace OpportunityPilot.Application.Integrations;
 /// real service before anything is stored; the secret is stored only encrypted and never returned.
 /// </summary>
 public sealed class IntegrationService(
-    IAppDbContext db, ICurrentUser user, TimeProvider clock, TokenProtector protector, IConnectorHttp http, IEnumerable<ILeadTarget> targets)
+    IAppDbContext db, ICurrentUser user, TimeProvider clock, TokenProtector protector, IConnectorHttp http, IEnumerable<ILeadTarget> targets,
+    IEnumerable<IPeopleSource> people)
 {
     public const int MaxPush = 25;
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
@@ -55,6 +56,14 @@ public sealed class IntegrationService(
             catch (ConnectorProblem p) { throw Invalid(kind == IntegrationKind.HubSpot ? "token" : "target", p.Message); }
             secret = token;
         }
+        else if (IntegrationKinds.IsPeopleSource(kind))
+        {
+            var key = r.Token?.Trim();
+            if (string.IsNullOrEmpty(key) || key.Length > 200 || key.Any(char.IsWhiteSpace)) throw Invalid("token", $"Paste the {IntegrationKinds.Name(kind)} API key.");
+            try { label = await Source(kind).VerifyAsync(key, ct); }
+            catch (ConnectorProblem p) { throw Invalid("token", p.Message); }
+            secret = key;
+        }
         else
         {
             secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
@@ -84,9 +93,12 @@ public sealed class IntegrationService(
                 var target = kind == IntegrationKind.Notion ? s.Str("databaseId") : s.Str("baseId");
                 await Target(kind).VerifyAsync(secret, target, s.Str("tableId"), ct);
             }
+            else if (IntegrationKinds.IsPeopleSource(kind))
+                await Source(kind).VerifyAsync(secret, ct);
             row.MarkUsed(Now);
             await db.SaveChangesAsync(ct);
-            return new(true, IntegrationKinds.IsWebhook(kind) ? "Sent. Check the channel." : $"{IntegrationKinds.Name(kind)} accepted the token.");
+            return new(true, IntegrationKinds.IsWebhook(kind) ? "Sent. Check the channel."
+                : IntegrationKinds.IsPeopleSource(kind) ? $"{IntegrationKinds.Name(kind)} accepted the API key." : $"{IntegrationKinds.Name(kind)} accepted the token.");
         }
         catch (ConnectorProblem p)
         {
@@ -160,6 +172,7 @@ public sealed class IntegrationService(
     }
 
     private ILeadTarget Target(IntegrationKind kind) => targets.First(t => t.Kind == kind);
+    private IPeopleSource Source(IntegrationKind kind) => people.First(t => t.Kind == kind);
 
     private async Task<IntegrationConnection> RowAsync(IntegrationKind kind, CancellationToken ct) =>
         await db.IntegrationConnections.FirstOrDefaultAsync(c => c.OwnerId == user.OwnerId && c.Kind == kind, ct)

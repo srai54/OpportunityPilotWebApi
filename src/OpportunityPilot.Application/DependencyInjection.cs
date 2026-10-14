@@ -65,6 +65,8 @@ public static class DependencyInjection
         services.AddScoped<Integrations.ILeadTarget, Integrations.HubSpotTarget>();
         services.AddScoped<Integrations.ILeadTarget, Integrations.NotionTarget>();
         services.AddScoped<Integrations.ILeadTarget, Integrations.AirtableTarget>();
+        services.AddScoped<Integrations.IPeopleSource, Integrations.HunterSource>();
+        services.AddScoped<Integrations.IPeopleSource, Integrations.ApolloSource>();
         services.AddScoped<Integrations.IntegrationService>();
         services.AddScoped<Agents.AgentStatusService>();
         services.AddScoped<Integrations.IntegrationNotifier>();

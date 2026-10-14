@@ -4,9 +4,10 @@ namespace OpportunityPilot.Domain.Integrations;
 
 /// <summary>
 /// Slack, Teams and Webhook post messages to a URL the person pasted. HubSpot, Notion and Airtable receive leads with a token the person
-/// created in that service. CalendarFeed is a private link a calendar app subscribes to.
+/// created in that service. CalendarFeed is a private link a calendar app subscribes to. Hunter and Apollo look up people at a company
+/// with the person's own API key (third-party data, never stored).
 /// </summary>
-public enum IntegrationKind { Slack, Teams, Webhook, HubSpot, Notion, Airtable, CalendarFeed }
+public enum IntegrationKind { Slack, Teams, Webhook, HubSpot, Notion, Airtable, CalendarFeed, Hunter, Apollo }
 
 /// <summary>
 /// A service the person connected. The secret (webhook URL, access token or feed key) opens that service, so it is stored only encrypted
