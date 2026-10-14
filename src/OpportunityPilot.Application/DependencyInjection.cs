@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<ResearchService>();
         services.AddScoped<OpportunityService>();
         services.AddScoped<ContactFinder>();
+        services.AddScoped<PeopleFinder>();
         services.AddScoped<AgentResearchService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
