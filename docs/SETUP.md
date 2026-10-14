@@ -52,7 +52,10 @@ Environment variables use `__` for nesting (`ConnectionStrings__Main`).
 | `Auth__Audience` | no | default `authenticated` |
 | `Auth__LegacyJwtSecret` | no | server-only; only for old Supabase projects still signing with HS256. Leave unset for asymmetric signing keys |
 | `Auth__DevBypass` | no | Development only |
-| `Auth__AllowGuests` | no | default `true`: keep "Continue as guest" once Supabase sign-in is on; `false` requires an account |
+| `Auth__AllowGuests` | no | default `true`: keep "Continue as guest" once Supabase or Hanko sign-in is on; `false` requires an account |
+| `Auth__HankoApiUrl` | no | Hanko Cloud API URL from the Hanko console (`https://<id>.hanko.io`), https only. When set, Hanko session tokens are accepted **next to** Supabase ones (keys from `{url}/.well-known/jwks.json`, RS256). Must be set together with the web app's `VITE_HANKO_API_URL` |
+| `Auth__HankoAudience` | no, recommended | the token audience Hanko sets: the passkey relying-party id, i.e. the web app's domain without `https://` (e.g. `opportunitypilot.vercel.app`); comma-separate several. Unset: audience not checked |
+| `Auth__HankoIssuer` | no | only if the Hanko project sets a custom `iss`. Unset: a Hanko token may carry no `iss` or the Hanko API URL; any other issuer is rejected |
 | `Cors__AllowedOrigins__0` | yes for a browser | the web app's origin, e.g. `https://app.example.com`; add `__1`, `__2`… for more |
 | `Cors__AllowedOriginPatterns__0` | no | https origin with one `*` for a single hostname fragment (letters, digits, hyphens — no dots), for hosts that give each deployment its own address. Default allows this project's Vercel deployments: `https://opportunity-pilot-webapp-*-vsr6.vercel.app` |
 | `Features__GeminiEnabled` | no | `false`. Capability shows *Configured · unverified* when true and a key is present; live calls arrive in M4 |
@@ -120,6 +123,12 @@ Older Supabase projects that still sign tokens with the shared HS256 secret (the
 JWKS endpoint returns no keys) also need `Auth__LegacyJwtSecret` (Project
 Settings → JWT keys → legacy secret). Symptom without it: sign-in succeeds, then
 the app immediately says the session expired.
+
+**Hanko sign-in (main sign-in when set).** Set `Auth__HankoApiUrl` (and, recommended, `Auth__HankoAudience`)
+on Render and `VITE_HANKO_API_URL` on Vercel; the owner steps are in the web repo's `docs/AUTH_SETUP.md`. A Hanko
+user's data is stored under an owner id derived from the Hanko user id (`HankoAuth.OwnerIdFor`, a name-based UUID),
+so it never collides with a Supabase user or a guest; the same person signing in with Supabase is a different owner.
+`GET /api/v1/capabilities` lists the active systems in `signInProviders`.
 
 For an account-only production deployment, also set `Auth__AllowGuests=false`.
 Guest access otherwise needs no signing key or identity provider: opaque session

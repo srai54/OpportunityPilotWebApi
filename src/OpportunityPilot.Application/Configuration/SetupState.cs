@@ -13,7 +13,13 @@ public sealed class SetupState
 
     /// <summary>Guests can sign in: always in demo mode, and next to real accounts unless Auth:AllowGuests is false.</summary>
     public bool GuestsEnabled { get; set; }
+
+    /// <summary>Account sign-in systems whose tokens this API accepts: "hanko" and/or "supabase" (guests are separate).</summary>
+    public IReadOnlyList<string> SignInProviders { get; set; } = [];
     public IReadOnlyList<string> Missing => _missing;
+
+    /// <summary>A setting is present but unusable while another one still keeps sign-in working.</summary>
+    public void ConfigProblem(string reason) => _missing.Add(reason);
 
     public void DatabaseMissing(string reason)
     {

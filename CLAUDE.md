@@ -12,7 +12,7 @@
 | Database — cloud | Supabase PostgreSQL via Npgsql 10 (`PostgresAppDbContext`); also the integration-test database (Testcontainers `postgres:17-alpine`) |
 | Database — demo | EF InMemory (`InMemoryAppDbContext`) when `ConnectionStrings__Main` is unset; data resets on restart |
 | Schema | everything in schema `app` (snake_case tables) |
-| Auth | Supabase JWT (JWKS); guest tokens in demo mode; `X-Dev-User` dev bypass in Development only; `X-Agent-Key` for the desktop agent |
+| Auth | Supabase JWT (JWKS); Hanko session JWT (JWKS) next to it when `Auth:HankoApiUrl` is set (owner id = name-based UUID of the Hanko user id, `Auth/HankoAuth.cs`); guest tokens in demo mode; `X-Dev-User` dev bypass in Development only; `X-Agent-Key` for the desktop agent |
 | Other libraries | AngleSharp 1.8.3 (HTML), Microsoft.AspNetCore.OpenApi (`/openapi/v1.json`, Development only) |
 | Ports | `http://localhost:5051` (profile `http`, default); `https://localhost:7232` + 5051 (profile `https`); container listens on 8080 or `$PORT` |
 | Web app | separate repo `OpportunityPilotWebapp` (Vite, `http://localhost:5173` in CORS for Development) |
@@ -88,7 +88,7 @@ None. There are no import aliases in either stack.
 
 | Stack | How references work |
 |---|---|
-| .NET projects | project references only: Domain (none) ← Application ← Infrastructure ← Api; UnitTests → Application + Infrastructure; IntegrationTests → Api |
+| .NET projects | project references only: Domain (none) ← Application ← Infrastructure ← Api; UnitTests → Application + Infrastructure + Api (auth helpers); IntegrationTests → Api |
 | .NET namespaces | file-scoped and equal to the folder path: `OpportunityPilot.<Layer>.<Folder>[.<Sub>]` (e.g. `OpportunityPilot.Application.Research.Rules`); test projects have a global `using Xunit` |
 | Agent (TypeScript) | ESM with relative imports that include the `.ts` extension (`./platforms/types.ts`); `import type` for types; no `paths` in `tsconfig.json` |
 

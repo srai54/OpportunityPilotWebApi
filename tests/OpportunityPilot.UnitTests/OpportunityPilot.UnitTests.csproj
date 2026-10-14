@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpportunityPilot.Application\OpportunityPilot.Application.csproj" />
     <ProjectReference Include="..\..\src\OpportunityPilot.Infrastructure\OpportunityPilot.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\OpportunityPilot.Api\OpportunityPilot.Api.csproj" />
   </ItemGroup>
 
 </Project>

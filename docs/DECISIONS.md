@@ -155,3 +155,21 @@ way ChatGPT's connectors do; the token/webhook form stays as "Use a token instea
 - Notion's search is called with the `Notion-Version` the rest of the connector uses (2022-06-28, filter `object = database`); the newest API
   version renames databases to data sources, which would change every Notion call and is left for a separate change.
 
+## 2026-10-14 — Hanko is the main sign-in; Supabase stays as the fallback (HANKO)
+
+**Decision:** when `Auth:HankoApiUrl` is set, the API accepts Hanko session JWTs through a second JwtBearer scheme
+(`Hanko`) next to the unchanged Supabase scheme. Keys come from `{HankoApiUrl}/.well-known/jwks.json` (cached, refreshed on
+an unknown `kid` at most every 30 s); only asymmetric algorithms; expiry required; `aud` checked when `Auth:HankoAudience`
+is set (Hanko puts the passkey relying-party id there); `iss` must be absent or the Hanko API URL unless `Auth:HankoIssuer`
+names it. The owner id is a name-based UUID (RFC 9562 v8, SHA-256) of `hanko:{user id}` under a fixed namespace, so Hanko
+owners never collide with Supabase users or guests; the Hanko id is kept as the `hanko_sub` claim. Tokens issued by the
+configured Supabase project and guest tokens are skipped by the Hanko scheme. The web app shows Hanko's `<hanko-auth>` first
+and "Use the older sign-in (Supabase)" second.
+
+**Why:** the user chose Hanko (open source; passkeys, passwords, email codes, TOTP and security-key MFA) as the main sign-in
+and wants Supabase to keep working. Two independent schemes keep Supabase validation exactly as it was.
+
+**Trade-offs:** a Hanko session revoked in Hanko keeps working on this API until its JWT expires (the API does not call
+Hanko's session-validate endpoint per request; Supabase access tokens behave the same way). The same person signing in once
+with Supabase and once with Hanko gets two separate workspaces; no account linking. Not verified against a live Hanko
+project (OQ-BE-032).

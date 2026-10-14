@@ -12,7 +12,7 @@ Envelope, naming and error rules: [conventions.md](conventions.md). Limits and r
 | Auth | How the caller proves it | Where accepted |
 |---|---|---|
 | anonymous | nothing | only endpoints marked `[AllowAnonymous]` |
-| user | `Authorization: Bearer <Supabase JWT>`; in demo mode a guest token from `POST /api/v1/auth/guest`; in Development with `Auth:DevBypass` the header `X-Dev-User: <any name>` | every endpoint without its own scheme (the fallback policy) |
+| user | `Authorization: Bearer <Supabase JWT>`, or a Hanko session JWT when `Auth:HankoApiUrl` is set (owner id derived from the Hanko user id); in demo mode a guest token from `POST /api/v1/auth/guest`; in Development with `Auth:DevBypass` the header `X-Dev-User: <any name>` | every endpoint without its own scheme (the fallback policy) |
 | agent key | `X-Agent-Key: opk_…` | only endpoints marked `[Authorize(AuthenticationSchemes = "AgentKey")]`; user credentials are rejected there (401) and agent keys are rejected everywhere else (401) |
 
 Owner identity is always the token's `sub`. Another owner's id answers **404**, never 403.
@@ -35,7 +35,7 @@ Query enums that fail to bind return 400 from model binding.
 | GET | `/health/live` | anonymous | — | 200 `{ status: "live" }` |
 | GET | `/health/ready` | anonymous | — | 200 `{ status: "ready", checks: { database: "Healthy" } }`; 503 with `status: "not-ready"` |
 | GET | `/api/v1/capabilities` | anonymous | — | 200 `CapabilitiesDto` (no secrets) |
-| POST | `/api/v1/auth/guest` | anonymous | — | 200 `{ token, expiresAt }`; 404 when guest sign-in is off (Supabase configured or dev bypass on) |
+| POST | `/api/v1/auth/guest` | anonymous | — | 200 `{ token, expiresAt }`; 404 when guest sign-in is off (`Auth:AllowGuests=false` with Supabase or Hanko configured, or dev bypass on) |
 | GET | `/openapi/v1.json` | anonymous | — | OpenAPI document, **Development only** |
 
 ### Overview, analytics and profiles
@@ -290,7 +290,7 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 
 | DTO | Fields |
 |---|---|
-| CapabilitiesDto | `environment, databaseProvider, aiMode, setupRequired: string[], guestSignIn: bool, temporaryStorage: bool, items: CapabilityDto[]` |
+| CapabilitiesDto | `environment, databaseProvider, aiMode, setupRequired: string[], guestSignIn: bool, temporaryStorage: bool, items: CapabilityDto[], signInProviders: string[]` (`"hanko"` and/or `"supabase"`, in that order; empty in demo mode) |
 | CapabilityDto | `key, name, category, status (Ready, Configured, NotConfigured, Disabled, ManualHandoff, NotBuilt, LocalAgent), detail, can: string[], cannot: string[]` |
 | AnalyticsOverviewDto | `workspace, days, generatedAt, campaignCount, kpis, funnel, fitHistogram, unknownCriteria, sources, applicationsPerDay?, attention, activeResearch?, qualifiedByIndustry?, signalsFound?`; fields that stored data cannot answer are `null`, never estimates (full semantics in `ANALYTICS_CONTRACT.md`) |
 | ProfileSummaryDto | `id, type, name, version, confirmedAt?, updatedAt` |
