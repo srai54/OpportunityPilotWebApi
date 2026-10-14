@@ -132,7 +132,7 @@ async function circleRun(platform: string | undefined, opts: { limit?: number; h
   const requests = await circleRequests(config.api)
   if (!requests.ok) throw new Error(`Could not read the circle requests: ${requests.reason}`)
   if (requests.data.length === 0) {
-    console.log('No leads are waiting to be mapped. Ask for one in the web app (a lead → People around this job → Map on LinkedIn).')
+    console.log('No leads are waiting to be mapped. Ask for the people around a lead first (POST /api/v1/opportunities/{id}/circle/request).')
     return { stoppedBecause: null, mapped: 0 }
   }
   const { context, page } = await openBrowser({ headless: opts.headless })
