@@ -14,7 +14,7 @@ public sealed partial class AnalyticsService
     /// <summary>Every kind that can appear in the feed: the per-opportunity activities and the person's own events.</summary>
     public static readonly IReadOnlyList<string> FeedKinds =
     [
-        ActivityKinds.Researched, ActivityKinds.Suggested, ActivityKinds.Approved, ActivityKinds.Rejected, ActivityKinds.Applied, ActivityKinds.StatusChanged,
+        ActivityKinds.Researched, ActivityKinds.Suggested, ActivityKinds.Approved, ActivityKinds.Rejected, ActivityKinds.Applied, ActivityKinds.StatusChanged, ActivityKinds.Replied,
         .. UserEventKinds.All,
     ];
 
