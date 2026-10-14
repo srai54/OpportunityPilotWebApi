@@ -2,10 +2,13 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
@@ -14,13 +17,73 @@ namespace OpportunityPilot.IntegrationTests;
 /// <summary>Production-environment startup behaviour. No Docker needed: none of these reach a real database.</summary>
 public class StartupGuardTests
 {
-    private sealed class ProductionFactory(Dictionary<string, string> settings) : WebApplicationFactory<Program>
+    private sealed class ProductionFactory(Dictionary<string, string> settings, Action<IServiceCollection>? services = null)
+        : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
             foreach (var (key, value) in settings) builder.UseSetting(key, value);
+            if (services is not null) builder.ConfigureTestServices(services);
         }
+    }
+
+    private const string HankoAlice = "5e7b8c2a-1d34-4f6e-9a0b-112233445566";
+    private const string HankoBob = "5e7b8c2a-1d34-4f6e-9a0b-112233445567";
+
+    /// <summary>Serves a locally generated key set in place of {HankoApiUrl}/.well-known/jwks.json (no network).</summary>
+    private sealed class HankoJwksStub(RsaSecurityKey key) : HttpMessageHandler
+    {
+        protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.ToString() != "https://test-project.hanko.io/.well-known/jwks.json")
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            var p = key.Rsa.ExportParameters(false);
+            var body = JsonSerializer.Serialize(new
+            {
+                keys = new[]
+                {
+                    new { kty = "RSA", use = "sig", alg = "RS256", kid = key.KeyId, n = Base64UrlEncoder.Encode(p.Modulus), e = Base64UrlEncoder.Encode(p.Exponent) }
+                }
+            });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            Task.FromResult(Send(request, ct));
+    }
+
+    private static string HankoToken(SecurityKey key, string subject, DateTime? expires = null, string audience = "app.example.test")
+    {
+        var expiry = expires ?? DateTime.UtcNow.AddMinutes(10);
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Audience = audience,
+            Subject = new ClaimsIdentity([new Claim("sub", subject), new Claim("session_id", Guid.NewGuid().ToString())]),
+            IssuedAt = expiry.AddMinutes(-30),
+            NotBefore = expiry.AddMinutes(-30),
+            Expires = expiry,
+            SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.RsaSha256)
+        });
+    }
+
+    private static ProductionFactory WithHanko(RsaSecurityKey key, Dictionary<string, string> extra)
+    {
+        var settings = new Dictionary<string, string>
+        {
+            ["ConnectionStrings:Main"] = "",
+            ["Auth:HankoApiUrl"] = "https://test-project.hanko.io"
+        };
+        foreach (var (k, v) in extra) settings[k] = v;
+        return new ProductionFactory(settings,
+            s => s.AddHttpClient("HankoJwks").ConfigurePrimaryHttpMessageHandler(() => new HankoJwksStub(key)));
+    }
+
+    private static HttpClient Bearer(ProductionFactory factory, string token)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
     }
 
     private record GuestSession(string Token, DateTime ExpiresAt);
@@ -232,5 +295,74 @@ public class StartupGuardTests
         badSubject.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer", LegacySupabaseToken(secret, "not-a-guid"));
         Assert.Equal(HttpStatusCode.Unauthorized, (await badSubject.GetAsync("/api/v1/overview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Without_a_hanko_url_capabilities_list_supabase_only_and_hanko_tokens_are_rejected()
+    {
+        using var factory = new ProductionFactory(new()
+        {
+            ["ConnectionStrings:Main"] = "",
+            ["Auth:SupabaseUrl"] = "https://example.supabase.co"
+        });
+        var client = factory.CreateClient();
+
+        var caps = JsonDocument.Parse(await client.GetStringAsync("/api/v1/capabilities")).RootElement;
+        Assert.Equal(["supabase"], caps.GetProperty("signInProviders").EnumerateArray().Select(e => e.GetString()));
+
+        using var rsa = RSA.Create(2048);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", HankoToken(new RsaSecurityKey(rsa) { KeyId = "hanko-key-1" }, HankoAlice));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/overview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Hanko_tokens_sign_in_as_separate_owners_next_to_supabase_and_guests()
+    {
+        using var rsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa) { KeyId = "hanko-key-1" };
+        using var factory = WithHanko(key, new() { ["Auth:SupabaseUrl"] = "https://example.supabase.co", ["Auth:HankoAudience"] = "app.example.test" });
+        var anonymous = factory.CreateClient();
+
+        var caps = JsonDocument.Parse(await anonymous.GetStringAsync("/api/v1/capabilities")).RootElement;
+        Assert.Equal(["hanko", "supabase"], caps.GetProperty("signInProviders").EnumerateArray().Select(e => e.GetString()));
+        Assert.True(caps.GetProperty("guestSignIn").GetBoolean());
+
+        var alice = Bearer(factory, HankoToken(key, HankoAlice));
+        var bob = Bearer(factory, HankoToken(key, HankoBob));
+        var created = await alice.PostAsJsonAsync("/api/v1/profiles",
+            new { type = "Candidate", name = "Hanko profile", data = new { }, confirmed = false });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Assert.Contains("\"profiles\":1", await alice.GetStringAsync("/api/v1/overview"));
+        Assert.Contains("\"profiles\":0", await bob.GetStringAsync("/api/v1/overview"));
+
+        var guest = await GuestClient(factory);
+        Assert.Equal(HttpStatusCode.OK, (await guest.GetAsync("/api/v1/overview")).StatusCode);
+
+        var expired = Bearer(factory, HankoToken(key, HankoAlice, DateTime.UtcNow.AddMinutes(-5)));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await expired.GetAsync("/api/v1/overview")).StatusCode);
+
+        var otherAudience = Bearer(factory, HankoToken(key, HankoAlice, audience: "someone-else.example.test"));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await otherAudience.GetAsync("/api/v1/overview")).StatusCode);
+
+        using var otherRsa = RSA.Create(2048);
+        var forged = Bearer(factory, HankoToken(new RsaSecurityKey(otherRsa) { KeyId = "hanko-key-1" }, HankoAlice));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await forged.GetAsync("/api/v1/overview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Hanko_alone_counts_as_accounts_so_guests_can_be_switched_off()
+    {
+        using var rsa = RSA.Create(2048);
+        var key = new RsaSecurityKey(rsa) { KeyId = "hanko-key-1" };
+        using var factory = WithHanko(key, new() { ["Auth:SupabaseUrl"] = "", ["Auth:AllowGuests"] = "false" });
+        var anonymous = factory.CreateClient();
+
+        var caps = JsonDocument.Parse(await anonymous.GetStringAsync("/api/v1/capabilities")).RootElement;
+        Assert.Equal(["hanko"], caps.GetProperty("signInProviders").EnumerateArray().Select(e => e.GetString()));
+        Assert.False(caps.GetProperty("guestSignIn").GetBoolean());
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.PostAsync("/api/v1/auth/guest", null)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await Bearer(factory, HankoToken(key, HankoAlice)).GetAsync("/api/v1/overview")).StatusCode);
     }
 }
