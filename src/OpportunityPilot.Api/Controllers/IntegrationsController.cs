@@ -11,9 +11,15 @@ namespace OpportunityPilot.Api.Controllers;
 /// <summary>Slack, Teams, webhooks, HubSpot, Notion, Airtable and a calendar feed. Secrets never appear in a response.</summary>
 [ApiController]
 [Route("api/v1")]
-public sealed class IntegrationsController(IntegrationService integrations, IntegrationNotifier notifier, IOptions<IntegrationOptions> options) : ControllerBase
+public sealed class IntegrationsController(
+    IntegrationService integrations, ConnectorOauthService oauth, IntegrationNotifier notifier, IOptions<IntegrationOptions> options,
+    IOptions<OpportunityPilot.Application.Mail.MailOptions> mail) : ControllerBase
 {
     private string FeedBase => string.IsNullOrWhiteSpace(options.Value.PublicApiBase) ? $"{Request.Scheme}://{Request.Host}" : options.Value.PublicApiBase!;
+
+    /// <summary>Where the services send the browser back: Integrations__PublicApiBase, else Mail__PublicApiBase, else this request's own address.</summary>
+    private string ApiBase => !string.IsNullOrWhiteSpace(options.Value.PublicApiBase) ? options.Value.PublicApiBase!
+        : !string.IsNullOrWhiteSpace(mail.Value.PublicApiBase) ? mail.Value.PublicApiBase! : $"{Request.Scheme}://{Request.Host}";
 
     [HttpGet("integrations")]
     public async Task<ActionResult<IReadOnlyList<IntegrationDto>>> List(CancellationToken ct) => Ok(await integrations.ListAsync(FeedBase, ct));
@@ -31,6 +37,28 @@ public sealed class IntegrationsController(IntegrationService integrations, Inte
     [HttpPut("integrations/{kind}/events")]
     public async Task<ActionResult<IntegrationDto>> Events(IntegrationKind kind, UpdateIntegrationEventsRequest request, CancellationToken ct) =>
         await integrations.SetEventsAsync(kind, request, FeedBase, ct);
+
+    /// <summary>"Connect with Notion / HubSpot / Slack / Airtable": the address of the service's own consent screen. 409 when the server has no app for it.</summary>
+    [EnableRateLimiting(RateLimits.Connectors)]
+    [HttpPost("integrations/{kind}/oauth")]
+    public ActionResult<OauthStartResponse> StartOauth(IntegrationKind kind) => oauth.Begin(kind, ApiBase);
+
+    /// <summary>The service sends the browser here, so there is no bearer token; the sealed, expiring state names the person. Tokens never go in the redirect.</summary>
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.PublicProgress)]
+    [HttpGet("integrations/oauth/callback/{kind}")]
+    public async Task<IActionResult> OauthCallback(IntegrationKind kind, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct) =>
+        Redirect(await oauth.CompleteAsync(kind, code, state, error, ApiBase, ct));
+
+    /// <summary>Notion databases or Airtable tables this connection can see.</summary>
+    [EnableRateLimiting(RateLimits.Connectors)]
+    [HttpGet("integrations/{kind}/targets")]
+    public async Task<ActionResult<IReadOnlyList<IntegrationTargetDto>>> Targets(IntegrationKind kind, CancellationToken ct) => Ok(await integrations.TargetsAsync(kind, ct));
+
+    [EnableRateLimiting(RateLimits.Connectors)]
+    [HttpPut("integrations/{kind}/target")]
+    public async Task<ActionResult<IntegrationDto>> SetTarget(IntegrationKind kind, SelectIntegrationTargetRequest request, CancellationToken ct) =>
+        await integrations.SetTargetAsync(kind, request, FeedBase, ct);
 
     [HttpDelete("integrations/{kind}")]
     public async Task<IActionResult> Disconnect(IntegrationKind kind, CancellationToken ct) { await integrations.DisconnectAsync(kind, ct); return NoContent(); }

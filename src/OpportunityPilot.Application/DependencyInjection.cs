@@ -71,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<Integrations.IPeopleSource, Integrations.HunterSource>();
         services.AddScoped<Integrations.IPeopleSource, Integrations.ApolloSource>();
         services.AddScoped<Integrations.IntegrationService>();
+        services.AddScoped<Integrations.ConnectorOauthService>();
         services.AddScoped<Agents.AgentStatusService>();
         services.AddScoped<Integrations.IntegrationNotifier>();
         services.AddScoped<Analytics.UserEventLog>();
