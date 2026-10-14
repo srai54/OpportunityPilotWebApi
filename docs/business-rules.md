@@ -289,6 +289,26 @@ Code: `Application/Drafts/DraftService.cs`, `Domain/Drafts/OutreachDraft.cs`
 - No outbound delivery occurs. A valid approved CoverNote is exposed to the desktop agent, which fills it only into an
   explicitly cover-letter-like free-text field. Unapproved, edited or revoked text is never returned to the agent.
 
+### Third-party contact data (REACH2: Hunter, Apollo)
+
+Code: `Application/Integrations/PeopleSources.cs`, `Application/Opportunities/PeopleFinder.cs`
+
+- Only with the person's own Hunter or Apollo API key, connected in Connectors (checked against the real account first, stored encrypted,
+  never returned or logged, sent only in a request header). Nothing is looked up without a connected key (409).
+- The company domain comes from the lead's own website (Customer/Company leads) or a website the person passes; a Job lead's link is the
+  job board, so without a website the request is refused with "Add the company website first.". IP addresses and single-label hosts are refused.
+- Every person returned is third-party data labelled with its source (`source`, and a `note` saying where it came from and that
+  OpportunityPilot did not check it). Hunter's confidence and Apollo's `email_status` are shown as the service's own opinion; the app never
+  marks such an address verified. Unlike "Find a contact" (published addresses only), these may be addresses the service inferred.
+- Nothing is stored: not the people, not the addresses. The only write is a `Note` activity (count, domain, service; never an address) and the
+  connection's last-used time or last error. At most 10 people per lookup; at most 10 titles of ≤80 characters.
+- Apollo search uses no credits and returns no emails; revealing one (`people/reveal`, Apollo `people/match`, personal emails not requested)
+  uses the person's Apollo credits, and the response's `creditsNote` says so. A Hunter search that finds someone uses one of the plan's searches.
+- If the person copies one of these addresses into a draft, the existing draft rule applies unchanged: it does not match stored evidence, so
+  the draft shows it as `UserEntered` (typed, unverified).
+- Upstream refusals (401 key refused, 429 limit used up, 403 key lacks the endpoint) become 409 with a plain reason; the reason never contains
+  the key or the request URL. Rate limit: `connectors` (60/h per owner).
+
 ### AI rewrite of a draft (CON8)
 
 Code: `Application/Drafts/DraftRewriteService.cs`, `Application/Drafts/DraftRewriteCheck.cs`
