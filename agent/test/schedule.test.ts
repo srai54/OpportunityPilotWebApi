@@ -131,3 +131,41 @@ describe('scheduler lines', () => {
     expect(schedulerLines('/home/me/agent', '09:05', 'linux')[0]).toMatch(/^5 9 \* \* \* cd \/home\/me\/agent/)
   })
 })
+
+describe('people steps in a cycle', () => {
+  const ok: CycleDeps = { collect: async () => ({ sent: 1 }), apply: async () => ({}), log: () => {} }
+  const opts = (risk: boolean) => ({ accountRiskAccepted: risk, maxPerRun: 10, now: () => at(2026, 10, 14, 10, 0) })
+
+  it('maps requested circles by default and sends LinkedIn notes only with outreachSubmit and the risk opt-in', async () => {
+    const calls: string[] = []
+    const deps: CycleDeps = {
+      ...ok,
+      circle: async () => { calls.push('circle'); return { mapped: 2 } },
+      outreach: async () => { calls.push('outreach'); return { sent: 1 } },
+    }
+    const s1 = await runCycle(base, opts(true), deps, EMPTY_STATE)
+    expect(calls).toEqual(['circle'])
+    expect(s1.lastMessage).toContain('circle: mapped 2')
+
+    calls.length = 0
+    await runCycle({ ...base, outreachSubmit: true }, opts(false), deps, EMPTY_STATE)
+    expect(calls).toEqual(['circle']) // no opt-in: nothing is sent
+
+    calls.length = 0
+    const s3 = await runCycle({ ...base, outreachSubmit: true, circle: false }, opts(true), deps, EMPTY_STATE)
+    expect(calls).toEqual(['outreach'])
+    expect(s3.lastMessage).toContain('outreach: sent 1')
+  })
+
+  it('a stop in the circle step ends the cycle before any note is sent', async () => {
+    const calls: string[] = []
+    const state = await runCycle({ ...base, outreachSubmit: true }, opts(true), {
+      ...ok,
+      circle: async () => ({ mapped: 0, stoppedBecause: 'LinkedIn is asking for a security check.' }),
+      outreach: async () => { calls.push('outreach'); return { sent: 1 } },
+    }, EMPTY_STATE)
+    expect(state.lastResult).toBe('stopped')
+    expect(calls).toEqual([])
+  })
+})
+

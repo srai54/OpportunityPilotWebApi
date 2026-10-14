@@ -15,6 +15,7 @@ TypeScript conventions: [docs/conventions.md](../docs/conventions.md#desktop-age
 |---|---|
 | `agent/src/platforms/types.ts` | `PlatformAdapter` contract: `platform`, `loginUrl`, `isLoggedIn`, `searchPage`, `openJob`, `readDescription`, `apply` |
 | `agent/src/platforms/linkedin.ts`, `naukri.ts` | one factory per site, taking `base` so tests can point it at the mock |
+| `agent/src/platforms/linkedin-people.ts` | LinkedIn people search cards (JD circle) and profile actions (Connect → Add a note, Message); pure parsing/decision functions plus page functions taking `base` |
 | `agent/src/form.ts` | generic field discovery (labels resolved like assistive tech) and filling for multi-step forms |
 | `agent/src/answers.ts` | rule-based answers from `config.json`; returns `undefined` when nothing matches |
 | `agent/src/browser.ts` | persistent profile, the `__name` shim (`prepareContext`), `captureDebug` |
@@ -68,5 +69,7 @@ answers, a `NeedsManual` case, and a stop case. The mock proves the logic, not t
 - Never let a dry run click a final Submit/Apply (Naukri submits on the first Apply click, so its dry run stops before it).
 - Never guess an answer the user did not save; never type free text that is not in `config.json`.
 - Never apply to anything that did not come from `GET /api/v1/agent/shortlist`.
+- Never send a LinkedIn note or message that did not come from `GET /api/v1/agent/linkedin-outbox`, never change its text, and never send one whose start came back `reused`.
+- Never let an outreach dry run click a final Send or leave typed text behind in a message box.
 - Never remove an old selector in the same change that adds a new one unless the debug evidence shows it is gone everywhere.
 - Never read, edit or commit `agent/config.json` or `agent/.data/**` — they hold the user's answers, key and session.

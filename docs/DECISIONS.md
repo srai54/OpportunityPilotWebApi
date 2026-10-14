@@ -123,3 +123,20 @@ The agent shortlist now lists only LinkedIn, Naukri and InstaHyre jobs (before, 
 | LinkedIn feed (`linkedin.com/feed`) | Behind your login; LinkedIn APIs are partner-only; reading it would be scraping | Live LinkedIn postings (above); the local agent applies through your own browser |
 | Stellantis "thehub" (`idpm.stellantis.com`) | A private corporate sign-in portal (employee/supplier identity), not a job source; no public jobs or API | Nothing. Add Stellantis' public careers board as a campaign source if it uses a supported ATS |
 | Upwork | Official GraphQL API (`api.upwork.com/graphql`, `marketplaceJobPostingsSearch`) needs an approved key and the Authorization Code grant (your Upwork account connected); job RSS feeds were retired in 2024 | Shown as *Not built yet* (W14). The client is built once the key is approved and the query can be tested (TASKS U6 → W16). Proposals/Connects are never spent by the app |
+
+## 2026-10-14 — JD circle and LinkedIn notes run only in the person's own browser (JDC1, LI1)
+
+**Decision:** the people around a lead (recruiters, hiring managers, team, the person's own connections) are read by the local
+desktop agent from LinkedIn people search in the person's own logged-in browser, only for leads the person asked to map, and only
+from the visible result cards (name, headline, profile link, degree). Approved `LinkedInMessage` drafts addressed to a profile link
+are sent by the same agent: a dry run by default (fills the Connect → "Add a note" dialog or the message box, no final click);
+real sends need `--submit` and `"iUnderstandAccountRisk": true`, are capped per day (config, default 10; server ceiling 25), stop at
+any checkpoint or CAPTCHA, and go through the provider gateway (provider `LinkedInAgent`) so approval-version, suppression, quota and
+at-most-once hold exactly as for mailbox sends. The circle request is two nullable columns on `opportunities`
+(`CircleRequestedAt`, `CircleMappedAt`) rather than a table: one request per lead is all that is needed.
+
+**Why:** the user asked for the people around a job and for notes that actually get sent. The API stays free of logged-in platform
+automation (CLAUDE.md guardrail); the agent already holds the person's own LinkedIn session for Easy Apply. Unofficial automation can
+restrict a LinkedIn account, hence dry-run default, low caps and the same explicit risk opt-in as applying. Not verified against
+live LinkedIn: selectors follow LinkedIn's known structure and are proven only against the mock site.
+

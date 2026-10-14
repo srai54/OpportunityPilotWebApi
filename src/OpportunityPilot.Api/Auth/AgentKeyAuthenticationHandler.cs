@@ -23,6 +23,7 @@ public sealed class AgentKeyAuthenticationHandler(
     public const string ResearchPolicy = "agent:Research";
     public const string ShortlistPolicy = "agent:Shortlist";
     public const string ApplicationsPolicy = "agent:Applications";
+    public const string PeoplePolicy = "agent:People";
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {

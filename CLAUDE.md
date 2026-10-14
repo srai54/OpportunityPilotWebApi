@@ -46,7 +46,7 @@ Run from the repository root unless noted. dotnet-ef 10.x must be installed glob
 | Apply in a release | `dotnet OpportunityPilot.Api.dll --migrate` (Docker does this when `MIGRATE_ON_START=true`) |
 | Docker image / run | `docker build -t opportunitypilot-api .` · `docker run --rm -p 8080:8080 opportunitypilot-api` |
 | Agent setup (in `agent/`) | `npm install` · `npx playwright install chromium` · `npm run agent -- init` |
-| Agent commands (in `agent/`) | `npm run agent -- login <linkedin\|naukri>` · `campaigns` · `collect <platform> --campaign <id>` · `apply <platform> [--submit] [--limit N] [--headless]` · `sync` · `status` |
+| Agent commands (in `agent/`) | `npm run agent -- login <linkedin\|naukri>` · `campaigns` · `collect <platform> --campaign <id>` · `apply <platform> [--submit] [--limit N] [--headless]` · `circle linkedin [--limit N]` · `outreach linkedin [--submit] [--limit N]` · `cycle` · `watch` · `sync` · `status` |
 | Agent checks (in `agent/`) | `npm run typecheck` · `npm test` (unit + e2e against the local mock) |
 | Lint / format | none configured; the 0-warning build is the gate (OQ-BE-028) |
 
@@ -60,7 +60,7 @@ Run from the repository root unless noted. dotnet-ef 10.x must be installed glob
 | `src/OpportunityPilot.Api/` | `Controllers/`, `Auth/` (schemes, guest tokens, JWKS, `CurrentUser`), `Hosting/` (exception handler, correlation id, health check, research processor), `Program.cs`, `appsettings*.json` |
 | `tests/OpportunityPilot.UnitTests/` | pure tests; research ones under `Research/` |
 | `tests/OpportunityPilot.IntegrationTests/` | `<Feature>ApiTests.cs` on `PostgresApiFactory`; `StartupGuardTests.cs` for production/demo startup |
-| `agent/src/` | `cli.ts` (commands), `run.ts` (apply), `collect.ts`, `api.ts`, `form.ts`, `answers.ts`, `browser.ts`, `store.ts`, `config.ts`, `util.ts`, `platforms/` (`types.ts`, one adapter per site) |
+| `agent/src/` | `cli.ts` (commands), `run.ts` (apply), `collect.ts`, `circle.ts` (JD circle), `outreach.ts` (LinkedIn notes), `schedule.ts`, `api.ts`, `form.ts`, `answers.ts`, `browser.ts`, `store.ts`, `config.ts`, `util.ts`, `platforms/` (`types.ts`, one adapter per site, `linkedin-people.ts` for people search and profile actions) |
 | `agent/test/` | `*.test.ts` (Vitest) and `mock/server.ts` (local LinkedIn/Naukri stand-in + fake API) |
 | `docs/` | reference docs (table below); `RESEARCH_CONTRACT.md`, `M4_M5_CONTRACT.md` are slice specs |
 | `skills/` | task procedures (table below) |

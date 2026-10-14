@@ -1,7 +1,8 @@
 # OpportunityPilot agent
 
 Works with the web app's **research** pipeline, from your own logged-in browser on
-**LinkedIn (Easy Apply)** and **Naukri**, using answers you saved — no AI, no API keys.
+**LinkedIn (Easy Apply)** and **Naukri**, using answers you saved — no AI, no API keys. On LinkedIn it can also
+map the people around a job and send the notes you approved (see *People around a job*).
 
 ```
 Campaign (your criteria) ──► agent collect ──► postings with their text ──► research job
@@ -73,6 +74,48 @@ npm run agent -- sync                                    # re-upload results the
 Naukri sends an application the moment Apply is clicked, so its dry run stops *before*
 Apply; its recruiter questionnaire is only exercised with `--submit`.
 
+## People around a job (JD circle) and LinkedIn notes
+
+Two LinkedIn-only commands, both in your own logged-in browser. Your LinkedIn password is never seen or stored.
+
+```bash
+npm run agent -- circle linkedin [--limit N]               # map the leads you asked for in the web app
+npm run agent -- outreach linkedin [--limit N]             # DRY RUN over your approved LinkedIn notes
+npm run agent -- outreach linkedin --submit [--limit N]    # really send them
+```
+
+**circle** — first ask for a lead's people (the API call `POST /api/v1/opportunities/{id}/circle/request`; the web app does not
+have a button for it yet). The agent then runs three LinkedIn people
+searches per lead: `"<company>" (recruiter OR "talent acquisition")`, `"<company>" ("hiring manager" OR "engineering manager" OR
+"head of")` plus the job title's key words, and `"<company>"` among your 1st-degree connections (`network=["F"]`). It reads only the
+visible result cards (name, headline, profile link, connection degree), keeps people whose headline or current position names the
+company, labels each one (Recruiter, HiringManager, Team, Connection, Other), removes duplicates and sends at most 50 per lead to the
+app. Nobody is contacted. It reads `limits.circlePages` result pages per search (default 1, at most 3), pauses between pages and
+maps at most `limits.maxCircleLeadsPerRun` leads per run (default 5).
+
+**outreach** — sends LinkedIn message drafts you approved in the web app and addressed to a person's LinkedIn profile link (for
+example someone from the circle). The text is exactly what you approved; the agent never writes or changes it.
+
+| Situation on the profile | What the agent does |
+|---|---|
+| You are already connected (1st degree) | Message box: types the note and sends it |
+| Not connected, note ≤ 300 characters | Connect → *Add a note* → types the note → *Send* |
+| Not connected, note over 300 characters | Refuses (LinkedIn's note limit); shorten it in the app |
+| Invitation already pending, or only *Follow* | Refuses with the reason |
+| Security check, CAPTCHA, logged out | Stops the whole run |
+
+| Rule | Behaviour |
+|---|---|
+| Dry run is the default | Fills the note or the message box, never clicks the final *Send*, clears what it typed, and tells the app nothing |
+| `--submit` | Only with `"iUnderstandAccountRisk": true` (the same rule as applying) |
+| Once only | Every real send is started in the app first; if that approved text was already started, it is skipped. The result is recorded with a receipt (confirm) or a reason (fail). A send LinkedIn did not visibly confirm after the click is left for you to settle in the app, never retried |
+| Caps | `limits.maxLinkedInNotesPerDay` per day (default 10, at most 25; the app also stops at 25 a day); `--limit` per run |
+| Local log | `.data/linkedin-outreach.jsonl`; a refused or sent version is never tried again (editing the draft makes a new version) |
+
+Free LinkedIn accounts can add only a few personalised notes a month; when LinkedIn says so, the agent stops sending connection
+requests for that run (messages to connections continue). Selectors follow LinkedIn's structure but are proven only against the
+local mock — run a dry run first and watch the window.
+
 ## Scheduling (run the campaign and apply on a timer)
 
 A **cycle** is: for each target, `collect` new postings for the campaign (research then scores them), then `apply` to the jobs **you already approved** in the web app. Nothing is applied to that you did not approve, and a cycle is a **dry run** unless you turn `schedule.submit` on.
@@ -86,9 +129,14 @@ Add this to `config.json`:
   "window": "09:00-18:00",
   "jitterMinutes": 20,
   "submit": false,
-  "applyLimit": 5
+  "applyLimit": 5,
+  "circle": true,
+  "outreachSubmit": false
 }
 ```
+
+After the targets, a cycle maps the circles you asked for (`circle`, default on; read-only) and, only when `outreachSubmit` is
+`true` **and** `iUnderstandAccountRisk` is `true`, sends your approved LinkedIn notes (a scheduled outreach is never a dry run).
 
 ```bash
 npm run agent -- cycle       # one round now (what the timer runs)
@@ -132,7 +180,9 @@ limit, `limits.maxApplicationsPerDay`, or three failures in a row.
 | `limits.maxPages` | result pages per keyword when collecting |
 | `limits.maxPostingsPerCollect` | postings opened and sent per collect run |
 | `search.postedWithinDays` | only postings this recent |
-| `schedule.*` | targets, everyHours, window, jitterMinutes, submit, applyLimit (see Scheduling) |
+| `limits.maxCircleLeadsPerRun` / `limits.circlePages` | leads mapped per `circle` run (default 5) / result pages per people search (1–3, default 1) |
+| `limits.maxLinkedInNotesPerDay` | LinkedIn notes `outreach --submit` sends per day (1–25, default 10) |
+| `schedule.*` | targets, everyHours, window, jitterMinutes, submit, applyLimit, circle, outreachSubmit (see Scheduling) |
 | `profile.resumePath` | uploaded only when a form demands a resume |
 | `profile.followCompanies` | LinkedIn's "follow company" box (default off) |
 | `profile.acceptTermsCheckboxes` | tick "I agree / I confirm" boxes for you (default **off** — such forms become *Needs you*) |
@@ -157,6 +207,9 @@ probably changed", send the newest files from `.data/debug/` (a `.png` screensho
 npm run typecheck
 npm test        # unit tests + end-to-end runs against a local mock of LinkedIn and Naukri
 ```
+
+`test/people.test.ts` covers the circle parsing and classification (including a saved HTML fixture of both LinkedIn card
+layouts); `test/outreach.test.ts` runs `circle` and `outreach` against the mock's people search and profile pages and a fake API.
 
 The mock (`test/mock/server.ts`) mirrors the real sites' structure; it proves the
 agent's logic, not that the live sites are unchanged. InstaHyre is not supported yet.

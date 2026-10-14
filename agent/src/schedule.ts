@@ -25,9 +25,15 @@ export interface ScheduleConfig {
   submit: boolean
   /** Applications per target per cycle (never above limits.maxApplicationsPerRun). */
   applyLimit: number
+  /** Map the LinkedIn circle of every lead you asked for (read-only; nothing is sent). Default on. */
+  circle: boolean
+  /** Send your approved LinkedIn notes in each cycle. Only real sends (never a scheduled dry run); also needs "iUnderstandAccountRisk": true. Default off. */
+  outreachSubmit: boolean
 }
 
-export const DEFAULT_SCHEDULE: ScheduleConfig = { targets: [], everyHours: 24, window: '09:00-18:00', jitterMinutes: 20, submit: false, applyLimit: 5 }
+export const DEFAULT_SCHEDULE: ScheduleConfig = {
+  targets: [], everyHours: 24, window: '09:00-18:00', jitterMinutes: 20, submit: false, applyLimit: 5, circle: true, outreachSubmit: false,
+}
 
 const PLATFORMS: PlatformName[] = ['linkedin', 'naukri', 'instahyre']
 
@@ -125,6 +131,10 @@ export interface CycleDeps {
   collect: (t: ScheduleTarget) => Promise<{ sent: number }>
   /** Applies to the approved jobs. `stoppedBecause` is set when the run met a security check, a limit or a logged-out session. */
   apply: (t: ScheduleTarget, opts: { submit: boolean; limit: number }) => Promise<{ stoppedBecause?: string | null }>
+  /** Maps the circles you asked for (when schedule.circle is on). */
+  circle?: () => Promise<{ stoppedBecause?: string | null; mapped: number }>
+  /** Sends approved LinkedIn notes for real (only when schedule.outreachSubmit and the account-risk opt-in are both on). */
+  outreach?: () => Promise<{ stoppedBecause?: string | null; sent: number }>
   log: (line: string) => void
 }
 
@@ -156,6 +166,31 @@ export async function runCycle(schedule: ScheduleConfig, opts: { accountRiskAcce
       // A logged-out session or unreachable API will fail every later target the same way: stop rather than retry them all.
       break
     }
+  }
+  // People work after the job targets, and only when nothing above stopped or failed.
+  const step = async (label: string, run: () => Promise<{ stoppedBecause?: string | null; note: string }>) => {
+    if (state.lastResult !== 'ok') return
+    try {
+      const r = await run()
+      if (r.stoppedBecause) {
+        state.lastResult = 'stopped'
+        notes.push(`${label}: stopped — ${r.stoppedBecause}`)
+        deps.log(`${label}: stopped — ${r.stoppedBecause}`)
+      } else notes.push(`${label}: ${r.note}`)
+    } catch (e) {
+      state.lastResult = 'failed'
+      notes.push(`${label}: ${(e as Error).message}`)
+      deps.log(`${label}: ${(e as Error).message}`)
+    }
+  }
+  if (schedule.circle && deps.circle) {
+    const circle = deps.circle
+    await step('circle', async () => { const r = await circle(); return { stoppedBecause: r.stoppedBecause, note: `mapped ${r.mapped}` } })
+  }
+  if (schedule.outreachSubmit && !opts.accountRiskAccepted) deps.log('schedule.outreachSubmit is on but "iUnderstandAccountRisk" is not true: no LinkedIn notes are sent.')
+  if (schedule.outreachSubmit && opts.accountRiskAccepted && deps.outreach) {
+    const outreach = deps.outreach
+    await step('outreach', async () => { const r = await outreach(); return { stoppedBecause: r.stoppedBecause, note: `sent ${r.sent}` } })
   }
   state.lastEnd = opts.now().toISOString()
   state.lastMessage = notes.join(' · ')

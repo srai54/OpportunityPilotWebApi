@@ -216,6 +216,118 @@ function naukriJob(id: string) {
   return page(j.title, header + action, script)
 }
 
+// ---------------------------------------------------------------- LinkedIn people search and profiles (JD circle, outreach)
+
+/** Search cards in LinkedIn's older (entity-result classes) layout. */
+const oldCard = (slug: string | null, name: string, degree: string, headline: string, summary = '') => `
+  <li class="reusable-search__result-container"><div class="entity-result">
+    <span class="entity-result__title-text">${slug
+      ? `<a class="app-aware-link" href="https://www.linkedin.com/in/${slug}?miniProfileUrn=urn%3Ali%3Afs_miniProfile%3AACoAA"><span dir="ltr"><span aria-hidden="true">${name}</span><span class="visually-hidden">View ${name}’s profile</span></span></a>`
+      : `<span aria-hidden="true">${name}</span>`}
+      <span class="entity-result__badge"><span class="entity-result__badge-text"><span aria-hidden="true">• ${degree}</span><span class="visually-hidden">${degree} degree connection</span></span></span></span>
+    <div class="entity-result__primary-subtitle">${headline}</div>
+    <div class="entity-result__secondary-subtitle">Pune, Maharashtra, India</div>
+    ${summary ? `<p class="entity-result__summary">${summary}</p>` : ''}
+    <button>Connect</button></div></li>`
+
+/** Search cards in the newer layout: generated class names, so only the link and the visible lines are stable. */
+const newCard = (slug: string, name: string, degree: string, headline: string, summary = '') => `
+  <div data-view-name="search-entity-result-universal-template"><div class="x9a1">
+    <a class="q7z" href="/li/in/${slug}/"><span aria-hidden="true">${name}</span></a>
+    <div class="b3x">• ${degree}</div>
+    <div class="k8c">${headline}</div>
+    <div class="m2p">Pune</div>
+    ${summary ? `<div class="s4t">${summary}</div>` : ''}
+    <button>Message</button></div></div>`
+
+function linkedInPeopleSearch(keywords: string, network: string | null) {
+  let cards = ''
+  if (network === '["F"]')
+    cards = newCard('meera-iyer', 'Meera Iyer', '1st', 'Software Engineer at Northwind') +
+      newCard('old-colleague', 'Old Colleague', '1st', 'Consultant', 'Past: Developer at Northwind')
+  else if (/recruiter/.test(keywords))
+    cards = oldCard('asha-rao', 'Asha Rao', '2nd', 'Senior Technical Recruiter at Northwind') +
+      oldCard('other-recruiter', 'Kim Lee', '2nd', 'Recruiter at Contoso') +
+      oldCard(null, 'LinkedIn Member', '3rd+', 'Talent Acquisition at Northwind')
+  else if (/hiring manager/.test(keywords))
+    cards = newCard('ravi-menon', 'Ravi Menon', '3rd+', 'Engineering Manager, .NET Platform', 'Current: Engineering Manager at Northwind') +
+      oldCard('asha-rao', 'Asha Rao', '2nd', 'Senior Technical Recruiter at Northwind')
+  return page('People', `<nav id="global-nav">nav</nav><main><div class="search-results-container">${cards ? `<ul class="reusable-search__entity-result-list">${cards}</ul>` : '<h2>No results found</h2>'}</div></main>`)
+}
+
+const PROFILES: Record<string, { name: string; degree: string; kind: 'connect' | 'connect-in-more' | 'connected' | 'pending' | 'follow-only' }> = {
+  'asha-rao': { name: 'Asha Rao', degree: '2nd', kind: 'connect' },
+  'ravi-menon': { name: 'Ravi Menon', degree: '3rd+', kind: 'connect-in-more' },
+  'meera-iyer': { name: 'Meera Iyer', degree: '1st', kind: 'connected' },
+  'pending-person': { name: 'Priya Shah', degree: '2nd', kind: 'pending' },
+  'follow-only': { name: 'Famous Person', degree: '3rd+', kind: 'follow-only' },
+}
+
+function linkedInProfile(slug: string) {
+  if (slug === 'captcha-person') return page('Security', '<main><h1>Let\'s do a quick security check</h1><iframe id="captcha-internal" src="about:blank"></iframe></main>')
+  const p = PROFILES[slug]
+  if (!p) return null
+  const actions = {
+    connect: `<button aria-label="Invite ${p.name} to connect" class="artdeco-button--primary" id="connect">Connect</button>
+      <button aria-label="More actions">More</button>`,
+    'connect-in-more': `<button aria-label="Follow ${p.name}">Follow</button><button aria-label="More actions" id="more">More</button>
+      <div class="artdeco-dropdown__content" id="menu" hidden><div role="button" aria-label="Invite ${p.name} to connect" id="connect">Connect</div></div>`,
+    connected: `<button aria-label="Message ${p.name}" id="message">Message</button><button aria-label="More actions">More</button>`,
+    pending: `<button aria-label="Pending, click to withdraw invitation sent to ${p.name}">Pending</button>`,
+    'follow-only': `<button aria-label="Follow ${p.name}">Follow</button>`,
+  }[p.kind]
+  const body = `<nav id="global-nav">nav</nav><main><section class="artdeco-card pv-top-card">
+      <h1 class="text-heading-xlarge">${p.name}</h1><span class="dist-value">${p.degree}</span>
+      <div class="text-body-medium">Works at Northwind</div>
+      <div class="pvs-profile-actions" id="actions">${actions}</div></section>
+      <div id="toasts"></div><div id="overlay"></div></main>`
+  const script = `
+    const slug = ${JSON.stringify(slug)}, name = ${JSON.stringify(p.name)};
+    const post = (job, values) => fetch('/__submit', { method: 'POST', body: JSON.stringify({ platform: 'LinkedIn', job, values }) });
+    document.getElementById('more')?.addEventListener('click', () => { document.getElementById('menu').hidden = false; });
+    document.getElementById('connect')?.addEventListener('click', () => {
+      document.getElementById('menu') && (document.getElementById('menu').hidden = true);
+      const d = document.createElement('div');
+      d.setAttribute('role', 'dialog');
+      d.innerHTML = '<h2>You can customize this invitation</h2><button aria-label="Dismiss">×</button>' +
+        '<button id="add-note">Add a note</button><button aria-label="Send without a note">Send without a note</button>';
+      document.body.appendChild(d);
+      d.querySelector('[aria-label="Dismiss"]').onclick = () => d.remove();
+      d.querySelector('[aria-label="Send without a note"]').onclick = () => { post('invite:' + slug, { note: '' }); d.remove(); };
+      d.querySelector('#add-note').onclick = () => {
+        d.innerHTML = '<button aria-label="Dismiss">×</button><label for="custom-message">Add a note</label>' +
+          '<textarea id="custom-message" name="message" maxlength="300"></textarea><button aria-label="Send invitation">Send</button>';
+        d.querySelector('[aria-label="Dismiss"]').onclick = () => d.remove();
+        d.querySelector('[aria-label="Send invitation"]').onclick = async () => {
+          await post('invite:' + slug, { note: d.querySelector('textarea').value });
+          d.remove();
+          document.getElementById('actions').innerHTML = '<button aria-label="Pending, click to withdraw invitation sent to ' + name + '">Pending</button>';
+          document.getElementById('toasts').textContent = 'Invitation sent';
+        };
+      };
+    });
+    document.getElementById('message')?.addEventListener('click', () => {
+      const o = document.getElementById('overlay');
+      o.innerHTML = '<div class="msg-overlay-conversation-bubble"><button aria-label="Close your conversation with ' + name + '">×</button>' +
+        '<div class="msg-s-message-list"></div><form><div class="msg-form__contenteditable" contenteditable="true" role="textbox" aria-label="Write a message…"></div>' +
+        '<button type="submit" class="msg-form__send-button">Send</button></form></div>';
+      o.querySelector('[aria-label^="Close your conversation"]').onclick = () => {
+        if (o.querySelector('[role=textbox]').innerText.trim()) post('draft-left:' + slug, { text: o.querySelector('[role=textbox]').innerText });
+        o.innerHTML = '';
+      };
+      o.querySelector('form').onsubmit = async (e) => {
+        e.preventDefault();
+        const box = o.querySelector('[role=textbox]');
+        const text = box.innerText;
+        await post('message:' + slug, { text });
+        const m = document.createElement('p'); m.className = 'msg-s-event-listitem__body'; m.textContent = text;
+        o.querySelector('.msg-s-message-list').appendChild(m);
+        box.innerHTML = '';
+      };
+    });`
+  return page(p.name, body, script)
+}
+
 // ---------------------------------------------------------------- server
 
 export async function startMock(): Promise<{ origin: string; submissions: Submission[]; close: () => Promise<void> }> {
@@ -244,6 +356,24 @@ export async function startMock(): Promise<{ origin: string; submissions: Submis
     if (p === '/wall/login') return send(200, page('Sign in', '<form><input name="session_key"></form>'))
     if (p === '/li/feed/') return send(200, page('Feed', '<nav id="global-nav">feed</nav>'))
     if (p === '/li/jobs/search/') return send(200, linkedInSearch(Number(url.searchParams.get('start') ?? 0)))
+    if (p === '/li/checkpoint/challenge/') return send(200, page('Security check', '<main><h1>Security verification</h1></main>'))
+    if (p === '/li/search/results/people/') {
+      const keywords = url.searchParams.get('keywords') ?? ''
+      if (/checkpoint/i.test(keywords)) {
+        res.writeHead(302, { Location: '/li/checkpoint/challenge/' }).end()
+        return
+      }
+      return send(200, linkedInPeopleSearch(keywords.toLowerCase(), url.searchParams.get('network')))
+    }
+    const profile = p.match(/^\/li\/in\/([^/]+)\/$/)
+    if (profile) {
+      if (profile[1] === 'checkpoint-person') {
+        res.writeHead(302, { Location: '/li/checkpoint/challenge/' }).end()
+        return
+      }
+      const html = linkedInProfile(profile[1])
+      return html ? send(200, html) : send(404, 'gone')
+    }
     const li = p.match(/^\/li\/jobs\/view\/(\d+)\/$/)
     if (li) {
       const html = linkedInJob(li[1])
@@ -269,8 +399,25 @@ export async function startMock(): Promise<{ origin: string; submissions: Submis
 
 // ---------------------------------------------------------------- fake OpportunityPilot API (agent endpoints only)
 
+export interface FakeOutboxItem {
+  draftId: string
+  opportunityId: string
+  version: number
+  profileUrl: string
+  body: string
+  fitsConnectionNote: boolean
+  organization: string
+  title: string
+  personName: string | null
+}
+
 export interface FakeApi {
   url: string
+  circleRequests: { opportunityId: string; mode: string; organization: string; title: string; location: string | null; requestedAt: string }[]
+  circles: { opportunityId: string; people: { name: string; title: string | null; profileUrl: string; relation: string; degree: number | null }[] }[]
+  outbox: FakeOutboxItem[]
+  /** Every start/confirm/fail call, in order, as the gateway saw it. */
+  executions: { draftId: string; step: 'start' | 'confirm' | 'fail'; body: Record<string, unknown>; reused?: boolean }[]
   postings: { campaignId: string; body: { platform: string; queueResearch: boolean; items: { externalId: string; description: string | null }[] } }[]
   reports: { key: string | undefined; items: { externalJobId: string; status: string; opportunityId?: string }[] }[]
   shortlist: { opportunityId: string; campaignId: string; platform: string; externalId: string; url: string; title: string; organization: string }[]
@@ -278,7 +425,9 @@ export interface FakeApi {
 }
 
 export async function startFakeApi(campaigns: unknown[]): Promise<FakeApi> {
-  const api = { postings: [], reports: [], shortlist: [] } as unknown as FakeApi
+  const api = { postings: [], reports: [], shortlist: [], circleRequests: [], circles: [], outbox: [], executions: [] } as unknown as FakeApi
+  // The gateway's at-most-once rule: one open or successful execution per draft; a failed one allows a new start.
+  const state = new Map<string, 'pending' | 'succeeded' | 'failed'>()
   const server = createServer((req, res) => {
     let body = ''
     req.on('data', (c) => (body += c))
@@ -293,6 +442,31 @@ export async function startFakeApi(campaigns: unknown[]): Promise<FakeApi> {
         const parsed = JSON.parse(body)
         api.postings.push({ campaignId: posting[1], body: parsed })
         return json(200, { accepted: parsed.items.length, sourceId: 's1', jobId: parsed.queueResearch ? 'j1' : null })
+      }
+      if (url.pathname === '/api/v1/agent/circle-requests') return json(200, api.circleRequests)
+      if (url.pathname === '/api/v1/agent/circle' && req.method === 'POST') {
+        const parsed = JSON.parse(body)
+        api.circles.push(parsed)
+        api.circleRequests = api.circleRequests.filter((r) => r.opportunityId !== parsed.opportunityId)
+        return json(200, { accepted: parsed.people.length, added: parsed.people.length, updated: 0, total: parsed.people.length })
+      }
+      if (url.pathname === '/api/v1/agent/linkedin-outbox')
+        return json(200, api.outbox.filter((o) => !['pending', 'succeeded'].includes(state.get(o.draftId) ?? '')))
+      const step = url.pathname.match(/^\/api\/v1\/agent\/linkedin-outbox\/([^/]+)\/(start|confirm|fail)$/)
+      if (step) {
+        const [, draftId, name] = step as unknown as [string, string, 'start' | 'confirm' | 'fail']
+        const parsed = JSON.parse(body || '{}')
+        const current = state.get(draftId)
+        if (name === 'start') {
+          const reused = current === 'pending' || current === 'succeeded'
+          if (!reused) state.set(draftId, 'pending')
+          api.executions.push({ draftId, step: name, body: parsed, reused })
+          return json(200, { id: `e-${draftId}`, provider: 'LinkedInAgent', state: reused && current === 'succeeded' ? 'Succeeded' : 'AwaitingManualConfirmation', reused })
+        }
+        if (current !== 'pending') return json(409, { title: 'No LinkedIn send is in progress for this draft.' })
+        state.set(draftId, name === 'confirm' ? 'succeeded' : 'failed')
+        api.executions.push({ draftId, step: name, body: parsed })
+        return json(200, { id: `e-${draftId}`, provider: 'LinkedInAgent', state: name === 'confirm' ? 'Succeeded' : 'Failed', reused: false })
       }
       if (url.pathname === '/api/v1/applications/report') {
         api.reports.push({ key: req.headers['x-agent-key'] as string, items: JSON.parse(body).items })
