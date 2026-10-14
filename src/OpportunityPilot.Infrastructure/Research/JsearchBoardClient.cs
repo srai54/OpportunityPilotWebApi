@@ -27,13 +27,18 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
         if (!o.Configured)
             return new(request.Board, "NotConfigured", [], 0, $"Live {name} listings need a JSearch key on the server (Jsearch__Key).", null, false, source);
 
+        // Naukri and Instahyre do not publish to Google for Jobs (live check 2026-10-14: 19 postings, none from Naukri), so
+        // JSearch cannot return them; say so instead of spending the monthly quota on empty searches.
+        if (request.Board is JobBoard.Naukri or JobBoard.Instahyre)
+            return new(request.Board, "NotConfigured", [], 0,
+                $"{name} does not list its jobs on Google for Jobs. Find {name} jobs with your desktop agent (collect {name.ToLowerInvariant()}), or switch on the {name} RapidAPI board on the server.",
+                null, false, source);
+
         var query = string.IsNullOrWhiteSpace(request.Location) ? request.Query : $"{request.Query} in {request.Location}";
-        // Adding the board name steers Google for Jobs towards that board's copy of each posting. For Naukri and Instahyre it
-        // empties the result instead (checked live 2026-10-14), so those search plainly and keep postings with their apply link.
-        var steer = request.Board is JobBoard.Naukri or JobBoard.Instahyre ? "" : $" via {name}";
+        // Adding the board name steers Google for Jobs towards that board's copy of each posting.
         var parameters = new Dictionary<string, string>
         {
-            ["query"] = query + steer, ["num_pages"] = request.Board is JobBoard.Naukri or JobBoard.Instahyre ? "2" : "1", ["date_posted"] = request.DatePosted,
+            ["query"] = $"{query} via {name}", ["num_pages"] = "1", ["date_posted"] = request.DatePosted,
         };
         // v5 names the remote filter work_from_home; remote_jobs_only is the earlier name. Unknown parameters are ignored.
         if (!string.IsNullOrWhiteSpace(request.Cursor)) parameters["cursor"] = request.Cursor;
