@@ -7,7 +7,8 @@ namespace OpportunityPilot.Application.JobBoards;
 /// Job boards whose postings can be shown live through JSearch. None of them offers a public search API of its own
 /// (Indeed closed it; LinkedIn and SEEK are partner-only), so each posting is kept only when it carries that board's link.
 /// </summary>
-public enum JobBoard { Indeed, LinkedIn, Seek }
+/// <summary>Boards read through JSearch (Google for Jobs). Naukri blocks direct server search, but its postings are listed there.</summary>
+public enum JobBoard { Indeed, LinkedIn, Seek, Naukri, Instahyre }
 
 public sealed record JobBoardSearchRequest(JobBoard Board, string Query, string? Location, bool RemoteOnly, string DatePosted, string? Country, int Page, string? Cursor = null,
     string? EmploymentType = null, string? Experience = null, int? RadiusKm = null);
@@ -74,9 +75,11 @@ public static class JsearchBoardParser
         [JobBoard.Indeed] = ("indeed", ["indeed.com"]),
         [JobBoard.LinkedIn] = ("linkedin", ["linkedin.com"]),
         [JobBoard.Seek] = ("seek", ["seek.com.au", "seek.co.nz"]),
+        [JobBoard.Naukri] = ("naukri", ["naukri.com"]),
+        [JobBoard.Instahyre] = ("instahyre", ["instahyre.com"]),
     };
 
-    public static string Name(JobBoard board) => board switch { JobBoard.LinkedIn => "LinkedIn", JobBoard.Seek => "SEEK", _ => "Indeed" };
+    public static string Name(JobBoard board) => board switch { JobBoard.LinkedIn => "LinkedIn", JobBoard.Seek => "SEEK", JobBoard.Naukri => "Naukri", JobBoard.Instahyre => "Instahyre", _ => "Indeed" };
 
     /// <summary>The v5 pagination cursor (<c>data.cursor</c>), or null when the provider sent none.</summary>
     public static string? NextCursor(string json)

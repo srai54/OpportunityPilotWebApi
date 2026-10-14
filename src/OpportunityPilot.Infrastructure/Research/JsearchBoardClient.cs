@@ -39,7 +39,8 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
         if (!string.IsNullOrWhiteSpace(request.Experience)) parameters["job_requirements"] = request.Experience;
         if (request.RadiusKm is > 0) parameters["radius"] = request.RadiusKm.Value.ToString();
         if (request.RemoteOnly) { parameters["work_from_home"] = "true"; parameters["remote_jobs_only"] = "true"; }
-        var country = request.Board == JobBoard.Seek && string.IsNullOrWhiteSpace(request.Country) ? "au" : request.Country;
+        // SEEK only runs in Australia/New Zealand and Naukri in India: default the country so Google for Jobs returns their postings.
+        var country = !string.IsNullOrWhiteSpace(request.Country) ? request.Country : request.Board switch { JobBoard.Seek => "au", JobBoard.Naukri or JobBoard.Instahyre => "in", _ => request.Country };
         if (!string.IsNullOrWhiteSpace(country)) parameters["country"] = country.ToLowerInvariant();
         var qs = string.Join("&", parameters.Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
 

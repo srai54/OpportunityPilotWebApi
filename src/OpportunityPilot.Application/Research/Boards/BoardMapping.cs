@@ -465,6 +465,8 @@ public static class BoardMapping
         {
             JobBoard.LinkedIn => (JobPlatform.LinkedIn, LinkedInJobId(job.BoardUrl) ?? job.ProviderJobId),
             JobBoard.Seek => (JobPlatform.Seek, job.ProviderJobId),
+            JobBoard.Naukri => (JobPlatform.Naukri, job.ProviderJobId),
+            JobBoard.Instahyre => (JobPlatform.Instahyre, job.ProviderJobId),
             _ => (JobPlatform.Indeed, job.ProviderJobId),
         };
         var url = platform == JobPlatform.LinkedIn && LinkedInJobId(job.BoardUrl) is { } id ? $"https://www.linkedin.com/jobs/view/{id}/" : job.BoardUrl;

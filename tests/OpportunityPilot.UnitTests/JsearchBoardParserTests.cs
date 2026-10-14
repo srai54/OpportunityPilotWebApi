@@ -93,3 +93,23 @@ public class JsearchBoardParserTests
     [Fact]
     public void Missing_data_gives_no_jobs() => Assert.Empty(JsearchBoardParser.Parse("""{"status":"ERROR"}""", JobBoard.Indeed).Jobs);
 }
+
+public class JsearchIndianBoardsTests
+{
+    private const string Json = """
+        {"data":[
+          {"job_id":"n1","job_publisher":"Naukri.com","job_title":"Data Scientist","employer_name":"Larsen & Toubro","job_apply_link":"https://www.naukri.com/job-listings-data-scientist-lt-123","job_city":"Mumbai","job_country":"IN"},
+          {"job_id":"i1","job_publisher":"Instahyre","job_title":"Backend Engineer","employer_name":"Acme","job_apply_link":"https://www.instahyre.com/job-456-backend-engineer/","job_country":"IN"},
+          {"job_id":"l1","job_publisher":"LinkedIn","job_title":"Analyst","employer_name":"Globex","job_apply_link":"https://www.linkedin.com/jobs/view/9","job_country":"IN"}
+        ]}
+        """;
+
+    [Theory]
+    [InlineData(JobBoard.Naukri, "n1")]
+    [InlineData(JobBoard.Instahyre, "i1")]
+    public void Naukri_and_Instahyre_keep_only_their_own_postings(JobBoard board, string id)
+    {
+        var (jobs, _) = JsearchBoardParser.Parse(Json, board);
+        Assert.Equal([id], jobs.Select(j => j.ProviderJobId));
+    }
+}
