@@ -25,25 +25,36 @@ public static class AuthSetup
 
         var baseUrl = auth.SupabaseUrl?.Trim().TrimEnd('/');
         var supabaseConfigured = !string.IsNullOrEmpty(baseUrl);
+        string? supabaseProblem = null;
         if (supabaseConfigured && !baseUrl!.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             supabaseConfigured = false;
-            if (!devBypass) setup.AuthMissing("Auth__SupabaseUrl must be an https URL, so sign-in is guest-only.");
+            supabaseProblem = "Auth__SupabaseUrl must be an https URL, so sign-in is guest-only.";
         }
-        else if (!supabaseConfigured && !devBypass)
+
+        var hanko = HankoAuth.Read(auth, out var hankoProblem);
+        var accounts = supabaseConfigured || hanko is not null;
+        if (!devBypass)
         {
-            setup.AuthMissing("Auth__SupabaseUrl is not set, so sign-in is guest-only.");
+            if (!accounts) setup.AuthMissing(supabaseProblem ?? "Auth__SupabaseUrl is not set, so sign-in is guest-only.");
+            else if (supabaseProblem is not null) setup.ConfigProblem("Auth__SupabaseUrl must be an https URL, so Supabase sign-in is off.");
+            if (hankoProblem is not null) setup.ConfigProblem(hankoProblem);
         }
+        var providers = new List<string>();
+        if (hanko is not null) providers.Add("hanko");
+        if (supabaseConfigured) providers.Add("supabase");
+        setup.SignInProviders = providers;
 
         // Guests use opaque, hashed database sessions: always in demo mode, and next to real accounts unless
         // Auth:AllowGuests is false. Never with the local dev bypass.
-        var guests = new GuestAccess(Enabled: (!supabaseConfigured || auth.AllowGuests) && !devBypass);
+        var guests = new GuestAccess(Enabled: (!accounts || auth.AllowGuests) && !devBypass);
         setup.GuestsEnabled = guests.Enabled;
         builder.Services.AddSingleton(guests);
 
         var schemes = new List<string>();
         var authBuilder = builder.Services.AddAuthentication(
             supabaseConfigured ? JwtBearerDefaults.AuthenticationScheme
+            : hanko is not null ? HankoAuth.SchemeName
             : devBypass ? DevBypassAuthenticationHandler.SchemeName
             : GuestAuthenticationHandler.SchemeName);
 
@@ -56,7 +67,6 @@ public static class AuthSetup
 
         if (supabaseConfigured)
         {
-
             builder.Services.AddSingleton(sp => new SupabaseJwks(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(SupabaseJwks)),
                 $"{baseUrl}/auth/v1/.well-known/jwks.json",
@@ -103,6 +113,47 @@ public static class AuthSetup
                     };
                 });
             schemes.Add(JwtBearerDefaults.AuthenticationScheme);
+        }
+
+        if (hanko is not null)
+        {
+            // A second, independent bearer scheme. Supabase validation above is unchanged; a Hanko token can only pass
+            // here, with the Hanko project's keys, and becomes a namespaced owner id (HankoAuth.OwnerIdFor).
+            var supabaseIssuer = supabaseConfigured ? $"{baseUrl}/auth/v1" : null;
+            builder.Services.AddSingleton(sp => new HankoJwks(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(HankoJwks)),
+                hanko.JwksUrl,
+                sp.GetRequiredService<ILogger<HankoJwks>>()));
+            builder.Services.AddHttpClient(nameof(HankoJwks), c => c.Timeout = TimeSpan.FromSeconds(10));
+
+            authBuilder.AddJwtBearer(HankoAuth.SchemeName, _ => { });
+            builder.Services.AddOptions<JwtBearerOptions>(HankoAuth.SchemeName)
+                .Configure<HankoJwks>((o, jwks) =>
+                {
+                    o.MapInboundClaims = false;
+                    o.TokenValidationParameters = HankoAuth.ValidationParameters(hanko, jwks);
+                    o.Events = new JwtBearerEvents
+                    {
+                        OnMessageReceived = context =>
+                        {
+                            var header = context.Request.Headers.Authorization.ToString();
+                            var token = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                                ? header["Bearer ".Length..].Trim()
+                                : null;
+                            if (HankoAuth.ShouldTry(token, supabaseIssuer)) context.Token = token;
+                            else context.NoResult();
+                            return Task.CompletedTask;
+                        },
+                        OnTokenValidated = context =>
+                        {
+                            var principal = HankoAuth.ToOwnerPrincipal(context.Principal);
+                            if (principal is null) context.Fail("The token subject is invalid.");
+                            else context.Principal = principal;
+                            return Task.CompletedTask;
+                        }
+                    };
+                });
+            schemes.Add(HankoAuth.SchemeName);
         }
 
         if (devBypass)
