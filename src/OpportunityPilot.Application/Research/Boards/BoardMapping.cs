@@ -104,7 +104,10 @@ public static class BoardMapping
 
     // ---------- Adzuna ----------
 
-    /// <summary><c>{ results: [{ id, title, company: { display_name }, location: { display_name }, redirect_url, description }] }</c>.</summary>
+    /// <summary>
+    /// <c>{ results: [{ id, title, company: { display_name }, location: { display_name }, redirect_url, description, created, salary_min, salary_max, salary_is_predicted }] }</c>.
+    /// Adzuna gives no currency (it is the country's own), so pay is shown as plain numbers, marked when Adzuna estimated it.
+    /// </summary>
     public static IReadOnlyList<Candidate>? AdzunaCandidates(string? json, Source source, IContentParser parser)
     {
         using var document = Parse(json);
@@ -121,11 +124,56 @@ public static class BoardMapping
             if (id is null || string.IsNullOrEmpty(title)) continue;
             var url = HttpUrl(Text(r, "redirect_url"));
             var description = Text(r, "description") is { } d ? HtmlToText(d, parser) : null;
+            var pay = Child(r, "salary_min") is { ValueKind: JsonValueKind.Number } min && Child(r, "salary_max") is { ValueKind: JsonValueKind.Number } max
+                ? string.Create(CultureInfo.InvariantCulture, $"Salary: {min.GetDecimal():0} - {max.GetDecimal():0}") +
+                  (Text(r, "salary_is_predicted") == "1" ? " (Adzuna estimate)" : "")
+                : null;
             result.Add(Build(source, JobPlatform.Adzuna, id, title, Text(Child(r, "company"), "display_name") ?? string.Empty,
-                Text(Child(r, "location"), "display_name"), null, url, url, null, description));
+                Text(Child(r, "location"), "display_name"), null, url, url, null, Lines(pay, description), Date(Text(r, "created"))));
         }
         return result;
     }
+
+    // ---------- The Muse ----------
+
+    /// <summary>
+    /// The Muse's public jobs API (one page): <c>{ page, page_count, results: [{ id, name, contents, publication_date, locations: [{ name }],
+    /// levels: [{ name }], company: { name }, refs: { landing_page } }] }</c>. A posting without a title or an http(s) link is dropped.
+    /// </summary>
+    public static IReadOnlyList<Candidate>? TheMuseCandidates(string? json, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root ||
+            Child(root, "results") is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            var title = Text(row, "name");
+            var url = HttpUrl(Text(Child(row, "refs"), "landing_page"));
+            if (title is null || url is null) continue;
+            var places = Names(Child(row, "locations"));
+            var levels = Names(Child(row, "levels"));
+            var remote = places.Any(p => p.Contains("remote", StringComparison.OrdinalIgnoreCase));
+            var description = Text(row, "contents") is { } html ? HtmlToText(html, parser) : null;
+            var level = levels.Count > 0 ? "Level: " + string.Join(", ", levels) : null;
+            result.Add(Build(source, JobPlatform.TheMuse, Text(row, "id") ?? url, title, Text(Child(row, "company"), "name") ?? string.Empty,
+                places.Count == 0 ? null : string.Join("; ", places), remote ? "remote" : null, url, url, null,
+                Lines(level, description), Date(Text(row, "publication_date"))));
+        }
+        return result;
+    }
+
+    /// <summary>The non-blank parts, one per line; null when there are none.</summary>
+    private static string? Lines(params string?[] parts)
+    {
+        var kept = parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+        return kept.Count == 0 ? null : string.Join("\n", kept);
+    }
+
+    /// <summary>The <c>name</c> of every object in a JSON array (The Muse's locations, levels); empty when it is not an array.</summary>
+    private static List<string> Names(JsonElement? array) => array is { ValueKind: JsonValueKind.Array } a
+        ? a.EnumerateArray().Select(e => Text(e, "name")).Where(n => n is not null).Select(n => n!).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+        : [];
 
     // ---------- Additional public boards ----------
 

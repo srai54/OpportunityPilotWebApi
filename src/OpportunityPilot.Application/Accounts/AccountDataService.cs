@@ -52,7 +52,10 @@ public sealed class AccountDataService(IAppDbContext db, ICurrentUser user, Time
             userEvents = await db.UserEvents.Where(x => x.OwnerId == owner).ToListAsync(ct),
             // The encrypted refresh token is a key to the person's mailbox: it is never part of an export.
             mailboxes = await db.MailboxConnections.Where(x => x.OwnerId == owner)
-                .Select(x => new { x.Provider, x.EmailAddress, x.Status, x.ConnectedAt, x.LastUsedAt }).ToListAsync(ct)
+                .Select(x => new { x.Provider, x.EmailAddress, x.Status, x.ConnectedAt, x.LastUsedAt }).ToListAsync(ct),
+            // Same for webhook addresses and service tokens: only what was connected and when.
+            integrations = await db.IntegrationConnections.Where(x => x.OwnerId == owner)
+                .Select(x => new { x.Kind, x.Label, x.Events, x.ConnectedAt, x.LastUsedAt }).ToListAsync(ct)
         };
     }
 
@@ -95,6 +98,7 @@ public sealed class AccountDataService(IAppDbContext db, ICurrentUser user, Time
         db.AiUsages.RemoveRange(await db.AiUsages.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.UserEvents.RemoveRange(await db.UserEvents.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.MailboxConnections.RemoveRange(await db.MailboxConnections.Where(x => x.OwnerId == owner).ToListAsync(ct));
+        db.IntegrationConnections.RemoveRange(await db.IntegrationConnections.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.CandidateProgressLinks.RemoveRange(await db.CandidateProgressLinks.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.SecurityEvents.RemoveRange(await db.SecurityEvents.Where(x => x.OwnerId == owner).ToListAsync(ct));
         // The one record kept: that this owner's data was deleted, and when. It holds nothing else.

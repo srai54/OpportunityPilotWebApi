@@ -3,7 +3,7 @@ using OpportunityPilot.Domain.Common;
 namespace OpportunityPilot.Domain.Outreach;
 
 public enum ExecutionSubject { OutreachDraft, SalesBid }
-public enum ExecutionProvider { Manual, Gmail, Freelancer, Upwork, Outlook }
+public enum ExecutionProvider { Manual, Gmail, Freelancer, Upwork, Outlook, Smtp }
 public enum ExecutionState { AwaitingManualConfirmation, Succeeded, Failed }
 
 /// <summary>

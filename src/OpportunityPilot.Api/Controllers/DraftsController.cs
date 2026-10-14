@@ -5,8 +5,12 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1")]
-public sealed class DraftsController(DraftService drafts) : ControllerBase
+public sealed class DraftsController(DraftService drafts, DraftPreparer preparer, DraftRewriteService rewrites) : ControllerBase
 {
+    /// <summary>Sales hands-off, step one: write the email for every shortlisted lead that has a published address. Approving and sending stay separate, explicit steps.</summary>
+    [HttpPost("campaigns/{campaignId:guid}/drafts/prepare")]
+    public async Task<ActionResult<PrepareDraftsResult>> Prepare(Guid campaignId, CancellationToken ct) => await preparer.PrepareAsync(campaignId, ct);
+
     [HttpPost("opportunities/{opportunityId:guid}/drafts")]
     public async Task<ActionResult<DraftDto>> Create(Guid opportunityId, CreateDraftRequest request, CancellationToken ct)
     {
@@ -38,6 +42,11 @@ public sealed class DraftsController(DraftService drafts) : ControllerBase
     [HttpPost("drafts/batch-approve")]
     public async Task<ActionResult<IReadOnlyList<BatchApproveDraftResult>>> BatchApprove(BatchApproveDraftRequest request, CancellationToken ct) =>
         Ok(await drafts.BatchApproveAsync(request, ct));
+
+    /// <summary>AI rewrite suggestion (not saved); apply it with PUT so the normal draft checks run.</summary>
+    [HttpPost("drafts/{id:guid}/rewrite")]
+    public async Task<ActionResult<DraftRewriteDto>> Rewrite(Guid id, RewriteDraftRequest request, CancellationToken ct) =>
+        await rewrites.RewriteAsync(id, request, ct);
 
     [HttpPost("drafts/{id:guid}/revoke-approval")]
     public async Task<ActionResult<DraftDto>> Revoke(Guid id, CancellationToken ct) => await drafts.RevokeAsync(id, ct);

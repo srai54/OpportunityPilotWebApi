@@ -37,12 +37,27 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         }
     }
 
+    private sealed class FakeReader : IMailboxReader
+    {
+        public MailboxReadResult Next { get; set; } = new([]);
+        public int Calls { get; private set; }
+        public Task<MailboxReadResult> ReadHeadersSinceAsync(string credentialsJson, DateTime sinceUtc, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(Next);
+        }
+    }
+
     private static readonly string TokenKey = Convert.ToBase64String(Enumerable.Range(1, 32).Select(i => (byte)i).ToArray());
 
-    private WebApplicationFactory<Program> App(FakeTransport fake, bool configured = true) =>
+    private WebApplicationFactory<Program> App(FakeTransport fake, bool configured = true, FakeReader? reader = null) =>
         factory.WithWebHostBuilder(b =>
         {
-            b.ConfigureTestServices(s => s.AddSingleton<IMailTransport>(fake));
+            b.ConfigureTestServices(s =>
+            {
+                s.AddSingleton<IMailTransport>(fake);
+                if (reader is not null) s.AddSingleton<IMailboxReader>(reader);
+            });
             if (!configured) return;
             b.UseSetting("Mail:TokenKey", TokenKey);
             b.UseSetting("Mail:PublicApiBase", "https://api.example.test");
@@ -87,8 +102,10 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         await using var app = App(new FakeTransport(), configured: false);
         var user = PostgresApiFactory.ClientFor(app, "mail-none@example.test");
         var list = (await user.GetJson("/api/v1/mailboxes")).EnumerateArray().ToList();
-        Assert.Equal(2, list.Count);
-        Assert.All(list, m => { Assert.False(m.GetProperty("configured").GetBoolean()); Assert.False(m.GetProperty("connected").GetBoolean()); });
+        Assert.Equal(3, list.Count);
+        Assert.All(list.Where(m => m.Str("provider") != "Smtp"), m => { Assert.False(m.GetProperty("configured").GetBoolean()); Assert.False(m.GetProperty("connected").GetBoolean()); });
+        // Email with an app password needs no provider app, only the server's own key, so it is the one way that is ready out of the box.
+        Assert.True(list.Single(m => m.Str("provider") == "Smtp").GetProperty("configured").GetBoolean());
         Assert.Equal(HttpStatusCode.Conflict, (await user.PostAsync("/api/v1/mailboxes/Google/connect", null)).StatusCode);
     }
 
@@ -270,10 +287,133 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         Assert.Equal(HttpStatusCode.BadRequest, (await other.PostAsJsonAsync($"/api/v1/drafts/{draftId}/send-via-mailbox", new { version = 1, provider = "Google" })).StatusCode);
         Assert.Empty(fake.Sent);
     }
+
+    [Fact]
+    public async Task Email_with_an_app_password_is_verified_by_a_test_message_stored_encrypted_and_sends_an_approved_draft_once()
+    {
+        var fake = new FakeTransport();
+        await using var app = App(fake);
+        PostgresApiFactoryServices.Current = app.Services;
+        var user = PostgresApiFactory.ClientFor(app, "mail-smtp@example.test");
+
+        // A wrong password never connects.
+        fake.NextResult = new(false, null, string.Empty, "Your email provider refused the login. Check the app password and connect again.", TokenRejected: true);
+        var refused = await user.PostAsJsonAsync("/api/v1/mailboxes/smtp", new { preset = "gmail", username = "asha@gmail.test", password = "wrong" });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.False((await user.GetJson("/api/v1/mailboxes")).EnumerateArray().Single(m => m.Str("provider") == "Smtp").GetProperty("connected").GetBoolean());
+
+        fake.NextResult = new(true, null, "Accepted by smtp.gmail.com for sending from your own email. Accepted is not a delivery confirmation.", null);
+        var connected = await (await user.PostAsJsonAsync("/api/v1/mailboxes/smtp", new { preset = "gmail", username = "asha@gmail.test", password = "abcd efgh ijkl mnop" })).Json(HttpStatusCode.OK);
+        Assert.Equal("asha@gmail.test", connected.Str("emailAddress"));
+        var test = Assert.Single(fake.Sent);
+        Assert.Equal("asha@gmail.test", test.To);
+        fake.Sent.Clear();
+
+        var listText = await (await user.GetAsync("/api/v1/mailboxes")).Content.ReadAsStringAsync();
+        Assert.DoesNotContain("abcd efgh", listText);
+        Assert.DoesNotContain("password", listText, StringComparison.OrdinalIgnoreCase);
+
+        var draftId = await ApprovedDraftAsync(user, "ops@northwind.example");
+        var version = (await user.GetJson($"/api/v1/drafts/{draftId}")).Int("version");
+        var execution = await (await user.PostAsJsonAsync($"/api/v1/drafts/{draftId}/send-via-mailbox", new { version, provider = "Smtp" })).Json(HttpStatusCode.OK);
+        Assert.Equal("Succeeded", execution.Str("state"));
+        Assert.Equal("Smtp", execution.Str("provider"));
+        Assert.Single(fake.Sent);
+        Assert.Equal(HttpStatusCode.Conflict, (await user.PostAsJsonAsync($"/api/v1/drafts/{draftId}/send-via-mailbox", new { version, provider = "Smtp" })).StatusCode);
+        Assert.Single(fake.Sent);
+    }
+
+    [Theory]
+    [InlineData("custom", "localhost", 587)]
+    [InlineData("custom", "127.0.0.1", 587)]
+    [InlineData("custom", "smtp.example.com", 25)]
+    [InlineData("custom", "bad host!", 587)]
+    [InlineData("nonsense", null, null)]
+    public async Task A_custom_mail_server_must_be_public_on_a_mail_port_and_a_preset_must_exist(string preset, string? host, int? port)
+    {
+        var fake = new FakeTransport();
+        await using var app = App(fake);
+        var user = PostgresApiFactory.ClientFor(app, $"mail-bad-{Guid.NewGuid():N}@example.test");
+        var response = await user.PostAsJsonAsync("/api/v1/mailboxes/smtp", new { preset, host, port, username = "asha@example.test", password = "secret" });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(fake.Sent);
+    }
+
+    [Fact]
+    public async Task Replies_to_an_email_sent_with_an_app_password_are_recorded_once_and_stop_the_follow_up()
+    {
+        var fake = new FakeTransport();
+        var reader = new FakeReader();
+        await using var app = App(fake, reader: reader);
+        PostgresApiFactoryServices.Current = app.Services;
+        var user = PostgresApiFactory.ClientFor(app, "mail-replies@example.test");
+
+        // Nothing to read until the email is connected with an app password.
+        var notConnected = await user.PostAsync("/api/v1/mailboxes/smtp/check-replies", null);
+        Assert.Equal(HttpStatusCode.Conflict, notConnected.StatusCode);
+        Assert.Contains("Connect your email", await notConnected.Content.ReadAsStringAsync());
+
+        await (await user.PostAsJsonAsync("/api/v1/mailboxes/smtp", new { preset = "gmail", username = "asha@gmail.test", password = "abcd efgh ijkl mnop" })).Json(HttpStatusCode.OK);
+        var draftId = await ApprovedDraftAsync(user, "ops@northwind.example");
+        var draft = await user.GetJson($"/api/v1/drafts/{draftId}");
+        await (await user.PostAsJsonAsync($"/api/v1/drafts/{draftId}/send-via-mailbox", new { version = draft.Int("version"), provider = "Smtp" })).Json(HttpStatusCode.OK);
+        var opportunityId = draft.GetProperty("opportunityId").GetGuid();
+        Assert.Equal("Open", Assert.Single((await user.GetJson($"/api/v1/opportunities/{opportunityId}/next-actions")).EnumerateArray()).Str("state"));
+
+        var at = DateTime.UtcNow.AddMinutes(1);
+        reader.Next = new([
+            new MailHeader("Ops@Northwind.example", "Re: Dynamics 365 delivery", at, "<r1@northwind.example>", null, null),
+            new MailHeader("ops@northwind.example", "Automatic reply: Dynamics 365 delivery", at, "<r2@northwind.example>", null, null, AutoReply: true),
+            new MailHeader("news@elsewhere.example", "Weekly news", at, "<n1@elsewhere.example>", null, null),
+        ]);
+        var result = await (await user.PostAsync("/api/v1/mailboxes/smtp/check-replies", null)).Json(HttpStatusCode.OK);
+        Assert.Equal(3, result.Int("checked"));
+        Assert.Equal(1, result.Int("replies"));
+        var item = Assert.Single(result.GetProperty("items").EnumerateArray());
+        Assert.Equal(opportunityId, item.GetProperty("opportunityId").GetGuid());
+        Assert.Equal("Ops@Northwind.example", item.Str("from"));
+        Assert.Equal("Re: Dynamics 365 delivery", item.Str("subject"));
+
+        Assert.Equal("Responded", (await user.GetJson($"/api/v1/opportunities/{opportunityId}")).Str("status"));
+        Assert.Equal("Cancelled", Assert.Single((await user.GetJson($"/api/v1/opportunities/{opportunityId}/next-actions")).EnumerateArray()).Str("state"));
+        var activities = (await user.GetJson($"/api/v1/opportunities/{opportunityId}/activities")).EnumerateArray().ToList();
+        Assert.Single(activities, a => a.Str("kind") == "Replied" && a.Str("detail").StartsWith("Reply received from Ops@Northwind.example on ", StringComparison.Ordinal));
+
+        // A second check finds the same message and records nothing new.
+        var again = await (await user.PostAsync("/api/v1/mailboxes/smtp/check-replies", null)).Json(HttpStatusCode.OK);
+        Assert.Equal(0, again.Int("replies"));
+        Assert.Single((await user.GetJson($"/api/v1/opportunities/{opportunityId}/activities")).EnumerateArray(), a => a.Str("kind") == "Replied");
+
+        // Another person's check never reads this mailbox.
+        var other = PostgresApiFactory.ClientFor(app, "mail-replies-other@example.test");
+        Assert.Equal(HttpStatusCode.Conflict, (await other.PostAsync("/api/v1/mailboxes/smtp/check-replies", null)).StatusCode);
+        Assert.Equal(2, reader.Calls);
+    }
+
+    [Fact]
+    public async Task A_refused_login_while_checking_replies_asks_to_reconnect()
+    {
+        var fake = new FakeTransport();
+        var reader = new FakeReader();
+        await using var app = App(fake, reader: reader);
+        PostgresApiFactoryServices.Current = app.Services;
+        var user = PostgresApiFactory.ClientFor(app, "mail-replies-refused@example.test");
+        await (await user.PostAsJsonAsync("/api/v1/mailboxes/smtp", new { preset = "gmail", username = "asha@gmail.test", password = "abcd efgh ijkl mnop" })).Json(HttpStatusCode.OK);
+        var draftId = await ApprovedDraftAsync(user, "ops@northwind.example");
+        var version = (await user.GetJson($"/api/v1/drafts/{draftId}")).Int("version");
+        await (await user.PostAsJsonAsync($"/api/v1/drafts/{draftId}/send-via-mailbox", new { version, provider = "Smtp" })).Json(HttpStatusCode.OK);
+
+        reader.Next = MailboxReadResult.Failed("Your email provider refused the login for reading replies. Check that IMAP is turned on for this mailbox and that the app password is still valid, then connect your email again.", loginRefused: true);
+        var refused = await user.PostAsync("/api/v1/mailboxes/smtp/check-replies", null);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains("Your email provider refused the login", await refused.Content.ReadAsStringAsync());
+        Assert.Equal("NeedsReconnect", (await user.GetJson("/api/v1/mailboxes")).EnumerateArray().Single(m => m.Str("provider") == "Smtp").Str("status"));
+    }
 }
 
 /// <summary>The factory's research runner needs the service provider of the app the test built; tests in this class run one at a time per fixture.</summary>
 internal static class PostgresApiFactoryServices
 {
     public static IServiceProvider? Current { get; set; }
+
 }

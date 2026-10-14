@@ -409,6 +409,70 @@ public class BoardMappingTests
         Assert.Null(BoardMapping.HimalayasCandidates("""{"oops":1}""", SourceOf(SourceKind.Remotive, null, "H"), Parser));
     }
 
+    /// <summary>
+    /// The first two postings are copied from a real page 0 of <c>/api/public/jobs?page=0&amp;descending=true</c> seen on 2026-10-13 (contents
+    /// trimmed); the last two are added to cover a remote place and a posting without a link.
+    /// </summary>
+    public const string TheMusePage = """
+        {"page": 0, "page_count": 20708, "items_per_page": 20, "took": 14, "timed_out": false, "total": 414153, "aggregations": {}, "results": [
+          {"contents": "<p><strong>Requisition #:</strong> 16663<br><br>Ansys is now a part of Synopsys. Synopsys, Inc. (Nasdaq: SNPS) accelerates technology innovation from silicon to systems.</p>", "name": "Spring 2026 Intern - Electronics (Masters), C++", "type": "external", "publication_date": "2025-07-28T22:44:52Z", "short_name": "spring-2026-intern-electronics-masters-c", "model_type": "jobs", "id": 19057423, "locations": [{"name": "Austin, TX"}, {"name": "Canonsburg, PA"}], "categories": [{"name": "Software Engineering"}], "levels": [{"name": "Internship", "short_name": "internship"}], "tags": [], "refs": {"landing_page": "https://www.themuse.com/jobs/ansys/spring-2026-intern-electronics-masters-c"}, "company": {"id": 15000184, "short_name": "ansys", "name": "Ansys"}},
+          {"contents": "<p><b>Position Summary...</b><br><br><b>What you'll do...</b><br><br>As a part of Walmart Global Tech, you'll build industry defining r</p>", "name": "Senior, Software Engineer (Backend)", "type": "external", "publication_date": "2025-08-30T20:24:46Z", "short_name": "senior-software-engineer-backend-5ff764", "model_type": "jobs", "id": 20078984, "locations": [{"name": "Cupertino, CA"}], "categories": [{"name": "Software Engineering"}], "levels": [{"name": "Senior Level", "short_name": "senior"}], "tags": [], "refs": {"landing_page": "https://www.themuse.com/jobs/walmart/senior-software-engineer-backend-5ff764"}, "company": {"id": 12010, "short_name": "walmart", "name": "Walmart"}},
+          {"contents": "<p>Build React apps.</p>", "name": "React Developer", "publication_date": "2026-10-12T09:00:00Z", "id": 22300001, "locations": [{"name": "Flexible / Remote"}, {"name": "London, United Kingdom"}], "levels": [], "refs": {"landing_page": "https://www.themuse.com/jobs/acme/react-developer"}, "company": {"name": "Acme"}},
+          {"contents": "<p>No link.</p>", "name": "Ghost Job", "id": 1, "locations": [], "refs": {"landing_page": "javascript:alert(1)"}, "company": {"name": "Nobody"}}
+        ]}
+        """;
+
+    [Fact]
+    public void The_Muse_maps_places_level_date_and_link_and_drops_a_posting_without_a_safe_link()
+    {
+        var items = BoardMapping.TheMuseCandidates(TheMusePage, SourceOf(SourceKind.TheMuse, null, "The Muse"), Parser)!;
+
+        Assert.Equal(3, items.Count);
+        var intern = items[0];
+        Assert.Equal((JobPlatform.TheMuse, "19057423", "Ansys", "Austin, TX; Canonsburg, PA"), (intern.Platform, intern.ExternalId, intern.Organization, intern.Location));
+        Assert.Equal("Spring 2026 Intern - Electronics (Masters), C++", intern.Title);
+        Assert.Equal("https://www.themuse.com/jobs/ansys/spring-2026-intern-electronics-masters-c", intern.ApplyUrl);
+        Assert.StartsWith("Level: Internship\n", intern.Text);
+        Assert.Contains("Ansys is now a part of Synopsys", intern.Text);
+        Assert.DoesNotContain("<", intern.Text);
+        Assert.Equal(new DateTime(2025, 7, 28, 22, 44, 52, DateTimeKind.Utc), intern.PostedAt);
+        Assert.Null(intern.WorkplaceType);
+
+        var react = items[2];
+        Assert.Equal("remote", react.WorkplaceType);                      // "Flexible / Remote" is one of its places
+        Assert.Contains("Workplace: Remote", react.Text);
+        Assert.Equal("Build React apps.", react.Text.Split('\n').Last());  // no level line when it has none
+    }
+
+    [Theory]
+    [InlineData("""{"oops":1}""")]
+    [InlineData("""{"results":{}}""")]
+    [InlineData("<html>blocked</html>")]
+    [InlineData("")]
+    public void A_body_that_is_not_a_muse_page_is_unreadable(string body) =>
+        Assert.Null(BoardMapping.TheMuseCandidates(body, SourceOf(SourceKind.TheMuse, null, "The Muse"), Parser));
+
+    /// <summary>The documented Adzuna search shape with pay and a date (no live call: the keys are not available to tests).</summary>
+    public const string AdzunaWithPay = """
+        {"__CLASS__": "Adzuna::API::Response::JobSearchResults", "count": 1, "mean": 64000, "results": [
+          {"__CLASS__": "Adzuna::API::Response::Job", "id": "4870000001", "title": "<strong>Backend</strong> Engineer", "created": "2026-10-10T07:30:00Z",
+           "company": {"__CLASS__": "Adzuna::API::Response::Company", "display_name": "Initech"},
+           "location": {"__CLASS__": "Adzuna::API::Response::Location", "display_name": "Berlin, Deutschland", "area": ["Deutschland", "Berlin"]},
+           "redirect_url": "https://www.adzuna.de/land/ad/4870000001?se=x", "description": "Go and Postgres services…",
+           "salary_min": 60000, "salary_max": 72000, "salary_is_predicted": "1", "contract_time": "full_time", "category": {"label": "IT Jobs", "tag": "it-jobs"}}
+        ]}
+        """;
+
+    [Fact]
+    public void Adzuna_keeps_the_posting_date_and_its_pay_marked_as_an_estimate()
+    {
+        var c = BoardMapping.AdzunaCandidates(AdzunaWithPay, SourceOf(SourceKind.Adzuna, null, "Adzuna"), Parser)!.Single();
+
+        Assert.Equal(("Backend Engineer", "Initech", "Berlin, Deutschland"), (c.Title, c.Organization, c.Location));
+        Assert.Equal(new DateTime(2026, 10, 10, 7, 30, 0, DateTimeKind.Utc), c.PostedAt);
+        Assert.Equal("Salary: 60000 - 72000 (Adzuna estimate)\nGo and Postgres services…", c.Text);
+    }
+
     [Fact]
     public void Free_feed_jobs_are_kept_only_when_every_word_of_one_keyword_appears()
     {

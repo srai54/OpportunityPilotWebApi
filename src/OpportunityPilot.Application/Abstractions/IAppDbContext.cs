@@ -60,6 +60,7 @@ public interface IAppDbContext
     DbSet<WellfoundApplication> WellfoundApplications { get; }
     DbSet<WellfoundActivity> WellfoundActivities { get; }
     DbSet<Domain.Mail.MailboxConnection> MailboxConnections { get; }
+    DbSet<Domain.Integrations.IntegrationConnection> IntegrationConnections { get; }
     DbSet<CandidateProgressLink> CandidateProgressLinks { get; }
     DbSet<UserEvent> UserEvents { get; }
 

@@ -99,8 +99,8 @@ public sealed class CapabilityService(
 
             adzuna.Value.Configured
                 ? new("adzuna", "Adzuna job search", "Sources", CapabilityStatus.Ready,
-                    "Searches Adzuna (India) with your campaign keywords; keys are set on the server and never shown.",
-                    ["Search up to 3 keywords in your first location, jobs from the last 14 days"],
+                    "Searches Adzuna in the country of your place (India when none is given) with your campaign keywords, and in Find → All sites; keys are set on the server and never shown.",
+                    ["Search up to 3 keywords in your first location, jobs from the last 14 days", "Search Adzuna together with the free sites in Find → All sites"],
                     ["Read full job descriptions (Adzuna returns a snippet)", "Apply for you — open the application page yourself"])
                 : new("adzuna", "Adzuna job search", "Sources", CapabilityStatus.NotConfigured,
                     "Server keys missing (Adzuna__AppId and Adzuna__AppKey). Adzuna sources can be added but fail until the keys are set.",
@@ -132,6 +132,7 @@ public sealed class CapabilityService(
             PublicBoard("arbeitnow", "Arbeitnow jobs", "the free public Arbeitnow job board (Germany, Europe and remote)", company: false),
             PublicBoard("jobicy", "Jobicy remote jobs", "the free public Jobicy remote-jobs feed", company: false),
             PublicBoard("weworkremotely", "We Work Remotely jobs", "We Work Remotely's public RSS feed of remote jobs", company: false),
+            PublicBoard("themuse", "The Muse jobs", "the free public The Muse jobs API (its newest postings)", company: false),
 
             new("upwork", "Upwork projects", "Sources", CapabilityStatus.NotBuilt,
                 "Upwork's official API can search marketplace projects for the Sales workspace, but each app needs Upwork's approval and your Upwork account connected (OAuth). Upwork retired its job RSS feeds in 2024.",

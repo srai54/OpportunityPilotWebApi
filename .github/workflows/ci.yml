@@ -17,7 +17,8 @@ jobs:
       - run: dotnet build OpportunityPilot.sln --configuration Release --no-restore
       - run: dotnet test OpportunityPilot.sln --configuration Release --no-build
       # The EF model and the migrations must match for both providers, or a deploy would migrate the wrong schema.
-      - run: dotnet tool install --global dotnet-ef --version "10.*"
+      # The repo pins dotnet-ef in .config/dotnet-tools.json; restore that exact version (a newer global install is ignored).
+      - run: dotnet tool restore
       - name: Migrations match the model (SqlServer, Postgres)
         run: |
           for c in SqlServer Postgres; do
@@ -36,5 +37,7 @@ jobs:
           cache: npm
           cache-dependency-path: agent/package-lock.json
       - run: npm ci
+      # The end-to-end test drives a real headless Chromium; the runner does not ship Playwright's build.
+      - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
       - run: npm test

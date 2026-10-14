@@ -29,7 +29,7 @@ public sealed class AiService(IAppDbContext db, ICurrentUser user, ILlmClient ll
         // The daily budget is counted from stored usage, so it holds across restarts and instances.
         if (await CallsTodayAsync(ct) >= DailyLimit)
         {
-            Record("ParseGoal", new LlmResult(null, AiOutcome.OverDailyLimit, $"Daily limit of {DailyLimit} AI calls reached", 0, TimeSpan.Zero));
+            RecordOverLimit("ParseGoal");
             await db.SaveChangesAsync(ct);
             return Rules(request.Goal, request.Mode, "DailyLimit");
         }
@@ -58,8 +58,26 @@ public sealed class AiService(IAppDbContext db, ICurrentUser user, ILlmClient ll
         var active = _features.GeminiEnabled && !string.IsNullOrWhiteSpace(_options.GeminiApiKey);
         return new(active, "Gemini", _options.GeminiModel,
             !_features.GeminiEnabled ? "Disabled" : string.IsNullOrWhiteSpace(_options.GeminiApiKey) ? "NoKey" : calls >= DailyLimit ? "DailyLimit" : null,
-            calls, DailyLimit, Math.Clamp(_options.MaxCallsPerRun, 1, 100), lastFailure);
+            calls, DailyLimit, Math.Clamp(_options.MaxCallsPerRun, 1, 100), lastFailure, active && calls < DailyLimit);
     }
+
+    /// <summary>
+    /// Why an AI call cannot be made for this owner right now ("Disabled", "NoKey", "DailyLimit"), or null when it can.
+    /// Other features (draft rewrite) use this so every AI call shares one switch and one daily budget.
+    /// </summary>
+    public async Task<string?> UnavailableReasonAsync(CancellationToken ct)
+    {
+        if (!_features.GeminiEnabled) return "Disabled";
+        if (string.IsNullOrWhiteSpace(_options.GeminiApiKey)) return "NoKey";
+        return await CallsTodayAsync(ct) >= DailyLimit ? "DailyLimit" : null;
+    }
+
+    /// <summary>Adds a usage row (outcome, duration, safe reason only) to the context; the caller saves.</summary>
+    public void RecordUsage(string operation, LlmResult result) => Record(operation, result);
+
+    /// <summary>Adds the usage row for a call refused because the daily budget is spent; the caller saves.</summary>
+    public void RecordOverLimit(string operation) =>
+        Record(operation, new LlmResult(null, AiOutcome.OverDailyLimit, $"Daily limit of {DailyLimit} AI calls reached", 0, TimeSpan.Zero));
 
     private int DailyLimit => Math.Clamp(_options.DailyCallLimit, 1, 1000);
 

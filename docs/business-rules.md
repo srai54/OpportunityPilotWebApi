@@ -71,8 +71,10 @@ Code: `Application/Research/Boards/*`, `Application/Sources/SourceService.cs`.
 |---|---|
 | Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee, Workable | One company slug or trusted careers URL; normalized to `[a-z0-9-]{1,100}` so callers cannot redirect the fetcher to another host |
 | Workday | One public `https://<tenant>.wd<N>.myworkdayjobs.com/<site>` careers URL (locale and job-detail suffix allowed); normalized to `<tenant>.wd<N>/<site>`. Login, account, foreign-host, credential and non-default-port URLs are rejected. At most 3 campaign keywords are searched; each search reads one bounded page and matching detail records |
-| Adzuna | Up to 3 campaign keywords and first non-Remote location; needs server-side keys and fails safely when absent |
-| Remotive, Remote OK | Board-wide public feed; no key or company slug |
+| Adzuna | Up to 3 campaign keywords and first non-Remote location; needs server-side keys (`Adzuna__AppId`, `Adzuna__AppKey`) and fails safely when absent. The country index comes from the place (`AdzunaCountry`: in, gb, us, au, ca, de, fr, nl, sg, za, nz, pl, it, es, br, at, be, ch, mx; cities and two-letter codes recognised), India when none matches; a place that only names the country sends no `where`. The request URL carries the keys and is never logged, cached by or put in a message |
+| Remotive, Remote OK, Arbeitnow, Jobicy, We Work Remotely | Board-wide public feed; no key or company slug; jobs kept when every word of one campaign keyword appears |
+| The Muse | Free public API without word search (20 postings a page): the newest 3 pages (`ResearchOptions.TheMusePages`) are read, one request each within the run's fetch budget; a posting seen on two pages counts once; then kept by keyword like the other feeds. Its `location`/`category` filters are not used (exact Muse names only; a probe on 2026-10-13 gave the same postings for different places) |
+| Find → All sites (`GET /api/v1/jobboards/feeds`) | Each feed's answer is kept 30 minutes (Himalayas not, it is searched by the words). Adzuna is in "all" only when its keys are set, is searched with the person's words in the country of their place and cached 30 minutes per country/words/place (at most 200 searches kept); named without keys it answers `NotConfigured` and sends nothing. Its results are not filtered again by words or place (Adzuna searched the full text; it returns only a snippet) |
 | All fetched sources | Job campaigns only; safe-fetch address/redirect/size/time limits apply; share the run fetch and candidate budgets fairly |
 | Apply path | LinkedIn/Naukri use the local agent; every public board exposes an external application URL for the user |
 
@@ -286,6 +288,47 @@ Code: `Application/Drafts/DraftService.cs`, `Domain/Drafts/OutreachDraft.cs`
 - The cross-opportunity inbox can filter by stored state, channel and campaign. Batch approval evaluates each selected id/version independently and returns approved, skipped or stale outcomes without approving an ineligible version.
 - No outbound delivery occurs. A valid approved CoverNote is exposed to the desktop agent, which fills it only into an
   explicitly cover-letter-like free-text field. Unapproved, edited or revoked text is never returned to the agent.
+
+### AI rewrite of a draft (CON8)
+
+Code: `Application/Drafts/DraftRewriteService.cs`, `Application/Drafts/DraftRewriteCheck.cs`
+
+- Instruction is required, at most 200 characters; `shorter`, `friendlier` and `more formal` map to fixed guidance, anything else is passed as free text (treated as data, not as a source of facts).
+- Refused with 409 for a stale version, a sent draft (reopen first) or a draft with a valid approval (revoke first). 404 for a missing or someone else's draft.
+- Uses Gemini only when `Features:GeminiEnabled` is true and a key is set (else 409 "AI rewrite is off on this server."). It shares the daily budget with goal previews (`Ai:DailyCallLimit`, counted from `ai_usages`); a spent budget is 409 "Daily AI limit reached…" and records an `OverDailyLimit` row. There is never a template/fake rewrite.
+- The model receives only the draft's subject and body, the texts of the draft's `Profile…` claims, the opportunity's non-inference facts (label: value) and the confirmed profile's sign-off name. Not the recipient, not the rest of the profile. It is told not to add claims, numbers, names, links or promises and to keep the sign-off name and `[placeholders]`.
+- The answer is checked against that input: a new URL (`http(s)://` or `www.`) or email address drops the suggestion (409 "The rewrite added facts that are not in your profile…", usage recorded as `InvalidResponse`); a new number or a capitalised word not in the input (minus a list of common email words) becomes a `warnings[]` line (at most 10). LinkedIn messages over 300 characters also get a warning.
+- Nothing is saved. The suggestion is applied by the normal `PUT /drafts/{id}`, so suppression, placeholder, version and approval rules all still apply.
+- `GET /ai/status` reports `rewriteAvailable` = enabled, key set and today's budget not spent.
+
+### Reply detection (CON5)
+
+Code: `Application/Mail/ReplyCheckService.cs`, `Infrastructure/Mail/ImapClient.cs`, `Infrastructure/Mail/ImapMailboxReader.cs`, `Api/Hosting/ReplyCheckProcessor.cs`
+
+- Works only with the email connected with an app password (`Smtp`); the same stored login reads the inbox over IMAP (implicit TLS, port 993).
+  IMAP server: Gmail `imap.gmail.com`, Outlook.com and Microsoft 365 `outlook.office365.com`, Yahoo `imap.mail.yahoo.com`, a custom server
+  its SMTP host with `smtp.` replaced by `imap.`. The IMAP host must resolve to public addresses only and the connection goes to exactly those
+  addresses (`Mail:AllowPrivateSmtpHosts` lifts this, tests only).
+- Read-only: `EXAMINE INBOX` and `BODY.PEEK` headers (From, Subject, Date, In-Reply-To, References, Message-ID, Auto-Submitted) plus the
+  arrival time; nothing is marked read, moved or deleted; the body is never read. Messages since the UTC day of the oldest email sent in the
+  last 30 days, newest 500 at most, 20 s for the whole read. A login containing a line break, NUL or a non-ASCII character is refused before
+  connecting.
+- Watched sends: email drafts with a `SentAt` in the last 30 days and a recipient. Without one, the inbox is not read (`checked: 0`).
+- A message is a reply when its From address equals a watched recipient (case-insensitive) and it arrived after that send. It belongs to the
+  latest send to that address before it arrived. Automatic answers (an `Auto-Submitted` other than `no`, or a subject starting "Automatic
+  reply", "Auto:", "Autoreply", "Out of office"…) and mail from the person's own address are not replies.
+- For each new reply: a `Replied` activity "Reply received from {from} on {yyyy-MM-dd HH:mm:ss} UTC: {subject}" at the arrival time; a lead
+  in New, Suggested, Shortlisted, Applied or Contacted moves to Responded (a `StatusChanged` activity; Dismissed, Responded, Interested and
+  Closed stay); its open FollowUp next actions become Cancelled (other kinds stay open), so no follow-up is sent after a reply.
+- Idempotent: an activity with the same "Reply received from {from} on {time} UTC" start on that lead is not recorded again.
+- Refused login: the mailbox becomes NeedsReconnect (sending stops until it is reconnected) and the check answers 409 "Your email provider
+  refused the login for reading replies…". Outlook.com and Microsoft 365 hosts are the exception: Microsoft has turned off app-password (basic)
+  IMAP sign-in for most of these accounts, so the message says replies cannot be checked with this connection and the mailbox stays Connected
+  for sending. A stored login this server can no longer decrypt also sets NeedsReconnect.
+- Background: `ReplyCheckProcessor` starts 5 minutes after start-up and runs every 30 minutes for owners with a Connected `Smtp` mailbox and an
+  email sent in the last 30 days, at most 50 per pass, continuing after the last owner of the previous pass. One owner's failure is logged
+  (never with the address, password or subject) and the pass moves on. New replies post the `replies` event to Slack, Teams or webhooks.
+- The endpoint is rate limited by `reply-check`: 20 checks an hour per owner.
 
 ### Upwork research and Connects
 

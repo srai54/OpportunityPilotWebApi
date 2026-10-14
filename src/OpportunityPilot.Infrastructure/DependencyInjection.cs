@@ -24,6 +24,8 @@ public static class DependencyInjection
             c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
             c.Timeout = Timeout.InfiniteTimeSpan;
         });
+        services.AddHttpClient<Application.Integrations.IConnectorHttp, Integrations.ConnectorHttp>(Integrations.ConnectorHttp.ClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(Integrations.ConnectorHttp.Handler);
         return services.AddPersistence(configuration, setup);
     }
 
@@ -39,6 +41,7 @@ public static class DependencyInjection
         services.AddHttpClient<IJobBoardSearch, JsearchBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<IRapidApiBoardSearch, RapidApiBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<Application.Mail.IMailTransport, Mail.MailTransport>(c => c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddScoped<Application.Mail.IMailboxReader, Mail.ImapMailboxReader>();
         services.AddHttpClient<Application.Trends.ITrendSource, JsearchTrendClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<IWebFetcher, SafeFetcher>(SafeFetcher.ClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(sp => SafeFetcher.CreateHandler(sp.GetRequiredService<IFetchAddressPolicy>()))

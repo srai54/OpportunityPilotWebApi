@@ -11,7 +11,7 @@ Last updated: 2026-10-06.
 | M1 Auth, database, profiles | Guest mode done; hosted account flow awaits optional configuration | Durable hashed opaque guest sessions need no auth provider; Supabase JWT/JWKS (RS256/ES256/EdDSA; isolated opt-in HS256 legacy support), dev-bypass guard, GUID owner subjects, owner-scoped profiles, SqlServer + Postgres migrations. Browser signup/sign-in/refresh/reset hardening is in the web repo; live Supabase account verification still needs production keys |
 | M2 Campaigns and source imports | **Done (verified)** | Job and Customer only; Partner/Investor/Freelance return 400 until M7 |
 | M3 Research pipeline and scoring | **Done (verified locally)** | Live fetching of real public internet pages was not exercised (tests use a loopback server and stubbed handlers) |
-| M4 Shortlist, Gemini, manual AI recovery | In progress | Deterministic CoverNote template and user approval are built; Gemini and manual AI exchange are not |
+| M4 Shortlist, Gemini, manual AI recovery | In progress | Deterministic CoverNote template and user approval are built; Gemini goal preview and draft rewrite (CON8, suggestion only, unit-tested with a fake client; not live-verified against Gemini) are built; manual AI exchange is not |
 | M5 Outreach and pipeline tracking | In progress | Versioned CoverNote persistence and agent handoff are built; other outreach channels, inbox and follow-ups are not |
 | M6 Gmail | Not started | |
 | M7 Partner, Investor, Freelance modes | In progress | Manual sales project/bid/approve API plus provider migrations exist; campaign mode, Freelancer/tender providers, and the Sales UI are not wired |

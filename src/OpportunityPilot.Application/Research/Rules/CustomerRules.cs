@@ -25,11 +25,11 @@ public static partial class CustomerRules
         SharedRules.ExcludeKeywords(criteria, checks, input.Title, input.Text);
         SharedRules.ExcludeOrganizations(criteria, checks, input.Organization);
 
-        var geoMatch = criteria.Locations.FirstOrDefault(l => TextMatch.Contains(knownPlace, l) || TextMatch.Contains(corpus, l));
+        var geoMatch = criteria.Locations.FirstOrDefault(l => TextMatch.Contains(knownPlace, l) || PlaceMatch.InField(knownPlace, l) || TextMatch.Contains(corpus, l));
         if (criteria.Locations.Count > 0)
         {
             if (geoMatch is not null) checks.Add(new FilterCheck("locations", FilterResult.Pass, $"Location matches {geoMatch}."));
-            else if (knownPlace is not null) checks.Add(new FilterCheck("locations", FilterResult.Fail, $"Location \"{knownPlace}\" is not in your list."));
+            else if (knownPlace is not null && !PlaceMatch.IsUnspecific(input.Location)) checks.Add(new FilterCheck("locations", FilterResult.Fail, $"Location \"{knownPlace}\" is not in your list."));
             else checks.Add(new FilterCheck("locations", FilterResult.Unknown, "Location is not stated."));
         }
 
@@ -72,7 +72,7 @@ public static partial class CustomerRules
         if (criteria.Locations.Count > 0)
         {
             if (geoMatch is not null) scores.Add(new(CampaignWeights.Geography, "Geography", 1, $"Location matches {geoMatch}.", PlaceExcerpt(input, corpus, geoMatch)));
-            else if (knownPlace is not null) scores.Add(new(CampaignWeights.Geography, "Geography", 0, $"Location \"{knownPlace}\" is not in your list.", Excerpts.Field("location", knownPlace)));
+            else if (knownPlace is not null && !PlaceMatch.IsUnspecific(input.Location)) scores.Add(new(CampaignWeights.Geography, "Geography", 0, $"Location \"{knownPlace}\" is not in your list.", Excerpts.Field("location", knownPlace)));
             else
             {
                 scores.Add(new(CampaignWeights.Geography, "Geography", null, "The source does not state a location."));

@@ -8,7 +8,7 @@ public sealed record GoalPreviewRequest(Guid ProfileId, string Goal, Opportunity
 public sealed record GoalPreviewDto(AiSource Source, string? FallbackReason, OpportunityMode? Mode,
     CampaignCriteria Criteria, IReadOnlyList<string> Ambiguities, IReadOnlyList<string> Notes);
 public sealed record AiStatusDto(bool Active, string Provider, string Model, string? FallbackReason,
-    int CallsToday, int DailyLimit, int MaxCallsPerRun, object? LastFailure);
+    int CallsToday, int DailyLimit, int MaxCallsPerRun, object? LastFailure, bool RewriteAvailable);
 
 /// <summary>What one AI call produced. <see cref="Json"/> is null when it failed; <see cref="Outcome"/> says why.</summary>
 public sealed record LlmResult(string? Json, Domain.Ai.AiOutcome Outcome, string? Reason, int Attempts, TimeSpan Duration);

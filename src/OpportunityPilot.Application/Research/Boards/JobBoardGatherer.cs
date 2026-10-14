@@ -66,6 +66,7 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
         SourceKind.WeWorkRemotely => ReadOneAsync(source, room, fetchesLeft,
             $"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss",
             xml => BoardMapping.WeWorkRemotelyCandidates(xml, source, parser), ct, ResearchOptions.LargeFeedBytes, rss: true, criteria: criteria),
+        SourceKind.TheMuse => TheMuseAsync(source, room, fetchesLeft, criteria, ct),
         _ => throw new ArgumentOutOfRangeException(nameof(source), "Not a job-board source.")
     };
 
@@ -104,13 +105,45 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
             : response.FailureReason ?? $"{source.Kind} could not be read.", response.Requests);
         var all = map(response.Content);
         if (all is null) return Failed(source, $"{source.Kind} sent a response that could not be read.", response.Requests);
-        if (all.Count == 0) return new(SourceStatus.Skipped, $"The {source.Kind} source has no open jobs.", [], response.Requests,
+        return Finish(source, room, all, response.Requests, criteria);
+    }
+
+    /// <summary>
+    /// The Muse has no word search and answers 20 postings a page, so its newest <see cref="ResearchOptions.TheMusePages"/> pages are read
+    /// (one request each, within the run's budget) and then kept by keyword like the other free feeds. A later page failing keeps what was read.
+    /// </summary>
+    private async Task<BoardGathered> TheMuseAsync(Source source, int room, int fetchesLeft, CampaignCriteria criteria, CancellationToken ct)
+    {
+        if (fetchesLeft <= 0) return FetchLimitReached(source);
+        var all = new List<Candidate>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);   // a posting can move to the next page between two reads
+        var requests = 0;
+        for (var page = 0; page < ResearchOptions.TheMusePages && fetchesLeft - requests > 0; page++)
+        {
+            var response = await fetcher.FetchJsonAsync(ResearchOptions.TheMuseUrl(_limits.TheMuseApiBase, page), ct, ResearchOptions.LargeFeedBytes);
+            requests += response.Requests;
+            var jobs = response.Ok ? BoardMapping.TheMuseCandidates(response.Content, source, parser) : null;
+            if (jobs is null)
+            {
+                if (page > 0) break;
+                return Failed(source, response.Ok ? "The Muse sent a response that could not be read." : response.FailureReason ?? "The Muse could not be read.", requests);
+            }
+            all.AddRange(jobs.Where(j => seen.Add(j.ExternalId ?? j.Title)));
+            if (jobs.Count == 0) break;
+        }
+        return Finish(source, room, all, requests, criteria);
+    }
+
+    /// <summary>Keeps a feed's jobs that match the campaign keywords, bounded by the run's room, with the source's progress line.</summary>
+    private BoardGathered Finish(Source source, int room, IReadOnlyList<Candidate> all, int requests, CampaignCriteria? criteria)
+    {
+        if (all.Count == 0) return new(SourceStatus.Skipped, $"The {source.Kind} source has no open jobs.", [], requests,
             $"{source.Label}: no open jobs.", EventLevel.Warning);
         var listed = all.Count;
         if (criteria is { Keywords.Count: > 0 })
         {
             all = all.Where(c => MatchesKeywords(c, criteria.Keywords)).ToList();
-            if (all.Count == 0) return new(SourceStatus.Skipped, $"None of the {Count(listed, "job")} on {source.Label} matched your keywords.", [], response.Requests,
+            if (all.Count == 0) return new(SourceStatus.Skipped, $"None of the {Count(listed, "job")} on {source.Label} matched your keywords.", [], requests,
                 $"{source.Label}: {Count(listed, "job")} listed, none matched your keywords.", EventLevel.Warning);
         }
         var items = all.Take(room).ToList();
@@ -118,7 +151,7 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
             ? $"{source.Label}: {Count(listed, "job")} listed, {all.Count} matched your keywords, {items.Count} read."
             : $"{source.Label}: {Count(all.Count, "job")} listed, {items.Count} read.";
         if (items.Count < all.Count) message += $" Stopped at the run's limit of {_limits.EffectiveCandidates} candidates.";
-        return new(SourceStatus.Ok, null, items, response.Requests, message, items.Count < all.Count ? EventLevel.Warning : EventLevel.Info);
+        return new(SourceStatus.Ok, null, items, requests, message, items.Count < all.Count ? EventLevel.Warning : EventLevel.Info);
     }
 
     private async Task<BoardGathered> GreenhouseAsync(Source source, CampaignCriteria criteria, int room, int fetchesLeft,
@@ -193,6 +226,15 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
         return new(SourceStatus.Ok, null, items, result.Requests, message, items.Count < postings.Count ? EventLevel.Warning : EventLevel.Info);
     }
 
+    /// <summary>
+    /// An Adzuna search URL (up to <c>results_per_page</c>; callers add their own extra parameters). It carries the server's keys:
+    /// pass it straight to the fetcher and never log, record or return it.
+    /// </summary>
+    public static string AdzunaSearchUrl(string root, string country, AdzunaOptions keys, string what, string? where) =>
+        $"{root}/v1/api/jobs/{country}/search/1?app_id={Uri.EscapeDataString(keys.AppId!)}&app_key={Uri.EscapeDataString(keys.AppKey!)}" +
+        $"&what={Uri.EscapeDataString(what)}" + (where is null ? "" : $"&where={Uri.EscapeDataString(where)}") +
+        $"&results_per_page={AdzunaResultsPerPage}";
+
     private async Task<BoardGathered> AdzunaAsync(Source source, CampaignCriteria criteria, int room, int fetchesLeft, CancellationToken ct)
     {
         var keys = adzuna.Value;
@@ -204,6 +246,7 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
         if (fetchesLeft <= 0) return FetchLimitReached(source);
 
         var where = criteria.Locations.FirstOrDefault(l => !l.Trim().Equals("Remote", StringComparison.OrdinalIgnoreCase));
+        var (country, searchWhere) = AdzunaCountry.Resolve(where);
         var root = Base(_limits.AdzunaApiBase, ResearchOptions.DefaultAdzunaApiBase);
         var found = new Dictionary<string, Candidate>(StringComparer.Ordinal);
         var requests = 0;
@@ -214,9 +257,7 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
         {
             if (fetchesLeft - requests <= 0) { stoppedBy = $"the run's limit of {_limits.EffectiveFetches} fetches"; break; }
             // Built here and passed straight to the fetcher: this URL holds the key, so it is never logged or recorded.
-            var url = $"{root}/v1/api/jobs/in/search/1?app_id={Uri.EscapeDataString(keys.AppId!)}&app_key={Uri.EscapeDataString(keys.AppKey!)}" +
-                      $"&what={Uri.EscapeDataString(keyword)}" + (where is null ? "" : $"&where={Uri.EscapeDataString(where)}") +
-                      $"&results_per_page={AdzunaResultsPerPage}&max_days_old={AdzunaMaxDaysOld}&content-type=application/json";
+            var url = AdzunaSearchUrl(root, country, keys, keyword, searchWhere) + $"&max_days_old={AdzunaMaxDaysOld}&content-type=application/json";
             var result = await fetcher.FetchJsonAsync(url, ct);
             requests += result.Requests;
             if (!result.Ok)

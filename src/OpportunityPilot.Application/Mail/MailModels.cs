@@ -27,6 +27,13 @@ public sealed class MailOptions
     public string? PublicApiBase { get; set; }
     /// <summary>Where the browser is sent after connecting.</summary>
     public string? WebBase { get; set; }
+    /// <summary>
+    /// Used when <c>Mail__TokenKey</c> is not set, so sending with an app password works with no extra setting: a key is derived from this server
+    /// secret (the database connection string). If that secret changes, stored mailbox logins stop opening and the person reconnects.
+    /// </summary>
+    public string? FallbackSecret { get; set; }
+    /// <summary>Tests only: allow an SMTP server on a private address. Never set in production.</summary>
+    public bool AllowPrivateSmtpHosts { get; set; }
     public MailProviderOptions Microsoft { get; set; } = new();
     public MailProviderOptions Google { get; set; } = new();
 
@@ -34,13 +41,18 @@ public sealed class MailOptions
     public bool TryKey(out byte[] key)
     {
         key = [];
-        if (string.IsNullOrWhiteSpace(TokenKey)) return false;
+        if (string.IsNullOrWhiteSpace(TokenKey))
+        {
+            if (string.IsNullOrWhiteSpace(FallbackSecret)) return false;
+            key = SHA256.HashData(Encoding.UTF8.GetBytes("opportunitypilot-mail-v1:" + FallbackSecret));
+            return true;
+        }
         try { key = Convert.FromBase64String(TokenKey); } catch (FormatException) { return false; }
         return key.Length == 32;
     }
 
     public MailProviderOptions For(MailProvider p) => p == MailProvider.Microsoft ? Microsoft : Google;
-    public bool Ready(MailProvider p) => HasKey && For(p).Configured && !string.IsNullOrWhiteSpace(PublicApiBase);
+    public bool Ready(MailProvider p) => p == MailProvider.Smtp ? HasKey : HasKey && For(p).Configured && !string.IsNullOrWhiteSpace(PublicApiBase);
 }
 
 /// <summary>Authenticated encryption (AES-256-GCM) for tokens at rest and for short-lived values in a URL. Tampering fails closed.</summary>
@@ -125,4 +137,96 @@ public interface IMailTransport
     /// <summary>A new access token; null when the provider rejected the refresh token (revoked or expired).</summary>
     Task<string?> RefreshAsync(MailProvider provider, string refreshToken, CancellationToken ct);
     Task<MailSendResult> SendAsync(MailProvider provider, string accessToken, OutgoingMail mail, CancellationToken ct);
+}
+
+/// <summary>The login for sending through SMTP. Stored only encrypted; never returned, logged or exported.</summary>
+public sealed record SmtpCredentials(string Host, int Port, string Username, string Password, bool Ssl = true);
+
+/// <param name="Preset">gmail, outlook, office365, yahoo or custom (then Host is required).</param>
+public sealed record ConnectSmtpRequest(string Preset, string? Host, int? Port, string Username, string Password);
+
+public static class SmtpPresets
+{
+    public static readonly IReadOnlyDictionary<string, (string Host, int Port, string Name)> All = new Dictionary<string, (string, int, string)>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["gmail"] = ("smtp.gmail.com", 587, "Gmail"),
+        ["outlook"] = ("smtp-mail.outlook.com", 587, "Outlook.com"),
+        ["office365"] = ("smtp.office365.com", 587, "Microsoft 365"),
+        ["yahoo"] = ("smtp.mail.yahoo.com", 587, "Yahoo"),
+    };
+
+    /// <summary>Ports a custom server may use. 465 (implicit TLS) is not supported by the built-in client.</summary>
+    public static readonly int[] AllowedPorts = [587, 2525];
+}
+
+/// <summary>Where replies are read from: the IMAP server that belongs to the stored SMTP server, and the public-address check for custom servers.</summary>
+public static class MailHosts
+{
+    private static readonly IReadOnlyDictionary<string, string> KnownImap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["smtp.gmail.com"] = "imap.gmail.com",
+        ["smtp-mail.outlook.com"] = "outlook.office365.com",
+        ["smtp.office365.com"] = "outlook.office365.com",
+        ["smtp.mail.yahoo.com"] = "imap.mail.yahoo.com",
+    };
+
+    /// <summary>The IMAP host for a stored SMTP host: the preset's own server, else <c>smtp.</c> replaced by <c>imap.</c> (a host without that prefix is used as is).</summary>
+    public static string ImapHostFor(string smtpHost)
+    {
+        var host = (smtpHost ?? string.Empty).Trim().ToLowerInvariant();
+        if (KnownImap.TryGetValue(host, out var known)) return known;
+        return host.StartsWith("smtp.", StringComparison.Ordinal) ? "imap." + host["smtp.".Length..] : host;
+    }
+
+    /// <summary>Outlook.com and Microsoft 365: Microsoft has turned off app-password (basic) sign-in to IMAP for most of these accounts.</summary>
+    public static bool IsMicrosoft(string smtpHost) =>
+        ImapHostFor(smtpHost) == "outlook.office365.com" || (smtpHost ?? string.Empty).EndsWith(".outlook.com", StringComparison.OrdinalIgnoreCase)
+        || (smtpHost ?? string.Empty).EndsWith(".office365.com", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The host's addresses when every one of them is public, else null (also when it does not resolve). Connecting to exactly these
+    /// addresses (not the name again) means a second DNS answer cannot point the connection at this server's own network.
+    /// </summary>
+    public static async Task<System.Net.IPAddress[]?> PublicAddressesAsync(string host, bool allowPrivate, CancellationToken ct)
+    {
+        try
+        {
+            var addresses = System.Net.IPAddress.TryParse(host, out var literal) ? [literal] : await System.Net.Dns.GetHostAddressesAsync(host, ct);
+            if (addresses.Length == 0) return null;
+            return allowPrivate || addresses.All(a => !IsPrivate(a)) ? addresses : null;
+        }
+        catch (System.Net.Sockets.SocketException) { return null; }
+        catch (ArgumentException) { return null; }
+    }
+
+    public static bool IsPrivate(System.Net.IPAddress a)
+    {
+        if (System.Net.IPAddress.IsLoopback(a) || a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6Multicast) return true;
+        if (a.IsIPv4MappedToIPv6) a = a.MapToIPv4();
+        if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6) return (a.GetAddressBytes()[0] & 0xFE) == 0xFC;
+        var b = a.GetAddressBytes();
+        return b[0] is 10 or 0 or 127 || b[0] == 169 && b[1] == 254 || b[0] == 172 && b[1] is >= 16 and <= 31 || b[0] == 192 && b[1] == 168 || b[0] == 100 && b[1] is >= 64 and <= 127 || b[0] >= 224;
+    }
+}
+
+/// <summary>One message's headers as read from the inbox. Only these fields are read; never the body.</summary>
+/// <param name="ReceivedAt">UTC; the server's arrival time (IMAP INTERNALDATE), else the Date header.</param>
+/// <param name="AutoReply">An out-of-office or other automatic answer (Auto-Submitted, or a subject like "Automatic reply:").</param>
+public sealed record MailHeader(string FromAddress, string? Subject, DateTime ReceivedAt, string? MessageId, string? InReplyTo, string? References, bool AutoReply = false);
+
+/// <summary>What reading the inbox gave. <paramref name="Failure"/> is a safe sentence for the person; null when the read worked.</summary>
+/// <param name="LoginRefused">The server refused the stored login (or it could not be read).</param>
+public sealed record MailboxReadResult(IReadOnlyList<MailHeader> Messages, bool LoginRefused = false, string? Failure = null)
+{
+    public static MailboxReadResult Failed(string failure, bool loginRefused = false) => new([], loginRefused, failure);
+}
+
+/// <summary>Reads message headers from the person's own inbox over IMAP with the stored app password. Read-only: nothing is marked read, moved or deleted.</summary>
+public interface IMailboxReader
+{
+    public const int MaxMessages = 500;
+
+    /// <summary>Headers of INBOX messages that arrived on or after the UTC day of <paramref name="sinceUtc"/>, newest at most <see cref="MaxMessages"/>.</summary>
+    /// <param name="credentialsJson">The decrypted <see cref="SmtpCredentials"/>.</param>
+    Task<MailboxReadResult> ReadHeadersSinceAsync(string credentialsJson, DateTime sinceUtc, CancellationToken ct);
 }

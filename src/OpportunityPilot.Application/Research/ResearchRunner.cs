@@ -28,7 +28,8 @@ public sealed class ResearchRunner(
     IOptions<ResearchOptions> options,
     TimeProvider clock,
     ILogger<ResearchRunner> logger,
-    Common.OperationalMetrics metrics) : IResearchRunner
+    Common.OperationalMetrics metrics,
+    Integrations.IntegrationNotifier? notifier = null) : IResearchRunner
 {
     public static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
     private const int ClaimTries = 5;
@@ -146,7 +147,7 @@ public sealed class ResearchRunner(
         // rest; whatever a source leaves unused flows on to the next one.
         static bool Fetches(SourceKind k) => k is SourceKind.Url or SourceKind.Feed or SourceKind.Greenhouse or SourceKind.Lever or SourceKind.Adzuna or
             SourceKind.Ashby or SourceKind.SmartRecruiters or SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.JobSearch or SourceKind.Remotive or SourceKind.RemoteOk or
-            SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely;
+            SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse;
         var fetchingLeft = sources.Count(s => Fetches(s.Kind));
         var sourcesLeft = sources.Count;
         foreach (var source in sources)
@@ -255,6 +256,14 @@ public sealed class ResearchRunner(
             _ => "Completed."
         });
         await SaveAsync(job, ct);
+
+        if (notifier is not null && (created > 0 || _autoApproved.Count > 0))
+        {
+            var lines = new List<string> { $"{created} new lead{Plural(created)} in \"{campaign.Name}\"" };
+            if (_autoApproved.Count > 0) lines.Add($"{_autoApproved.Count} strong match{(_autoApproved.Count == 1 ? "" : "es")} shortlisted automatically");
+            if (suggested - _autoApproved.Count > 0) lines.Add($"{suggested - _autoApproved.Count} waiting for your approval");
+            await notifier.NotifyAsync(campaign.OwnerId, Integrations.IntegrationEvents.Leads, "New leads found", lines, "/opportunities", ct);
+        }
     }
 
     private async Task<Gathered> GatherAsync(Source source, OpportunityMode mode, CampaignCriteria criteria, int room, int fetchesLeft,
@@ -298,7 +307,7 @@ public sealed class ResearchRunner(
             }
             case SourceKind.Greenhouse or SourceKind.Lever or SourceKind.Adzuna or SourceKind.Ashby or SourceKind.SmartRecruiters or
                 SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.Remotive or SourceKind.RemoteOk or
-                SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely:
+                SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse:
             {
                 if (mode != OpportunityMode.Job)
                     return new(SourceStatus.Skipped, "Job-board sources are read for Job campaigns only.", [], 0,

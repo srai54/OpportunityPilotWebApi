@@ -22,3 +22,8 @@ public sealed record DraftPageDto(int Total, IReadOnlyList<DraftListItemDto> Ite
 public sealed record BatchApproveDraftItem(Guid Id, int Version);
 public sealed record BatchApproveDraftRequest(IReadOnlyList<BatchApproveDraftItem> Items);
 public sealed record BatchApproveDraftResult(Guid Id, bool Approved, string? Reason, DraftDto? Draft);
+
+/// <summary>Instruction: "shorter", "friendlier", "more formal" or free text (at most 200 characters).</summary>
+public sealed record RewriteDraftRequest(string? Instruction, int Version);
+/// <summary>An AI suggestion that is never saved; the person applies it with the normal PUT so every draft check runs.</summary>
+public sealed record DraftRewriteDto(string? Subject, string Body, IReadOnlyList<string> Warnings);

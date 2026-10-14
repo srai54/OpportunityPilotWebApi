@@ -62,6 +62,33 @@ public class ContactFinderApiTests(PostgresApiFactory factory) : IClassFixture<P
     }
 
     [Fact]
+    public async Task Prepare_writes_one_email_per_shortlisted_lead_to_a_published_address_and_approves_nothing()
+    {
+        var site = new FakeSite();
+        await using var app = App(site);
+        var user = PostgresApiFactory.ClientFor(app, "prepare@example.test");
+        var other = PostgresApiFactory.ClientFor(app, "prepare-other@example.test");
+        var campaign = await ResearchApi.CreateCampaignAsync(user, "Customer", new { keywords = new[] { "Dynamics 365" }, locations = new[] { "London" } });
+        await ResearchApi.AddPasteAsync(user, campaign.Id(), Company);
+        await ResearchApi.QueueAsync(user, campaign.Id());
+        await PostgresApiFactory.RunResearchAsync(app.Services);
+        var id = Assert.Single(await ResearchApi.OpportunitiesAsync(user, campaign.Id())).Id();
+        await (await user.PatchAsJsonAsync($"/api/v1/opportunities/{id}/status", new { status = "Shortlisted" })).Json(HttpStatusCode.OK);
+
+        var first = await (await user.PostAsync($"/api/v1/campaigns/{campaign.Id()}/drafts/prepare", null)).Json(HttpStatusCode.OK);
+        Assert.Equal(1, first.Int("written"));
+        var item = Assert.Single(first.GetProperty("items").EnumerateArray());
+        Assert.Contains("@northwind.example", item.Str("recipient"));
+        var draft = await (await user.GetAsync($"/api/v1/drafts/{item.GetProperty("draftId").GetGuid()}")).Json(HttpStatusCode.OK);
+        Assert.True(draft.GetProperty("approvedAt").ValueKind == System.Text.Json.JsonValueKind.Null);   // written, not approved
+        Assert.Equal("Introduction for Northwind Integrations", draft.Str("subject"));
+
+        var again = await (await user.PostAsync($"/api/v1/campaigns/{campaign.Id()}/drafts/prepare", null)).Json(HttpStatusCode.OK);
+        Assert.Equal(0, again.Int("written"));   // a lead that already has an email is left alone
+        Assert.Equal(HttpStatusCode.NotFound, (await other.PostAsync($"/api/v1/campaigns/{campaign.Id()}/drafts/prepare", null)).StatusCode);
+    }
+
+    [Fact]
     public async Task Refuses_a_bad_website_and_never_shows_another_persons_opportunity()
     {
         var site = new FakeSite();

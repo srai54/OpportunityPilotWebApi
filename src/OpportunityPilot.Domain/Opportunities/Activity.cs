@@ -16,6 +16,9 @@ public static class ActivityKinds
 
     /// <summary>The user rejected it in the approval queue (Suggested → Dismissed).</summary>
     public const string Rejected = "Rejected";
+
+    /// <summary>A reply arrived: entered by the user, or found in the connected inbox by reply detection.</summary>
+    public const string Replied = "Replied";
 }
 
 /// <summary>History line on an opportunity. Detail is a short safe summary.</summary>

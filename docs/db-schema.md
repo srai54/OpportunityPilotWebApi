@@ -103,7 +103,7 @@ safe error, timestamps and concurrency version. Unique `(OwnerId, CampaignId)` a
 |---|---|---|
 | Id, OwnerId | uuid | |
 | CampaignId | uuid | FK → campaigns, Cascade |
-| Kind | string(32) | `SourceKind`: Paste, Csv, Url, Feed, Agent, Greenhouse, Lever, Adzuna, Ashby, SmartRecruiters, Recruitee, Workable, Remotive, RemoteOk |
+| Kind | string(32) | `SourceKind`: Paste, Csv, Url, Feed, Agent, Greenhouse, Lever, Adzuna, Ashby, SmartRecruiters, Recruitee, Workable, JobSearch, Workday, Remotive, RemoteOk, Arbeitnow, Jobicy, WeWorkRemotely, TheMuse (new members need no migration: the column is a string) |
 | Label | string(200) | |
 | Url | string(1000), null | Url and Feed only |
 | Text | string(50000), null | Paste only (SqlServer `nvarchar(max)`) |

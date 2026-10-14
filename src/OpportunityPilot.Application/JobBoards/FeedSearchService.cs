@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using OpportunityPilot.Application.Configuration;
 using OpportunityPilot.Application.Research;
 using OpportunityPilot.Application.Research.Boards;
 using OpportunityPilot.Domain.Opportunities;
@@ -7,8 +8,11 @@ using OpportunityPilot.Domain.Research;
 
 namespace OpportunityPilot.Application.JobBoards;
 
-/// <summary>The free public job feeds that can be searched live, without any key or quota.</summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas }
+/// <summary>
+/// The job sites "Search all" can read live. All are free public feeds without a key, except Adzuna, which needs the server's
+/// <c>Adzuna__AppId</c>/<c>Adzuna__AppKey</c> and reports NotConfigured (without calling out) when they are missing.
+/// </summary>
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -18,15 +22,29 @@ public sealed record FeedSearchResult(IReadOnlyList<FeedSiteStatus> Sites, IRead
 public sealed record FeedJobDto(string Site, string SiteName, JobBoardJobDto Job);
 
 /// <summary>
-/// "Search all": reads the free public feeds (Arbeitnow, Jobicy, We Work Remotely, Remotive, Remote OK, Himalayas), keeps each feed's
-/// text for 30 minutes so repeated searches cost nothing, and filters it by the person's words and place. Read-only.
+/// "Search all": reads the free public feeds (Arbeitnow, Jobicy, We Work Remotely, Remotive, Remote OK, Himalayas, The Muse) and, when the
+/// server has keys, Adzuna; keeps each answer for 30 minutes so repeated searches cost nothing, and filters it by the person's words and
+/// place. Read-only.
 /// </summary>
-public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser, IOptions<ResearchOptions> research, TimeProvider clock, IRapidApiBoardSearch? regional = null)
+public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser, IOptions<ResearchOptions> research, TimeProvider clock,
+    IRapidApiBoardSearch? regional = null, IOptions<AdzunaOptions>? adzuna = null)
 {
     public static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(30);
     public const int MaxTake = 100;
-    private static readonly ConcurrentDictionary<FeedSite, (DateTime At, string Text)> Cache = new();
+
+    /// <summary>Adzuna answers are kept per search (country, words, place); past this many the oldest are dropped.</summary>
+    public const int MaxAdzunaCached = 200;
+
+    private static readonly ConcurrentDictionary<FeedSite, (DateTime At, IReadOnlyList<string> Pages)> Cache = new();
+
+    // Keyed by country, words and place only: the keys are never part of a cache key.
+    private static readonly ConcurrentDictionary<string, (DateTime At, string Text)> AdzunaCache = new(StringComparer.Ordinal);
     private readonly ResearchOptions _limits = research.Value;
+
+    public bool AdzunaConfigured => adzuna?.Value.Configured == true;
+
+    /// <summary>What "all sites" means on this server: every feed, and Adzuna only when its keys are set.</summary>
+    public IReadOnlyList<FeedSite> DefaultSites => Enum.GetValues<FeedSite>().Where(s => s != FeedSite.Adzuna || AdzunaConfigured).ToList();
 
     public static string Name(FeedSite site) => site switch
     {
@@ -35,6 +53,8 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.WeWorkRemotely => "We Work Remotely",
         FeedSite.Remotive => "Remotive",
         FeedSite.Himalayas => "Himalayas",
+        FeedSite.TheMuse => "The Muse",
+        FeedSite.Adzuna => "Adzuna",
         _ => "Remote OK"
     };
 
@@ -46,7 +66,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var jobs = new List<FeedJobDto>();
         var regionalTask = regional is null || regional.Boards.Count == 0 ? Task.FromResult<RapidApiBoardResult[]>([])
             : Task.WhenAll(regional.Boards.Select(b => regional.SearchAsync(b.Id, query, location, ct)));
-        var reads = await Task.WhenAll(sites.Distinct().Select(s => ReadAsync(s, now, query, ct)));
+        var reads = await Task.WhenAll(sites.Distinct().Select(s => ReadAsync(s, now, query, location, ct)));
         foreach (var r in await regionalTask)
         {
             var ofBoard = r.Jobs.Where(j => Matches(j, query, null, remoteOnly)).Select(j => new FeedJobDto(r.BoardId, r.Name, j)).ToList();
@@ -55,7 +75,8 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         }
         foreach (var (site, jobsOfSite, status) in reads)
         {
-            var matched = jobsOfSite.Where(j => Matches(j.Job, query, location, remoteOnly)).ToList();
+            // Adzuna was searched with the words and the place, over full descriptions it sends only a snippet of, so only "remote only" is applied again.
+            var matched = jobsOfSite.Where(j => site == FeedSite.Adzuna ? !remoteOnly || j.Job.IsRemote : Matches(j.Job, query, location, remoteOnly)).ToList();
             statuses.Add(status with { Matched = matched.Count });
             jobs.AddRange(matched);
         }
@@ -66,41 +87,103 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         return new FeedSearchResult(statuses, merged, now);
     }
 
-    private async Task<(FeedSite Site, List<FeedJobDto> Jobs, FeedSiteStatus Status)> ReadAsync(FeedSite site, DateTime now, string query, CancellationToken ct)
+    private async Task<(FeedSite Site, List<FeedJobDto> Jobs, FeedSiteStatus Status)> ReadAsync(FeedSite site, DateTime now, string query, string? location, CancellationToken ct)
     {
         var name = Name(site);
+        if (site == FeedSite.Adzuna) return await ReadAdzunaAsync(now, query, location, ct);
         var fromCache = false;
-        string? text;
+        IReadOnlyList<string> pages;
         // Himalayas is searched by the person's words, so its answer depends on them and is not shared between searches.
-        if (site != FeedSite.Himalayas && Cache.TryGetValue(site, out var hit) && now - hit.At < CacheFor) { text = hit.Text; fromCache = true; }
+        if (site != FeedSite.Himalayas && Cache.TryGetValue(site, out var hit) && now - hit.At < CacheFor) { pages = hit.Pages; fromCache = true; }
         else
         {
-            var result = site switch
+            if (site == FeedSite.TheMuse)
             {
-                FeedSite.Arbeitnow => await fetcher.FetchJsonAsync($"{Base(_limits.ArbeitnowApiBase, ResearchOptions.DefaultArbeitnowApiBase)}/api/job-board-api", ct, ResearchOptions.LargeFeedBytes),
-                FeedSite.Jobicy => await fetcher.FetchJsonAsync($"{Base(_limits.JobicyApiBase, ResearchOptions.DefaultJobicyApiBase)}/api/v2/remote-jobs?count=50", ct),
-                FeedSite.WeWorkRemotely => await fetcher.FetchAsync($"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss", ct, ResearchOptions.LargeFeedBytes),
-                FeedSite.Himalayas => await fetcher.FetchJsonAsync($"{Base(_limits.HimalayasApiBase, ResearchOptions.DefaultHimalayasApiBase)}/jobs/api/search?q={Uri.EscapeDataString(query)}&limit=60", ct, ResearchOptions.LargeFeedBytes),
-                FeedSite.Remotive => await fetcher.FetchJsonAsync($"{Base(_limits.RemotiveApiBase, ResearchOptions.DefaultRemotiveApiBase)}/api/remote-jobs", ct, ResearchOptions.LargeFeedBytes),
-                _ => await fetcher.FetchJsonAsync($"{Base(_limits.RemoteOkApiBase, ResearchOptions.DefaultRemoteOkApiBase)}/api", ct, ResearchOptions.LargeFeedBytes)
-            };
-            if (!result.Ok || result.Content is null)
-                return (site, [], new(name, "Failed", 0, 0, result.FailureReason ?? $"{name} could not be read.", false));
-            text = result.Content;
-            if (site != FeedSite.Himalayas) Cache[site] = (now, text);
+                // No word search and 20 postings a page: the newest few pages are read together. The first must answer; a later one failing is skipped.
+                var answers = await Task.WhenAll(Enumerable.Range(0, ResearchOptions.TheMusePages)
+                    .Select(p => fetcher.FetchJsonAsync(ResearchOptions.TheMuseUrl(_limits.TheMuseApiBase, p), ct, ResearchOptions.LargeFeedBytes)));
+                if (!answers[0].Ok || answers[0].Content is null)
+                    return (site, [], new(name, "Failed", 0, 0, answers[0].FailureReason ?? $"{name} could not be read.", false));
+                pages = answers.TakeWhile(a => a.Ok && a.Content is not null).Select(a => a.Content!).ToList();
+            }
+            else
+            {
+                var result = site switch
+                {
+                    FeedSite.Arbeitnow => await fetcher.FetchJsonAsync($"{Base(_limits.ArbeitnowApiBase, ResearchOptions.DefaultArbeitnowApiBase)}/api/job-board-api", ct, ResearchOptions.LargeFeedBytes),
+                    FeedSite.Jobicy => await fetcher.FetchJsonAsync($"{Base(_limits.JobicyApiBase, ResearchOptions.DefaultJobicyApiBase)}/api/v2/remote-jobs?count=50", ct),
+                    FeedSite.WeWorkRemotely => await fetcher.FetchAsync($"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss", ct, ResearchOptions.LargeFeedBytes),
+                    FeedSite.Himalayas => await fetcher.FetchJsonAsync($"{Base(_limits.HimalayasApiBase, ResearchOptions.DefaultHimalayasApiBase)}/jobs/api/search?q={Uri.EscapeDataString(query)}&limit=60", ct, ResearchOptions.LargeFeedBytes),
+                    FeedSite.Remotive => await fetcher.FetchJsonAsync($"{Base(_limits.RemotiveApiBase, ResearchOptions.DefaultRemotiveApiBase)}/api/remote-jobs", ct, ResearchOptions.LargeFeedBytes),
+                    _ => await fetcher.FetchJsonAsync($"{Base(_limits.RemoteOkApiBase, ResearchOptions.DefaultRemoteOkApiBase)}/api", ct, ResearchOptions.LargeFeedBytes)
+                };
+                if (!result.Ok || result.Content is null)
+                    return (site, [], new(name, "Failed", 0, 0, result.FailureReason ?? $"{name} could not be read.", false));
+                pages = [result.Content];
+            }
+            if (site != FeedSite.Himalayas) Cache[site] = (now, pages);
         }
-        var kind = site switch { FeedSite.Arbeitnow => SourceKind.Arbeitnow, FeedSite.Jobicy => SourceKind.Jobicy, FeedSite.WeWorkRemotely => SourceKind.WeWorkRemotely, FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, _ => SourceKind.RemoteOk };
-        var source = new Source(Guid.NewGuid(), Guid.NewGuid(), kind, name, null, null, null, null, now);
-        var candidates = site switch
+        var kind = site switch
         {
-            FeedSite.Arbeitnow => BoardMapping.ArbeitnowCandidates(text, source, parser),
-            FeedSite.Jobicy => BoardMapping.JobicyCandidates(text, source, parser),
-            FeedSite.WeWorkRemotely => BoardMapping.WeWorkRemotelyCandidates(text, source, parser),
-            FeedSite.Himalayas => BoardMapping.HimalayasCandidates(text, source, parser),
-            FeedSite.Remotive => BoardMapping.RemotiveCandidates(text, source, parser),
-            _ => BoardMapping.RemoteOkCandidates(text, source, parser)
+            FeedSite.Arbeitnow => SourceKind.Arbeitnow, FeedSite.Jobicy => SourceKind.Jobicy, FeedSite.WeWorkRemotely => SourceKind.WeWorkRemotely,
+            FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, FeedSite.TheMuse => SourceKind.TheMuse, _ => SourceKind.RemoteOk
         };
-        if (candidates is null) return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", fromCache));
+        var source = new Source(Guid.NewGuid(), Guid.NewGuid(), kind, name, null, null, null, null, now);
+        var candidates = new List<Candidate>();
+        for (var page = 0; page < pages.Count; page++)
+        {
+            var text = pages[page];
+            var read = site switch
+            {
+                FeedSite.Arbeitnow => BoardMapping.ArbeitnowCandidates(text, source, parser),
+                FeedSite.Jobicy => BoardMapping.JobicyCandidates(text, source, parser),
+                FeedSite.WeWorkRemotely => BoardMapping.WeWorkRemotelyCandidates(text, source, parser),
+                FeedSite.Himalayas => BoardMapping.HimalayasCandidates(text, source, parser),
+                FeedSite.Remotive => BoardMapping.RemotiveCandidates(text, source, parser),
+                FeedSite.TheMuse => BoardMapping.TheMuseCandidates(text, source, parser),
+                _ => BoardMapping.RemoteOkCandidates(text, source, parser)
+            };
+            if (read is null && page == 0) return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", fromCache));
+            if (read is null) break;   // a later page that could not be read keeps what the earlier ones gave
+            candidates.AddRange(read);
+        }
+        // A posting can move to the next page between two reads (The Muse), so one id is listed once.
+        var jobs = candidates.DistinctBy(c => c.ExternalId ?? c.Title).Select(c => ToDto(site, name, c)).Where(j => j is not null).Select(j => j!).ToList();
+        return (site, jobs, new(name, "Ready", jobs.Count, 0, null, fromCache));
+    }
+
+    /// <summary>
+    /// Adzuna, searched with the person's words in the country of their place (<see cref="AdzunaCountry"/>). Without both server keys it
+    /// answers NotConfigured and sends nothing. The request URL carries the keys, so it goes straight to the fetcher and is never logged,
+    /// cached by, or put into a message.
+    /// </summary>
+    private async Task<(FeedSite Site, List<FeedJobDto> Jobs, FeedSiteStatus Status)> ReadAdzunaAsync(DateTime now, string query, string? location, CancellationToken ct)
+    {
+        const FeedSite site = FeedSite.Adzuna;
+        var name = Name(site);
+        if (adzuna?.Value is not { Configured: true } keys)
+            return (site, [], new(name, "NotConfigured", 0, 0, "Adzuna is not configured on the server.", false));
+        var (country, where) = AdzunaCountry.Resolve(location);
+        var cacheKey = $"{country}\n{query.Trim().ToLowerInvariant()}\n{where?.ToLowerInvariant()}";
+        var fromCache = false;
+        string text;
+        if (AdzunaCache.TryGetValue(cacheKey, out var hit) && now - hit.At < CacheFor) { text = hit.Text; fromCache = true; }
+        else
+        {
+            var root = Base(_limits.AdzunaApiBase, ResearchOptions.DefaultAdzunaApiBase);
+            var result = await fetcher.FetchJsonAsync(JobBoardGatherer.AdzunaSearchUrl(root, country, keys, query, where) + "&content-type=application/json", ct);
+            if (!result.Ok || result.Content is null)
+                return (site, [], new(name, "Failed", 0, 0, result.StatusCode is 401 or 403
+                    ? "Adzuna rejected the server's keys." : result.FailureReason ?? "Adzuna could not be read.", false));
+            text = result.Content;
+            if (AdzunaCache.Count >= MaxAdzunaCached)
+                foreach (var old in AdzunaCache.OrderBy(e => e.Value.At).Take(AdzunaCache.Count - MaxAdzunaCached + 1).Select(e => e.Key).ToList())
+                    AdzunaCache.TryRemove(old, out _);
+            AdzunaCache[cacheKey] = (now, text);
+        }
+        var source = new Source(Guid.NewGuid(), Guid.NewGuid(), SourceKind.Adzuna, name, null, null, null, null, now);
+        if (BoardMapping.AdzunaCandidates(text, source, parser) is not { } candidates)
+            return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", fromCache));
         var jobs = candidates.Select(c => ToDto(site, name, c)).Where(j => j is not null).Select(j => j!).ToList();
         return (site, jobs, new(name, "Ready", jobs.Count, 0, null, fromCache));
     }

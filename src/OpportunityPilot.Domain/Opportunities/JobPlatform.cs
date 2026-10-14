@@ -24,5 +24,6 @@ public enum JobPlatform
     Workday,
     Arbeitnow,
     Jobicy,
-    WeWorkRemotely
+    WeWorkRemotely,
+    TheMuse
 }

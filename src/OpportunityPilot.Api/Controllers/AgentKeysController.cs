@@ -5,8 +5,12 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/agent-keys")]
-public sealed class AgentKeysController(AgentKeyService keys) : ControllerBase
+public sealed class AgentKeysController(AgentKeyService keys, AgentStatusService status) : ControllerBase
 {
+    /// <summary>INT6: is the desktop agent running, what it applied to lately, and how many approved jobs wait for it.</summary>
+    [HttpGet("status")]
+    public async Task<ActionResult<AgentStatusDto>> Status(CancellationToken ct) => await status.GetAsync(ct);
+
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<AgentKeyDto>>> List(CancellationToken ct) =>
         Ok(await keys.ListAsync(ct));

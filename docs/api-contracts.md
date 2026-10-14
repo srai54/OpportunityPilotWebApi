@@ -58,7 +58,7 @@ Query enums that fail to bind return 400 from model binding.
 | POST | `/api/v1/campaigns` | user | `CreateCampaignRequest` | 201 `CampaignDto` + `Location`; 400 (also for Partner/Investor/Freelance: "not supported yet", and for a profile that is not the caller's) |
 | PUT | `/api/v1/campaigns/{id}` | user | `UpdateCampaignRequest` | 200 `CampaignDto`; 400 (validated before the version check); 404; 409 |
 | GET | `/api/v1/campaigns/{campaignId}/sources` | user | — | 200 `SourceDto[]`, oldest first; 404 |
-| POST | `/api/v1/campaigns/{campaignId}/sources` | user | `CreateSourceRequest` (Paste, Url, Feed, Greenhouse, Lever, Adzuna, Ashby, SmartRecruiters, Recruitee, Workable, Workday, JobSearch, Remotive or RemoteOk); Workday accepts only a public `myworkdayjobs.com` careers URL; body ≤256 KB | 201 `SourceDto`; 400; 404; 413 |
+| POST | `/api/v1/campaigns/{campaignId}/sources` | user | `CreateSourceRequest` (Paste, Url, Feed, Greenhouse, Lever, Adzuna, Ashby, SmartRecruiters, Recruitee, Workable, Workday, JobSearch, Remotive, RemoteOk, Arbeitnow, Jobicy, WeWorkRemotely or TheMuse); Workday accepts only a public `myworkdayjobs.com` careers URL; body ≤256 KB | 201 `SourceDto`; 400; 404; 413 |
 | DELETE | `/api/v1/campaigns/{campaignId}/sources/{sourceId}` | user | — | 204; 404 |
 | POST | `/api/v1/imports/preview` | user | `{ campaignId, csv }`; body ≤3 MB | 200 `ImportPreviewDto`; 400; 404; 413 |
 | POST | `/api/v1/imports/{importId}/commit` | user | optional `{ label }` | 201 `SourceDto` (Kind Csv); 400 (no valid rows, label too long, 20-source limit); 404 (unknown or expired); 409 (already committed) |
@@ -107,6 +107,7 @@ profile is confirmed. No message is sent; approval only makes the exact approved
 | GET | `/api/v1/drafts/{id}` | user | — | 200 `DraftDto`; 404 |
 | PUT | `/api/v1/drafts/{id}` | user | `{ recipient?, subject?, body, expectedVersion }` | 200 `DraftDto`; material edits increment version and clear approval; 400; 404; 409 |
 | POST | `/api/v1/drafts/{id}/approve` | user | `{ version }` | 200 `DraftDto`; approval is bound to SHA-256 of exact content and version; 400; 404; 409 |
+| POST | `/api/v1/drafts/{id}/rewrite` | user | `{ instruction: "shorter"\|"friendlier"\|"more formal"\|free text ≤200, version }` | 200 `{ subject, body, warnings[] }` — a Gemini suggestion, **not saved** (apply it with PUT); 400 (instruction); 404; 409 (stale version, approved or sent draft, "AI rewrite is off on this server.", "Daily AI limit reached…", provider failure, "The rewrite added facts that are not in your profile…" when it adds a link or email). Rules: `business-rules.md` → AI rewrite |
 | POST | `/api/v1/drafts/{id}/revoke-approval` | user | — | 200 `DraftDto`; 404; 409 |
 | GET | `/api/v1/drafts` | user | query `state?`, `channel?`, `campaignId?`, `take` (1–200), `skip` | cross-opportunity `DraftPageDto`; items include campaign identity and recipient verification state |
 | POST | `/api/v1/drafts/batch-approve` | user | `{ items: [{ id, version }] }` | independent exact-version results; blocked/stale items are skipped with reasons |
@@ -115,7 +116,7 @@ profile is confirmed. No message is sent; approval only makes the exact approved
 | GET/POST | `/api/v1/opportunities/{id}/next-actions` | user | next-action fields on POST | opportunity reminders |
 | GET/PATCH | `/api/v1/next-actions[/{id}]` | user | `state?`, `dueAt?` on PATCH | owner due-date list and state changes |
 | POST | `/api/v1/goal-previews` | user | `{ profileId, goal, mode? }` | Gemini when configured, validated deterministic fallback otherwise |
-| GET | `/api/v1/ai/status` | user | — | provider/model/fallback status |
+| GET | `/api/v1/ai/status` | user | — | `{ active, provider, model, fallbackReason, callsToday, dailyLimit, maxCallsPerRun, lastFailure, rewriteAvailable }`; `rewriteAvailable` is false when AI is off, has no key or today's budget is spent |
 | GET/DELETE | `/api/v1/account-data/export`, `/api/v1/account-data` | user | `{ confirm: true }` on DELETE | portable JSON export or permanent owned-data deletion |
 | DELETE | `/api/v1/drafts/{id}` | user | — | 204; 404 |
 
@@ -192,6 +193,56 @@ jobs and applications remain a separate OAuth/MCP capability. Public observation
 | GET | `/api/v1/wellfound/activities` | user | `take` | newest immutable audit rows |
 | GET | `/api/v1/wellfound/kpis` | user | `workspace=Candidate|Sales` | stored Candidate or Sales Wellfound KPI counts, including `discoveryJobs` for Sales hiring signals |
 
+### Connectors (CON1–CON6)
+
+Every connect checks the address or token against the real service before storing it encrypted (`TokenProtector`, the mail key).
+Secrets are never returned, logged or exported. Outbound calls go through `IConnectorHttp`: https only, no redirects, 20 s timeout,
+1 MB read, public addresses only (checked on the address actually connected). `kind` is `Slack`, `Teams`, `Webhook`, `HubSpot`,
+`Notion`, `Airtable` or `CalendarFeed`.
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/integrations` | user | — | one `IntegrationDto` per kind: `{ kind, connected, label, events[], connectedAt, lastUsedAt, lastError, feedUrl }` |
+| PUT | `/api/v1/integrations/{kind}` | user, `connectors` 60/h | webhooks `{ url, events? }`; HubSpot `{ token }`; Notion `{ token, target }` (database link); Airtable `{ token, target, table? }` (base link); CalendarFeed `{}` | the connection; 400 with the service's reason (wrong domain, refused token, database not shared, missing scope) |
+| POST | `/api/v1/integrations/{kind}/test` | user, `connectors` | — | `{ ok, message }`; a webhook gets a test message, a CRM re-checks the token; failures are stored as `lastError` |
+| PUT | `/api/v1/integrations/{kind}/events` | user | `{ events: ["sent","leads","digest","replies"] }` | webhooks only |
+| DELETE | `/api/v1/integrations/{kind}` | user | — | 204; deleting the calendar feed revokes its link |
+| POST | `/api/v1/integrations/{kind}/push` | user, `connectors` | `{ opportunityIds: [≤25] }` | per lead `{ opportunityId, outcome: Added|AlreadyThere|Failed, reason, link }`; HubSpot/Notion/Airtable only; duplicates are found by domain or name and not created again |
+| GET | `/api/v1/calendar/{id}/{key}.ics` | anonymous, `public-progress` | — | iCalendar of open follow-ups (last 30 days onward) and scheduled interviews; 404 for a wrong key |
+| POST | `/api/v1/campaigns/{campaignId}/drafts/prepare` | user | — | INT1: writes an email draft (not approved) for up to 15 shortlisted leads without one, to an address the company published; `{ written, skipped, remaining, items[] }` |
+
+Events: `sent` after an email goes out from a connected mailbox, `leads` after a research run saves new leads, `digest` once a day after
+`Integrations:DigestHourUtc` (default 3) when something is due, `replies` when reply detection records new replies ("Reply from X at Org").
+A failed notification never fails the action that caused it. New connections get every event; stored event lists are kept as they are.
+
+### Mailboxes (send from your own email, reply detection)
+
+Code: `Application/Mail/MailboxService.cs`, `Application/Mail/ReplyCheckService.cs`, `Infrastructure/Mail/`. Tokens and app passwords
+are stored encrypted and never returned. `provider` is `Microsoft`, `Google` or `Smtp` (email with an app password).
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/mailboxes` | user | — | one `MailboxDto { provider, configured, connected, emailAddress, status (Connected, NeedsReconnect), connectedAt, lastUsedAt }` per provider |
+| POST | `/api/v1/mailboxes/{provider}/connect` | user | — | `{ url }` to the provider's sign-in; 409 when not configured; 400 for `Smtp` |
+| GET | `/api/v1/mailboxes/callback/{provider}` | anonymous (sealed state) | `code`, `state`, `error` | redirect to `<web>/settings?mailbox=connected|declined|expired|failed&provider=…` |
+| POST | `/api/v1/mailboxes/smtp` | user | `{ preset: gmail|outlook|office365|yahoo|custom, host?, port?, username, password }` | `MailboxDto`; the login is proven by one test message to the person's own address; 400/422 with the reason |
+| POST | `/api/v1/mailboxes/smtp/check-replies` | user, `reply-check` 20/h | — | 200 `{ checked, replies, items: [{ opportunityId, organization, from, subject, receivedAt }] }` (only replies new to this check); 409 "Connect your email with an app password in Settings first…", "Connect your email again in Settings…" (NeedsReconnect), "Your email provider refused the login for reading replies…" (mailbox set to NeedsReconnect, except Outlook.com/Microsoft 365 where the message says Microsoft turned IMAP app passwords off and sending is not affected), server not found / not public / unreachable / too slow, "A lead changed while replies were being recorded…" |
+| DELETE | `/api/v1/mailboxes/{provider}` | user | — | 204; 404 when not connected |
+| POST | `/api/v1/drafts/{id}/send-via-mailbox` | user | `{ version, provider }` | `ProviderExecutionDto`; 400/404/409 |
+| POST | `/api/v1/drafts/send-via-mailbox-batch` | user | `{ provider, items: [{ id, version }] (≤25) }` | per item `{ id, outcome: Sent|Failed|NotAttempted, reason, execution }` |
+
+Reply detection rules: [business-rules.md → Reply detection](business-rules.md#reply-detection-con5).
+
+### Job boards (Find)
+
+Read-only live searches; nothing is stored. Rate limit `JobBoardSearch`. Rules in [business-rules.md → Public job boards](business-rules.md#public-job-boards).
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/jobboards/status` | user | — | `{ configured (JSearch key set), boards: JobBoard[], feeds: FeedSite[] ("all" on this server), adzunaConfigured }` |
+| GET | `/api/v1/jobboards/feeds` | user | `query` (1–200), `sites?` comma list of `FeedSite` (Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna; empty = all, Adzuna only when configured), `location?` (≤100), `remoteOnly`, `take` (1–100, default 60) | `FeedSearchResult { sites: { site, status (Ready, Failed, NotConfigured), listed, matched, message?, fromCache }[], jobs: { site, siteName, job: JobBoardJobDto }[], observedAt }`; 400 with `errors.query`/`location`/`sites` |
+| GET | `/api/v1/jobboards/jobs` | user | `query`, `board` (Indeed, LinkedIn, Seek), `location?`, `remoteOnly`, `datePosted`, `country?`, `page`, `cursor?`, `employmentType?`, `experience?`, `radiusKm?` | `JobBoardSearchResult` (status Ready, NotConfigured or Failed) through JSearch |
+
 ## DTO shapes
 
 JSON is camelCase and enums are strings. `?` marks nullable.
@@ -210,7 +261,7 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 | CampaignCriteria | `keywords, requiredSkills, preferredSkills, locations, workModes, industries, problems, signals, excludeKeywords, excludeOrganizations` (all `string[]`), `candidateYears?: number` |
 | CreateCampaignRequest | `profileId, mode, name, goal?, criteria?, weights? { [criterion]: number }, resultLimit?, autoSuggestMinScore?` |
 | UpdateCampaignRequest | `name, goal?, criteria?, weights?, resultLimit?, expectedVersion, autoSuggestMinScore?` (omitted values keep stored ones; explicit null disables auto-suggest) |
-| CreateSourceRequest | `kind, label?, url?, text?, permissionNote?`; per-company boards require a safe slug/board URL, aggregate Remotive/RemoteOk and Adzuna take no URL |
+| CreateSourceRequest | `kind, label?, url?, text?, permissionNote?`; per-company boards require a safe slug/board URL, aggregate Remotive/RemoteOk/Arbeitnow/Jobicy/WeWorkRemotely/TheMuse and Adzuna take no URL |
 | SourceDto | `id, campaignId, kind, label, url?, platform?, permissionNote?, status, lastFetchedAt?, safeError?, itemCount, textLength, createdAt` |
 | ImportPreviewDto | `importId, columns: string[], warnings: string[], rows: { row, values: { [column]: string }, errors: string[] }[] (first 50), validCount, errorCount` |
 | ResearchJobDto | `id, campaignId, state, stage, createdAt, startedAt?, finishedAt?, safeError?, counts: { sources, sourcesDone, sourcesFailed, fetched, candidates, qualified, needsVerification, excluded }, events?: { at, stage, level, message }[]` |

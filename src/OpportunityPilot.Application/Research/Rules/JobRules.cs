@@ -78,7 +78,7 @@ public static partial class JobRules
         {
             if (locationMatch is not null)
                 checks.Add(new FilterCheck("locations", FilterResult.Pass, $"Location matches {locationMatch.Value}."));
-            else if (input.Location is not null)
+            else if (input.Location is not null && !PlaceMatch.IsUnspecific(input.Location))
                 checks.Add(new FilterCheck("locations", FilterResult.Fail, $"Location \"{input.Location}\" is not in your list."));
             else
             {
@@ -257,7 +257,7 @@ public static partial class JobRules
         if (criteria.Locations.Count > 0)
         {
             if (match is not null) return new CriterionScore(CampaignWeights.Location, label, 1, $"Location matches {match.Value}.", match.Excerpt);
-            if (location is not null)
+            if (location is not null && !PlaceMatch.IsUnspecific(location))
                 return new CriterionScore(CampaignWeights.Location, label, 0, $"Location \"{location}\" is not in your list.", Excerpts.Field("location", location));
             return new CriterionScore(CampaignWeights.Location, label, null, "The posting does not state a location.");
         }
@@ -275,7 +275,7 @@ public static partial class JobRules
     {
         foreach (var l in criteria.Locations)
         {
-            if (TextMatch.Contains(location, l)) return new Detected(l, Excerpts.Field("location", location!));
+            if (TextMatch.Contains(location, l) || PlaceMatch.InField(location, l)) return new Detected(l, Excerpts.Field("location", location!));
             if (Excerpts.ForTerm(corpus, l) is { } sentence) return new Detected(l, sentence);
             if (string.Equals(l, Remote, StringComparison.OrdinalIgnoreCase) && workMode?.Value == Remote) return new Detected(l, workMode.Excerpt);
         }

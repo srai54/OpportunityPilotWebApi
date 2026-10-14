@@ -12,7 +12,10 @@ namespace OpportunityPilot.Api.Controllers;
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
 public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchService feeds, UserEventLog events) : ControllerBase
 {
-    /// <summary>"Search all": the free public feeds (no key, no quota), merged and de-duplicated. <c>sites</c> is a comma list; empty means all.</summary>
+    /// <summary>
+    /// "Search all": the free public feeds (no key, no quota) and Adzuna when the server has its keys, merged and de-duplicated.
+    /// <c>sites</c> is a comma list; empty means all (Adzuna only when configured; asked for by name without keys, it answers NotConfigured).
+    /// </summary>
     [HttpGet("feeds")]
     public async Task<ActionResult<FeedSearchResult>> Feeds([FromQuery] string query, [FromQuery] string? sites = null, [FromQuery] string? location = null,
         [FromQuery] bool remoteOnly = false, [FromQuery] int take = 60, CancellationToken ct = default)
@@ -27,14 +30,19 @@ public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchServic
             else errors["sites"] = [$"Unknown site '{name}'. Use {string.Join(", ", Enum.GetNames<FeedSite>())}."];
         }
         if (errors.Count > 0) throw new RequestValidationException(errors);
-        if (chosen.Count == 0) chosen.AddRange(Enum.GetValues<FeedSite>());
+        var all = chosen.Count == 0;
+        if (all) chosen.AddRange(feeds.DefaultSites);
         var result = await feeds.SearchAsync(chosen, query.Trim(), location?.Trim(), remoteOnly, take, ct);
-        await events.RecordAsync(UserEventKinds.Searched, $"Searched {(chosen.Count == Enum.GetValues<FeedSite>().Length ? "all free sites" : string.Join(", ", chosen))} for \"{query.Trim()}\"{(string.IsNullOrWhiteSpace(location) ? "" : $" in {location.Trim()}")}: {result.Jobs.Count} results", ct);
+        await events.RecordAsync(UserEventKinds.Searched, $"Searched {(all ? "all free sites" : string.Join(", ", chosen))} for \"{query.Trim()}\"{(string.IsNullOrWhiteSpace(location) ? "" : $" in {location.Trim()}")}: {result.Jobs.Count} results", ct);
         return result;
     }
 
     [HttpGet("status")]
-    public ActionResult<object> Status() => Ok(new { configured = search.Configured, boards = Enum.GetNames<JobBoard>() });
+    public ActionResult<object> Status() => Ok(new
+    {
+        configured = search.Configured, boards = Enum.GetNames<JobBoard>(),
+        feeds = feeds.DefaultSites.Select(s => s.ToString()).ToArray(), adzunaConfigured = feeds.AdzunaConfigured
+    });
 
     [HttpGet("jobs")]
     public async Task<ActionResult<JobBoardSearchResult>> Jobs(

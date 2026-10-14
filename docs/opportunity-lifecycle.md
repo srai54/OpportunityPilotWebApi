@@ -32,6 +32,7 @@ status, including moving an Applied opportunity back to New (see OQ-BE-011).
 |---|---|---|---|
 | User | yes, to any value | `PATCH /api/v1/opportunities/{id}/status` → `ChangeStatus`; the same status is a no-op | `StatusChanged`, detail `From → To` |
 | Research run | only New → Suggested | a Qualified Job result at or above the campaign's `AutoSuggestMinScore`; reruns preserve every non-New state | `Suggested` when queued; `Researched` when created or re-scored |
+| Reply detection (CON5) | only to **Responded**, from New, Suggested, Shortlisted, Applied or Contacted | `POST /api/v1/mailboxes/smtp/check-replies` or the 30-minute background check finds a reply to a sent email (rules in business-rules.md → Reply detection); open FollowUp next actions become Cancelled | `Replied` "Reply received from … on … UTC: subject", then `StatusChanged` |
 | Desktop agent | only to **Applied** | `POST /api/v1/applications/report` with `status: Applied` and the opportunity's id → `MarkApplied` from any status; idempotent once Applied | `Applied`, detail `Applied on <platform> by the desktop agent.` |
 
 Only `Shortlisted` Job opportunities with a platform and external id are offered to the agent

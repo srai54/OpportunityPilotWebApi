@@ -44,6 +44,7 @@ public sealed class ResearchOptions
     public string JobicyApiBase { get; set; } = DefaultJobicyApiBase;
     public string HimalayasApiBase { get; set; } = DefaultHimalayasApiBase;
     public string WeWorkRemotelyBase { get; set; } = DefaultWeWorkRemotelyBase;
+    public string TheMuseApiBase { get; set; } = DefaultTheMuseApiBase;
 
     public const string DefaultGreenhouseApiBase = "https://boards-api.greenhouse.io";
     public const string DefaultLeverApiBase = "https://api.lever.co";
@@ -58,6 +59,14 @@ public sealed class ResearchOptions
     public const string DefaultJobicyApiBase = "https://jobicy.com";
     public const string DefaultHimalayasApiBase = "https://himalayas.app";
     public const string DefaultWeWorkRemotelyBase = "https://weworkremotely.com";
+    public const string DefaultTheMuseApiBase = "https://www.themuse.com";
+
+    /// <summary>The Muse answers 20 postings a page and has no word search, so its newest few pages are read (60 postings, one request each).</summary>
+    public const int TheMusePages = 3;
+
+    /// <summary>The Muse's public jobs list, newest first.</summary>
+    public static string TheMuseUrl(string apiBase, int page) =>
+        $"{(string.IsNullOrWhiteSpace(apiBase) ? DefaultTheMuseApiBase : apiBase).TrimEnd('/')}/api/public/jobs?page={page}&descending=true";
 
     /// <summary>Some public feeds (Arbeitnow, about 3 MB a page) are bigger than the usual 1 MB read limit; those few get this larger ceiling.</summary>
     public const int LargeFeedBytes = 5 * 1024 * 1024;

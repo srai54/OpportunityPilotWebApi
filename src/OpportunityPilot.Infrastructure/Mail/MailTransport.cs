@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -82,10 +83,43 @@ public sealed class MailTransport(HttpClient http, IOptions<MailOptions> options
         }
     }
 
+    /// <summary>
+    /// Sends through the person's own SMTP server with their app password (STARTTLS). For this provider <paramref name="credentialsJson"/> is the
+    /// decrypted <see cref="SmtpCredentials"/>. The password, the address and the message text are never logged; a 2xx means "accepted".
+    /// </summary>
+    private async Task<MailSendResult> SendSmtpAsync(string credentialsJson, OutgoingMail mail, CancellationToken ct)
+    {
+        SmtpCredentials? c;
+        try { c = JsonSerializer.Deserialize<SmtpCredentials>(credentialsJson); } catch (JsonException) { c = null; }
+        if (c is null) return new(false, null, string.Empty, "The saved email login could not be read. Connect your email again.", TokenRejected: true);
+        try
+        {
+            using var client = new SmtpClient(c.Host, c.Port) { EnableSsl = c.Ssl, Credentials = new NetworkCredential(c.Username, c.Password), Timeout = 20000 };
+            using var message = new MailMessage(c.Username, mail.To, mail.Subject, mail.Body) { BodyEncoding = Encoding.UTF8, SubjectEncoding = Encoding.UTF8 };
+            await client.SendMailAsync(message, ct);
+            logger.LogInformation("SMTP send accepted by {Host}", c.Host);
+            return new(true, null, $"Accepted by {c.Host} for sending from your own email (it is in your Sent folder if the provider keeps one). Accepted is not a delivery confirmation.", null);
+        }
+        catch (SmtpException ex)
+        {
+            logger.LogInformation("SMTP send to {Host} failed: {Status}", c.Host, ex.StatusCode);
+            var refused = ex.Message.Contains("Authentication", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("5.7.", StringComparison.Ordinal);
+            return refused
+                ? new(false, null, string.Empty, "Your email provider refused the login. Check the app password and connect again.", TokenRejected: true)
+                : new(false, null, string.Empty, $"The email server did not accept the message ({ex.StatusCode}). Nothing was sent.");
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is IOException or InvalidOperationException or OperationCanceledException)
+        {
+            logger.LogInformation("SMTP send to {Host} did not complete: {Type}", c.Host, ex.GetType().Name);
+            return new(false, null, string.Empty, "The email server could not be reached or took too long. Check your Sent folder before trying again.");
+        }
+    }
+
     public async Task<MailSendResult> SendAsync(MailProvider provider, string accessToken, OutgoingMail mail, CancellationToken ct)
     {
         if (!MailBuilders.SafeHeader(mail.To) || !MailBuilders.SafeHeader(mail.Subject))
             return new(false, null, string.Empty, "The recipient or subject contains a line break, so it was not sent.");
+        if (provider == MailProvider.Smtp) return await SendSmtpAsync(accessToken, mail, ct);
         var microsoft = provider == MailProvider.Microsoft;
         using var message = new HttpRequestMessage(HttpMethod.Post, microsoft ? "https://graph.microsoft.com/v1.0/me/sendMail" : "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
         {

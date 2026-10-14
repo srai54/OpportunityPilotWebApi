@@ -24,6 +24,8 @@ builder.Services.Configure<JsearchOptions>(builder.Configuration.GetSection(Jsea
 builder.Services.Configure<OpportunityPilot.Application.JobBoards.RapidApiBoardsOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.JobBoards.RapidApiBoardsOptions.Section));
 
 builder.Services.Configure<OpportunityPilot.Application.Mail.MailOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Mail.MailOptions.Section));
+builder.Services.Configure<OpportunityPilot.Application.Integrations.IntegrationOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Integrations.IntegrationOptions.SectionName));
+builder.Services.PostConfigure<OpportunityPilot.Application.Mail.MailOptions>(o => o.FallbackSecret ??= builder.Configuration.GetConnectionString("Main"));
 
 // Missing configuration does not stop the process. Without a connection string data is kept in memory;
 // without a Supabase URL visitors continue as random guests. /api/v1/capabilities reports both (demo mode).
@@ -51,6 +53,8 @@ builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 builder.Services.AddHostedService<ResearchProcessor>();
 builder.Services.AddHostedService<ScheduleProcessor>();
 builder.Services.AddHostedService<RetentionProcessor>();
+builder.Services.AddHostedService<DigestProcessor>();
+builder.Services.AddHostedService<ReplyCheckProcessor>();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 var allowedOriginPatterns = builder.Configuration.GetSection("Cors:AllowedOriginPatterns").Get<string[]>() ?? [];

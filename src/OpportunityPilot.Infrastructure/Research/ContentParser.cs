@@ -164,7 +164,8 @@ public sealed partial class ContentParser : IContentParser
     {
         if (href.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)) return href.Length <= 320 ? href : null;
         Uri? uri;
-        if (Uri.TryCreate(href, UriKind.Absolute, out var absolute)) uri = absolute;
+        // On Linux "/contact" parses as an absolute file:///contact, so only an http(s) address counts as absolute here.
+        if (Uri.TryCreate(href, UriKind.Absolute, out var absolute) && absolute.Scheme is "http" or "https") uri = absolute;
         else if (root is not null && Uri.TryCreate(root, href, out var relative)) uri = relative;
         else return null;
         return uri.Scheme is "http" or "https" && uri.OriginalString.Length <= 1000 ? uri.ToString() : null;

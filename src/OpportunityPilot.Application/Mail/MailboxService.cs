@@ -31,7 +31,7 @@ public sealed record BatchSendResultItem(Guid Id, string Outcome, string? Reason
 /// </summary>
 public sealed class MailboxService(
     IAppDbContext db, ICurrentUser user, TimeProvider clock, IMailTransport transport, TokenProtector protector,
-    IOptions<MailOptions> options, ProviderGateway gateway)
+    IOptions<MailOptions> options, ProviderGateway gateway, Integrations.IntegrationNotifier? notifier = null)
 {
     private MailOptions Opts => options.Value;
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
@@ -48,11 +48,59 @@ public sealed class MailboxService(
 
     public ConnectMailboxResponse BeginConnect(MailProvider provider)
     {
+        if (provider == MailProvider.Smtp) throw Invalid("provider", "Email with an app password connects with the address and app password, not a sign-in.");
         if (!Opts.Ready(provider)) throw new ConflictException($"{Name(provider)} sending is not configured on this server yet.");
         var (verifier, challenge) = OAuthState.NewPkce();
         var state = new OAuthState(user.OwnerId, provider, verifier, Now.Add(OAuthState.Lifetime)).Seal(protector);
         return new(transport.AuthorizeUrl(provider, RedirectUri(provider), state, challenge));
     }
+
+    /// <summary>
+    /// Connects the person's own email with an app password. The login is proven by sending one short test message to themselves, so a wrong
+    /// password or blocked server fails here, not in the middle of a campaign. Stored only encrypted.
+    /// </summary>
+    public async Task<MailboxDto> ConnectSmtpAsync(ConnectSmtpRequest r, CancellationToken ct)
+    {
+        if (!Opts.Ready(MailProvider.Smtp)) throw new ConflictException("Sending with an app password is not available on this server yet.");
+        if (r is null || string.IsNullOrWhiteSpace(r.Username) || !ValidAddress(r.Username.Trim())) throw Invalid("username", "Enter your full email address.");
+        if (string.IsNullOrWhiteSpace(r.Password) || r.Password.Length > 200) throw Invalid("password", "Enter the app password.");
+        string host; int port;
+        if (SmtpPresets.All.TryGetValue(r.Preset ?? string.Empty, out var preset)) { host = preset.Host; port = preset.Port; }
+        else if (string.Equals(r.Preset, "custom", StringComparison.OrdinalIgnoreCase))
+        {
+            host = (r.Host ?? string.Empty).Trim().ToLowerInvariant();
+            port = r.Port ?? 587;
+            if (host.Length is 0 or > 253 || host.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '.' or '-'))) throw Invalid("host", "Enter the mail server name, like smtp.example.com.");
+            if (!SmtpPresets.AllowedPorts.Contains(port)) throw Invalid("port", "Use port 587 (or 2525).");
+            if (!await IsPublicHostAsync(host, ct)) throw Invalid("host", "That mail server is not reachable from here. Use its public address.");
+        }
+        else throw Invalid("preset", "Choose Gmail, Outlook, Microsoft 365, Yahoo or another provider.");
+
+        var username = r.Username.Trim();
+        var creds = new SmtpCredentials(host, port, username, r.Password);
+        var json = System.Text.Json.JsonSerializer.Serialize(creds);
+        MailSendResult test;
+        try
+        {
+            test = await transport.SendAsync(MailProvider.Smtp, json, new OutgoingMail(username, "OpportunityPilot is connected to this email",
+                "This is the one test message OpportunityPilot sends when you connect your email. From now on it only sends messages you have approved, one version at a time. You can disconnect in Settings at any time."), ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        { test = new(false, null, string.Empty, "The email server could not be reached."); }
+        if (!test.Accepted) throw Invalid("password", test.Failure ?? "The email server did not accept the login.");
+
+        var encrypted = protector.Protect(json);
+        var existing = await db.MailboxConnections.FirstOrDefaultAsync(m => m.OwnerId == user.OwnerId && m.Provider == MailProvider.Smtp, ct);
+        if (existing is null) db.MailboxConnections.Add(new MailboxConnection(user.OwnerId, MailProvider.Smtp, username, encrypted, Now));
+        else existing.Reconnect(username, encrypted, Now);
+        db.UserEvents.Add(new UserEvent(user.OwnerId, UserEventKinds.MailboxConnected, Now, $"Connected your email ({username}) with an app password"));
+        await db.SaveChangesAsync(ct);
+        return new MailboxDto(MailProvider.Smtp, true, true, username, MailboxStatus.Connected, Now, null);
+    }
+
+    // A custom mail server must resolve to public addresses only, so the form cannot be used to probe this server's own network.
+    private async Task<bool> IsPublicHostAsync(string host, CancellationToken ct) =>
+        Opts.AllowPrivateSmtpHosts || await MailHosts.PublicAddressesAsync(host, allowPrivate: false, ct) is not null;
 
     /// <summary>Finishes the browser round trip. Returns where to send the person next; never throws for a provider or user mistake.</summary>
     public async Task<string> CompleteAsync(MailProvider provider, string? code, string? state, string? error, CancellationToken ct)
@@ -85,7 +133,7 @@ public sealed class MailboxService(
 
     public async Task<ProviderExecutionDto> SendDraftAsync(Guid draftId, SendViaMailboxRequest r, CancellationToken ct)
     {
-        if (r is null || !Enum.IsDefined(r.Provider)) throw Invalid("provider", "Choose Outlook or Gmail.");
+        if (r is null || !Enum.IsDefined(r.Provider)) throw Invalid("provider", "Choose Outlook, Gmail or your email with an app password.");
         var connection = await db.MailboxConnections.FirstOrDefaultAsync(m => m.OwnerId == user.OwnerId && m.Provider == r.Provider, ct)
             ?? throw Invalid("provider", $"Connect your {Name(r.Provider)} mailbox in Settings first.");
         if (connection.Status != MailboxStatus.Connected) throw Invalid("provider", $"Connect your {Name(r.Provider)} mailbox again in Settings.");
@@ -97,7 +145,7 @@ public sealed class MailboxService(
         if (string.IsNullOrWhiteSpace(draft.Recipient) || !ValidAddress(draft.Recipient)) throw Invalid("recipient", "Add a valid recipient email address first.");
         if (string.IsNullOrWhiteSpace(draft.Subject)) throw Invalid("subject", "Add a subject first.");
 
-        var provider = r.Provider == MailProvider.Microsoft ? ExecutionProvider.Outlook : ExecutionProvider.Gmail;
+        var provider = r.Provider switch { MailProvider.Microsoft => ExecutionProvider.Outlook, MailProvider.Smtp => ExecutionProvider.Smtp, _ => ExecutionProvider.Gmail };
         var execution = await gateway.StartDraftAsync(draftId, new StartExecutionRequest(r.Version), ct, provider);
         // A retry of the same approved version must never send twice: an existing execution means a send already happened or is unresolved.
         if (execution.Reused)
@@ -106,7 +154,8 @@ public sealed class MailboxService(
                 : "A send of this version is already in progress or needs confirming. Check your Sent folder, then confirm it as sent.");
 
         var refreshToken = protector.Unprotect(connection.EncryptedRefreshToken);
-        var access = refreshToken is null ? null : await transport.RefreshAsync(r.Provider, refreshToken, ct);
+        // Email with an app password has no short-lived token: the stored login is what sends.
+        var access = refreshToken is null ? null : r.Provider == MailProvider.Smtp ? refreshToken : await transport.RefreshAsync(r.Provider, refreshToken, ct);
         if (access is null)
         {
             connection.MarkNeedsReconnect();
@@ -128,7 +177,14 @@ public sealed class MailboxService(
         }
 
         connection.MarkUsed(Now);
-        return await gateway.ConfirmAsync(execution.Id, new ConfirmExecutionRequest(result.Receipt, result.Reference), ct);
+        var confirmed = await gateway.ConfirmAsync(execution.Id, new ConfirmExecutionRequest(result.Receipt, result.Reference), ct);
+        if (notifier is not null)
+        {
+            var org = await db.Opportunities.AsNoTracking().Where(o => o.Id == draft.OpportunityId).Select(o => o.Organization).FirstOrDefaultAsync(ct);
+            await notifier.NotifyAsync(user.OwnerId, Integrations.IntegrationEvents.Sent, "Email sent",
+                [$"To {draft.Recipient}" + (string.IsNullOrWhiteSpace(org) ? "" : $" at {org}"), $"Subject: {draft.Subject}"], "/outreach", ct);
+        }
+        return confirmed;
     }
 
     public const int MaxBatch = 25;
@@ -167,7 +223,7 @@ public sealed class MailboxService(
 
     private static bool ValidAddress(string value) => MailAddress.TryCreate(value, out var a) && a.Address == value.Trim();
 
-    private static string Name(MailProvider p) => p == MailProvider.Microsoft ? "Outlook" : "Gmail";
+    private static string Name(MailProvider p) => p switch { MailProvider.Microsoft => "Outlook", MailProvider.Smtp => "Email (app password)", _ => "Gmail" };
 
     private static RequestValidationException Invalid(string field, string message) => new(new Dictionary<string, string[]> { [field] = [message] });
 }

@@ -370,6 +370,47 @@ public class JobBoardGathererTests
     }
 
     [Fact]
+    public async Task Adzuna_searches_the_country_of_the_first_location_and_sends_no_where_for_a_country()
+    {
+        var fetcher = new ScriptedFetcher(_ => Json(BoardMappingTests.AdzunaResults));
+
+        await Gather(Gatherer(fetcher, new AdzunaOptions { AppId = "fake-id", AppKey = FakeKey }), SourceOf(SourceKind.Adzuna, null, "Adzuna search"),
+            new CampaignCriteria { Keywords = ["react"], Locations = ["Remote", "Germany"] });
+
+        var url = Assert.Single(fetcher.Urls);
+        Assert.StartsWith("https://api.adzuna.com/v1/api/jobs/de/search/1?", url);
+        Assert.DoesNotContain("&where=", url);
+    }
+
+    [Fact]
+    public async Task The_Muse_reads_its_newest_pages_within_the_fetch_budget_and_keeps_keyword_matches()
+    {
+        var fetcher = new ScriptedFetcher(_ => Json(BoardMappingTests.TheMusePage));
+
+        var result = await Gather(Gatherer(fetcher), SourceOf(SourceKind.TheMuse, null, "The Muse jobs"),
+            new CampaignCriteria { Keywords = ["software engineer"] }, fetchesLeft: 2);
+
+        Assert.Equal(["https://www.themuse.com/api/public/jobs?page=0&descending=true", "https://www.themuse.com/api/public/jobs?page=1&descending=true"], fetcher.Urls);
+        Assert.Equal(SourceStatus.Ok, result.Status);
+        Assert.Equal(2, result.Requests);
+        var item = Assert.Single(result.Items);                                    // the same page twice: each posting counts once
+        Assert.Equal("Senior, Software Engineer (Backend)", item.Title);
+        Assert.Equal("The Muse jobs: 3 jobs listed, 1 matched your keywords, 1 read.", result.Message);
+    }
+
+    [Fact]
+    public async Task The_Muse_failing_on_its_first_page_fails_the_source_with_the_fetch_reason()
+    {
+        var fetcher = new ScriptedFetcher(_ => FetchResult.Fail("The site answered 403.", 1, 403));
+
+        var result = await Gather(Gatherer(fetcher), SourceOf(SourceKind.TheMuse, null, "The Muse jobs"), DotNet);
+
+        Assert.Equal(SourceStatus.Failed, result.Status);
+        Assert.Equal("The site answered 403.", result.SafeError);
+        Assert.Single(fetcher.Urls);
+    }
+
+    [Fact]
     public async Task Adzuna_rejecting_the_keys_fails_without_echoing_them()
     {
         var fetcher = new ScriptedFetcher(_ => FetchResult.Fail("The site answered 401. The page may need a login.", 1, 401));

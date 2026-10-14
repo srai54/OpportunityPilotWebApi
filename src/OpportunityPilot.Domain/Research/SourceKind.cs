@@ -52,5 +52,8 @@ public enum SourceKind
     Jobicy,
 
     /// <summary>We Work Remotely's public RSS feed of remote jobs.</summary>
-    WeWorkRemotely
+    WeWorkRemotely,
+
+    /// <summary>The free public The Muse jobs API (newest postings, US, Europe and remote).</summary>
+    TheMuse
 }

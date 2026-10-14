@@ -67,6 +67,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<WellfoundApplication> WellfoundApplications => Set<WellfoundApplication>();
     public DbSet<WellfoundActivity> WellfoundActivities => Set<WellfoundActivity>();
     public DbSet<Domain.Mail.MailboxConnection> MailboxConnections => Set<Domain.Mail.MailboxConnection>();
+    public DbSet<Domain.Integrations.IntegrationConnection> IntegrationConnections => Set<Domain.Integrations.IntegrationConnection>();
     public DbSet<CandidateProgressLink> CandidateProgressLinks => Set<CandidateProgressLink>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
 
@@ -143,6 +144,20 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.EmailAddress).HasMaxLength(Domain.Mail.MailboxConnection.MaxEmailLength).IsRequired();
             e.Property(x => x.EncryptedRefreshToken).HasMaxLength(Domain.Mail.MailboxConnection.MaxTokenLength).IsRequired();
             e.HasIndex(x => new { x.OwnerId, x.Provider }).IsUnique();
+        });
+
+        modelBuilder.Entity<Domain.Integrations.IntegrationConnection>(e =>
+        {
+            e.ToTable("integration_connections");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Label).HasMaxLength(Domain.Integrations.IntegrationConnection.MaxLabelLength).IsRequired();
+            e.Property(x => x.EncryptedSecret).HasMaxLength(Domain.Integrations.IntegrationConnection.MaxSecretLength).IsRequired();
+            e.Property(x => x.SettingsJson).HasMaxLength(Domain.Integrations.IntegrationConnection.MaxSettingsLength).IsRequired();
+            e.Property(x => x.Events).HasMaxLength(Domain.Integrations.IntegrationConnection.MaxEventsLength).IsRequired();
+            e.Property(x => x.LastError).HasMaxLength(Domain.Integrations.IntegrationConnection.MaxErrorLength);
+            e.HasIndex(x => new { x.OwnerId, x.Kind }).IsUnique();
         });
 
         modelBuilder.Entity<CandidateProgressLink>(e =>

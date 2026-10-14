@@ -2,7 +2,8 @@ using OpportunityPilot.Domain.Common;
 
 namespace OpportunityPilot.Domain.Mail;
 
-public enum MailProvider { Microsoft, Google }
+/// <summary>Microsoft and Google connect with a sign-in (OAuth); Smtp connects with the person's own address and an app password.</summary>
+public enum MailProvider { Microsoft, Google, Smtp }
 
 public enum MailboxStatus { Connected, NeedsReconnect }
 

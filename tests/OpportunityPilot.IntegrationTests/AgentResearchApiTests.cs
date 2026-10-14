@@ -33,6 +33,26 @@ public class AgentResearchApiTests(PostgresApiFactory factory) : IClassFixture<P
     }
 
     [Fact]
+    public async Task Status_says_whether_the_agent_is_running_and_what_waits_for_it()
+    {
+        var user = factory.ClientFor("agent-status@example.test");
+        var before = await user.GetJson("/api/v1/agent-keys/status");
+        Assert.False(before.GetProperty("connected").GetBoolean());
+        Assert.False(before.GetProperty("online").GetBoolean());
+
+        var agent = await AgentFor(user);
+        var notYet = await user.GetJson("/api/v1/agent-keys/status");
+        Assert.True(notYet.GetProperty("connected").GetBoolean());
+        Assert.False(notYet.GetProperty("online").GetBoolean());   // a key that never called in is not a running agent
+
+        await agent.GetJson("/api/v1/agent/campaigns");
+        var running = await user.GetJson("/api/v1/agent-keys/status");
+        Assert.True(running.GetProperty("online").GetBoolean());
+        Assert.Equal(0, running.Int("waiting"));
+        Assert.Empty(running.GetProperty("recent").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Agent_postings_become_opportunities_and_a_shortlisted_job_is_applied_once()
     {
         var user = factory.ClientFor("agent-flow@example.test");

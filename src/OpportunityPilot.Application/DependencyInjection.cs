@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
         services.AddScoped<AiService>();
+        services.AddScoped<DraftRewriteService>();
         services.AddScoped<ApplicationService>();
         services.AddScoped<AgentKeyService>();
         services.AddScoped<GuestSessionService>();
@@ -45,6 +46,7 @@ public static class DependencyInjection
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
         services.AddScoped<DraftService>();
+        services.AddScoped<DraftPreparer>();
         services.AddScoped<OutreachService>();
         services.AddScoped<SalesService>();
         services.AddScoped<UpworkOpportunityService>();
@@ -59,6 +61,13 @@ public static class DependencyInjection
         services.AddScoped<Outreach.ProviderGateway>();
         services.AddSingleton<Mail.TokenProtector>();
         services.AddScoped<Mail.MailboxService>();
+        services.AddScoped<Mail.ReplyCheckService>();
+        services.AddScoped<Integrations.ILeadTarget, Integrations.HubSpotTarget>();
+        services.AddScoped<Integrations.ILeadTarget, Integrations.NotionTarget>();
+        services.AddScoped<Integrations.ILeadTarget, Integrations.AirtableTarget>();
+        services.AddScoped<Integrations.IntegrationService>();
+        services.AddScoped<Agents.AgentStatusService>();
+        services.AddScoped<Integrations.IntegrationNotifier>();
         services.AddScoped<Analytics.UserEventLog>();
         services.AddScoped<Capabilities.ProviderReadinessService>();
         services.AddScoped<WellfoundService>();
