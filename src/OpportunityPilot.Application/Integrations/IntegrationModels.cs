@@ -9,9 +9,11 @@ namespace OpportunityPilot.Application.Integrations;
 /// <param name="OauthConfigured">The server has a sign-in app for this service, so "Connect with …" works (Notion, HubSpot, Slack, Airtable).</param>
 /// <param name="OauthConnected">This connection was made with the service's own sign-in screen, not a pasted token.</param>
 /// <param name="NeedsTarget">Notion or Airtable connected by sign-in, but the database or table for leads is not chosen yet.</param>
+/// <param name="PluginReady">One-click "Connect" through the managed-connection platform works for this service (the server has <c>Plugins__ApiKey</c>).</param>
+/// <param name="ViaPlugin">This connection was made with one-click "Connect".</param>
 public sealed record IntegrationDto(
     IntegrationKind Kind, bool Connected, string? Label, IReadOnlyList<string> Events, DateTime? ConnectedAt, DateTime? LastUsedAt, string? LastError,
-    string? FeedUrl, bool OauthConfigured = false, bool OauthConnected = false, bool NeedsTarget = false);
+    string? FeedUrl, bool OauthConfigured = false, bool OauthConnected = false, bool NeedsTarget = false, bool PluginReady = false, bool ViaPlugin = false);
 
 public sealed record OauthStartResponse(string Url);
 
@@ -67,6 +69,7 @@ public static class IntegrationKinds
         IntegrationKind.Airtable => "Airtable",
         IntegrationKind.Hunter => "Hunter",
         IntegrationKind.Apollo => "Apollo",
+        IntegrationKind.Gmail => "Gmail",
         _ => "Calendar feed"
     };
 }

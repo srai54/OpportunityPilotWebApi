@@ -31,7 +31,7 @@ public sealed record BatchSendResultItem(Guid Id, string Outcome, string? Reason
 /// </summary>
 public sealed class MailboxService(
     IAppDbContext db, ICurrentUser user, TimeProvider clock, IMailTransport transport, TokenProtector protector,
-    IOptions<MailOptions> options, ProviderGateway gateway, Integrations.IntegrationNotifier? notifier = null)
+    IOptions<MailOptions> options, ProviderGateway gateway, Integrations.IntegrationNotifier? notifier = null, Integrations.IConnectorHttp? connectors = null)
 {
     private MailOptions Opts => options.Value;
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
@@ -42,7 +42,8 @@ public sealed class MailboxService(
         return Enum.GetValues<MailProvider>().Select(p =>
         {
             var row = rows.FirstOrDefault(r => r.Provider == p);
-            return new MailboxDto(p, Opts.Ready(p), row is not null, row?.EmailAddress, row?.Status, row?.ConnectedAt, row?.LastUsedAt);
+            var plugin = row is not null && Integrations.PluginRef.Is(protector.Unprotect(row.EncryptedRefreshToken));
+            return new MailboxDto(p, Opts.Ready(p) || plugin, row is not null, row?.EmailAddress, row?.Status, row?.ConnectedAt, row?.LastUsedAt);
         }).ToList();
     }
 
@@ -137,7 +138,9 @@ public sealed class MailboxService(
         var connection = await db.MailboxConnections.FirstOrDefaultAsync(m => m.OwnerId == user.OwnerId && m.Provider == r.Provider, ct)
             ?? throw Invalid("provider", $"Connect your {Name(r.Provider)} mailbox in Settings first.");
         if (connection.Status != MailboxStatus.Connected) throw Invalid("provider", $"Connect your {Name(r.Provider)} mailbox again in Settings.");
-        if (!Opts.Ready(r.Provider)) throw new ConflictException($"{Name(r.Provider)} sending is not configured on this server.");
+        // A Gmail connected with one-click Connect sends through the plugin platform, so it needs no Google app on this server.
+        var plugin = protector.Unprotect(connection.EncryptedRefreshToken) is { } stored && Integrations.PluginRef.Is(stored) && connectors is not null ? stored : null;
+        if (plugin is null && !Opts.Ready(r.Provider)) throw new ConflictException($"{Name(r.Provider)} sending is not configured on this server.");
 
         var draft = await db.OutreachDrafts.AsNoTracking().FirstOrDefaultAsync(d => d.Id == draftId && d.OwnerId == user.OwnerId, ct)
             ?? throw new NotFoundException("Draft not found.");
@@ -155,7 +158,7 @@ public sealed class MailboxService(
 
         var refreshToken = protector.Unprotect(connection.EncryptedRefreshToken);
         // Email with an app password has no short-lived token: the stored login is what sends.
-        var access = refreshToken is null ? null : r.Provider == MailProvider.Smtp ? refreshToken : await transport.RefreshAsync(r.Provider, refreshToken, ct);
+        var access = refreshToken is null ? null : r.Provider == MailProvider.Smtp || plugin is not null ? refreshToken : await transport.RefreshAsync(r.Provider, refreshToken, ct);
         if (access is null)
         {
             connection.MarkNeedsReconnect();
@@ -165,7 +168,11 @@ public sealed class MailboxService(
         }
 
         MailSendResult result;
-        try { result = await transport.SendAsync(r.Provider, access, new OutgoingMail(draft.Recipient, draft.Subject, draft.Body), ct); }
+        try
+        {
+            var outgoing = new OutgoingMail(draft.Recipient, draft.Subject, draft.Body);
+            result = plugin is not null ? await Integrations.PluginService.SendGmailAsync(connectors!, plugin, outgoing, ct) : await transport.SendAsync(r.Provider, access, outgoing, ct);
+        }
         catch (HttpRequestException) { result = new(false, null, string.Empty, "The mail provider could not be reached. Nothing was sent."); }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested) { result = new(false, null, string.Empty, "The mail provider took too long to answer. Check your Sent folder before trying again."); }
 

@@ -16,7 +16,7 @@ namespace OpportunityPilot.Application.Integrations;
 /// </summary>
 public sealed class IntegrationService(
     IAppDbContext db, ICurrentUser user, TimeProvider clock, TokenProtector protector, IConnectorHttp http, IEnumerable<ILeadTarget> targets,
-    IEnumerable<IPeopleSource> people, ConnectorOauthService oauth)
+    IEnumerable<IPeopleSource> people, ConnectorOauthService oauth, PluginService? plugins = null)
 {
     public const int MaxPush = 25;
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
@@ -24,16 +24,27 @@ public sealed class IntegrationService(
     public async Task<IReadOnlyList<IntegrationDto>> ListAsync(string feedBase, CancellationToken ct)
     {
         var rows = await db.IntegrationConnections.AsNoTracking().Where(c => c.OwnerId == user.OwnerId).ToListAsync(ct);
+        // Plugin connections: ask the platform whether each is still signed in, all at once.
+        var signedOut = new HashSet<IntegrationKind>();
+        if (plugins is not null)
+        {
+            var checks = rows.Select(r => (r.Kind, Secret: protector.Unprotect(r.EncryptedSecret))).Where(r => PluginRef.Is(r.Secret))
+                .Select(async r => (r.Kind, Status: await plugins.StatusAsync(r.Secret, ct))).ToList();
+            foreach (var (k, status) in await Task.WhenAll(checks)) if (status is not null && status != "ACTIVE") signedOut.Add(k);
+        }
         return Enum.GetValues<IntegrationKind>().Select(k =>
         {
             var row = rows.FirstOrDefault(r => r.Kind == k);
-            return row is null ? new IntegrationDto(k, false, null, [], null, null, null, null, oauth.Configured(k)) : Dto(row, feedBase);
+            if (row is null) return new IntegrationDto(k, false, null, [], null, null, null, null, oauth.Configured(k), PluginReady: plugins?.Ready(k) == true);
+            var dto = Dto(row, feedBase);
+            return signedOut.Contains(k) ? dto with { LastError = $"{IntegrationKinds.Name(k)} signed this connection out. Connect again." } : dto;
         }).ToList();
     }
 
     public async Task<IntegrationDto> ConnectAsync(IntegrationKind kind, ConnectIntegrationRequest r, string feedBase, CancellationToken ct)
     {
         if (!Enum.IsDefined(kind)) throw new NotFoundException("Unknown service.");
+        if (kind == IntegrationKind.Gmail) throw Invalid("kind", "Gmail connects with the Connect button.");
         string label, secret, settings = "{}", events = "";
         if (IntegrationKinds.IsWebhook(kind))
         {
@@ -83,6 +94,11 @@ public sealed class IntegrationService(
     {
         var row = await RowAsync(kind, ct);
         if (ConnectorOauthService.Flags(row.SettingsJson).NeedsTarget) return new(false, NeedsTargetMessage(kind));
+        if (kind == IntegrationKind.Gmail)
+        {
+            var status = plugins is null ? null : await plugins.StatusAsync(protector.Unprotect(row.EncryptedSecret), ct);
+            return status == "ACTIVE" ? new(true, "Gmail is connected.") : new(false, status is null ? "Gmail could not be checked right now." : "Gmail signed this connection out. Connect again.");
+        }
         var secret = IntegrationKinds.IsLeadTarget(kind) ? await oauth.AccessTokenAsync(row, ct)
             : protector.Unprotect(row.EncryptedSecret) ?? throw new ConflictException("The stored login can no longer be read on this server. Connect again.");
         try
@@ -123,8 +139,14 @@ public sealed class IntegrationService(
     {
         var row = await db.IntegrationConnections.FirstOrDefaultAsync(c => c.OwnerId == user.OwnerId && c.Kind == kind, ct);
         if (row is null) return;
+        var secret = protector.Unprotect(row.EncryptedSecret);
         db.IntegrationConnections.Remove(row);
+        if (kind == IntegrationKind.Gmail && PluginRef.Is(secret)
+            && await db.MailboxConnections.FirstOrDefaultAsync(m => m.OwnerId == user.OwnerId && m.Provider == Domain.Mail.MailProvider.Google, ct) is { } box
+            && PluginRef.Is(protector.Unprotect(box.EncryptedRefreshToken)))
+            db.MailboxConnections.Remove(box);
         await db.SaveChangesAsync(ct);
+        if (plugins is not null) await plugins.ForgetAsync(secret, ct);
     }
 
     /// <summary>Sends leads one at a time; a lead already in the other service is reported, not duplicated.</summary>
@@ -213,9 +235,10 @@ public sealed class IntegrationService(
     private IntegrationDto Dto(IntegrationConnection row, string feedBase)
     {
         var (signedIn, needsTarget) = ConnectorOauthService.Flags(row.SettingsJson);
+        var secret = protector.Unprotect(row.EncryptedSecret);
         return new(row.Kind, true, row.Label, IntegrationEvents.Parse(row.Events), row.ConnectedAt, row.LastUsedAt, row.LastError,
-            row.Kind == IntegrationKind.CalendarFeed && protector.Unprotect(row.EncryptedSecret) is { } key ? $"{feedBase.TrimEnd('/')}/api/v1/calendar/{row.Id:N}/{key}.ics" : null,
-            oauth.Configured(row.Kind), signedIn, needsTarget);
+            row.Kind == IntegrationKind.CalendarFeed && secret is { } key ? $"{feedBase.TrimEnd('/')}/api/v1/calendar/{row.Id:N}/{key}.ics" : null,
+            oauth.Configured(row.Kind), signedIn, needsTarget, plugins?.Ready(row.Kind) == true, PluginRef.Is(secret));
     }
 
     private static RequestValidationException Invalid(string field, string message) => new(new Dictionary<string, string[]> { [field] = [message] });

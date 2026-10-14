@@ -173,3 +173,26 @@ and wants Supabase to keep working. Two independent schemes keep Supabase valida
 Hanko's session-validate endpoint per request; Supabase access tokens behave the same way). The same person signing in once
 with Supabase and once with Hanko gets two separate workspaces; no account linking. Not verified against a live Hanko
 project (OQ-BE-032).
+
+## 2026-10-14 — One-click "Connect" through Composio (PLUGINS)
+
+**Decision:** the Connectors page works like ChatGPT plugins through **Composio** with one server setting, `Plugins__ApiKey`.
+`POST /api/v1/integrations/{kind}/plugin` finds or creates a Composio-managed auth config (`use_composio_managed_auth`) for the
+toolkit, creates a connect link (`POST /api/v3.1/connected_accounts/link`, `user_id` = our owner id) and returns Composio's hosted
+page; the callback checks the account is `ACTIVE` and belongs to that owner, then stores only `plugin:{connected account id}`.
+Every existing call (HubSpot/Notion/Airtable lead push, Notion/Airtable target list, Slack alerts, Gmail send) is unchanged and goes
+through Composio's proxy (`POST /api/v3.1/tools/execute/proxy`) via a `PluginConnectorHttp` decorator when the bearer is a plugin
+reference. Slack alerts become a direct message to the person who connected (`chat.postMessage` to their user id) because a managed
+Slack app has no incoming-webhook channel picker. Gmail creates the `Google` mailbox row, so sends still pass `ProviderGateway`.
+
+**Why Composio, not Pipedream Connect:** the user will not register OAuth apps or paste keys per service. Composio's free Hobby plan
+includes Composio-managed OAuth apps, unlimited connected accounts, 100K tool calls a month (20K of them on managed apps), no card
+(https://composio.dev/pricing), and Notion, Gmail, HubSpot, Slack, Airtable and Google Sheets list managed OAuth. Pipedream's managed
+OAuth clients are allowed in production for actions and proxy (https://pipedream.com/docs/connect/managed-auth/oauth-clients), but
+its free development environment is limited to 10 external users who must be signed in to pipedream.com; production needs a paid
+Connect plan (https://pipedream.com/docs/connect/environments).
+
+**Trade-offs:** Composio's auth docs call managed auth "Development/Testing" and recommend your own OAuth app for production; the
+consent screen shows Composio's app name, not OpportunityPilot. The managed allowance is 20K calls/month on Hobby. Composio sees the
+person's tokens. Google Sheets has a managed app but no action here yet. The older paths (`Integrations__…` apps, pasted tokens)
+stay as "Advanced". Not verified against a live Composio key.

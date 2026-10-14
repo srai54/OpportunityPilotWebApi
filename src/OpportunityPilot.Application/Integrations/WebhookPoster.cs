@@ -61,6 +61,22 @@ public static class WebhookPoster
 
     public static async Task PostAsync(IConnectorHttp http, IntegrationKind kind, string url, ChannelMessage m, DateTime utcNow, CancellationToken ct)
     {
+        if (kind == IntegrationKind.Slack && PluginRef.TryParse(url, out _, out var channel))
+        {
+            // Connected as a plugin: a direct message to the person who connected, through the platform.
+            var text = System.Text.Json.Nodes.JsonNode.Parse(Body(kind, m, utcNow))!["text"]!.GetValue<string>();
+            var sent = await http.SendAsync(new ConnectorRequest(HttpMethod.Post, "https://slack.com/api/chat.postMessage",
+                ConnectorJson.Write(new { channel, text }), Bearer: url), ct);
+            var j = sent.Json();
+            if (sent.Ok && j.ValueKind == System.Text.Json.JsonValueKind.Object && j.TryGetProperty("ok", out var ok) && ok.ValueKind == System.Text.Json.JsonValueKind.True) return;
+            throw new ConnectorProblem(sent.Status switch
+            {
+                0 => "Slack could not be reached. It will be tried again next time.",
+                401 or 403 => "Slack signed this connection out. Connect Slack again.",
+                429 => "Slack is limiting messages right now. It will be tried again next time.",
+                _ => $"Slack did not accept the message{(j.Str("error") is { Length: <= 60 } e ? $" ({e})" : "")}."
+            });
+        }
         var reply = await http.SendAsync(new ConnectorRequest(HttpMethod.Post, url, Body(kind, m, utcNow)), ct);
         if (reply.Ok) return;
         throw new ConnectorProblem(reply.Status switch

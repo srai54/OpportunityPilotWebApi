@@ -25,6 +25,7 @@ builder.Services.Configure<OpportunityPilot.Application.JobBoards.RapidApiBoards
 
 builder.Services.Configure<OpportunityPilot.Application.Mail.MailOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Mail.MailOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.Integrations.IntegrationOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Integrations.IntegrationOptions.SectionName));
+builder.Services.Configure<OpportunityPilot.Application.Integrations.PluginOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Integrations.PluginOptions.SectionName));
 builder.Services.PostConfigure<OpportunityPilot.Application.Mail.MailOptions>(o => o.FallbackSecret ??= builder.Configuration.GetConnectionString("Main"));
 
 // Missing configuration does not stop the process. Without a connection string data is kept in memory;

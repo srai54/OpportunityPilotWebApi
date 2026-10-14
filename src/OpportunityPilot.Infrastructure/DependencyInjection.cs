@@ -24,8 +24,11 @@ public static class DependencyInjection
             c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
             c.Timeout = Timeout.InfiniteTimeSpan;
         });
-        services.AddHttpClient<Application.Integrations.IConnectorHttp, Integrations.ConnectorHttp>(Integrations.ConnectorHttp.ClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
+        services.AddHttpClient<Integrations.ConnectorHttp>(Integrations.ConnectorHttp.ClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(Integrations.ConnectorHttp.Handler);
+        // Requests made with a plugin connection go through the managed-connection platform's proxy; the rest go out directly.
+        services.AddTransient<Application.Integrations.IConnectorHttp>(sp => new Application.Integrations.PluginConnectorHttp(
+            sp.GetRequiredService<Integrations.ConnectorHttp>(), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Application.Integrations.PluginOptions>>()));
         return services.AddPersistence(configuration, setup);
     }
 

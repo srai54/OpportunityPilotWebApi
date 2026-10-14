@@ -12,7 +12,7 @@ namespace OpportunityPilot.Api.Controllers;
 [ApiController]
 [Route("api/v1")]
 public sealed class IntegrationsController(
-    IntegrationService integrations, ConnectorOauthService oauth, IntegrationNotifier notifier, IOptions<IntegrationOptions> options,
+    IntegrationService integrations, ConnectorOauthService oauth, PluginService plugins, IntegrationNotifier notifier, IOptions<IntegrationOptions> options,
     IOptions<OpportunityPilot.Application.Mail.MailOptions> mail) : ControllerBase
 {
     private string FeedBase => string.IsNullOrWhiteSpace(options.Value.PublicApiBase) ? $"{Request.Scheme}://{Request.Host}" : options.Value.PublicApiBase!;
@@ -49,6 +49,19 @@ public sealed class IntegrationsController(
     [HttpGet("integrations/oauth/callback/{kind}")]
     public async Task<IActionResult> OauthCallback(IntegrationKind kind, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct) =>
         Redirect(await oauth.CompleteAsync(kind, code, state, error, ApiBase, ct));
+
+    /// <summary>One-click "Connect" (Notion, Gmail, HubSpot, Slack, Airtable): the managed-connection platform's sign-in address. 409 without Plugins__ApiKey.</summary>
+    [EnableRateLimiting(RateLimits.Connectors)]
+    [HttpPost("integrations/{kind}/plugin")]
+    public async Task<ActionResult<OauthStartResponse>> StartPlugin(IntegrationKind kind, CancellationToken ct) => await plugins.BeginAsync(kind, ApiBase, ct);
+
+    /// <summary>The platform sends the browser back here with the connected-account id; the sealed state names the person, and the platform must agree.</summary>
+    [AllowAnonymous]
+    [EnableRateLimiting(RateLimits.PublicProgress)]
+    [HttpGet("integrations/plugin/callback/{kind}")]
+    public async Task<IActionResult> PluginCallback(IntegrationKind kind, [FromQuery] string? state, [FromQuery(Name = "connected_account_id")] string? accountId,
+        [FromQuery] string? connectedAccountId, [FromQuery] string? status, CancellationToken ct) =>
+        Redirect(await plugins.CompleteAsync(kind, state, accountId ?? connectedAccountId, status, ct));
 
     /// <summary>Notion databases or Airtable tables this connection can see.</summary>
     [EnableRateLimiting(RateLimits.Connectors)]
