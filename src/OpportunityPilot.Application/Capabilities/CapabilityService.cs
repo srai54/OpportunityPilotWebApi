@@ -145,8 +145,11 @@ public sealed class CapabilityService(
 
             new("linkedin", "LinkedIn", "Platforms", CapabilityStatus.LocalAgent,
                 "Applies through your own logged-in browser on your computer with the OpportunityPilot agent. Unofficial automation: LinkedIn may restrict accounts that use it.",
-                ["Search jobs with your filters", "Fill and submit Easy Apply forms from your saved answers", "Record each application here"],
-                ["Answer questions your saved answers do not cover", "Get past security checks — the agent stops and asks you"]),
+                ["Search jobs with your filters", "Fill and submit Easy Apply forms from your saved answers", "Record each application here",
+                    "Map the people around a job (recruiters, hiring managers, your connections) when you ask",
+                    "Send your approved connection notes and messages (a dry run unless you allow sending)"],
+                ["Answer questions your saved answers do not cover", "Get past security checks — the agent stops and asks you",
+                    "Send anything you have not approved, or more than your daily cap"]),
 
             new("naukri", "Naukri", "Platforms", CapabilityStatus.LocalAgent,
                 "Applies through your own logged-in browser on your computer with the OpportunityPilot agent. Unofficial automation: Naukri may restrict accounts that use it.",

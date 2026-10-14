@@ -253,6 +253,7 @@ Code: `Application/Agents/AgentKeyService.cs`
 | Storage | SHA-256 hex only; plaintext returned once at creation; 12-character prefix shown afterwards |
 | Limits | name required ≤100; ≤10 active keys per owner; presented keys over 100 characters or without `opk_` are rejected before hashing |
 | Use | every accepted request stamps `lastUsedAt`; revoked keys are rejected |
+| Scopes | `Research` (campaigns, postings), `Shortlist`, `Applications` (report), `People` (JD circle and LinkedIn outbox); omitted = all four. Keys that had all three scopes before People existed were moved to all four by migration AddJdCircle, so existing agents keep working. A missing scope answers 403 |
 
 ### Postings
 
@@ -288,6 +289,46 @@ Code: `Application/Drafts/DraftService.cs`, `Domain/Drafts/OutreachDraft.cs`
 - The cross-opportunity inbox can filter by stored state, channel and campaign. Batch approval evaluates each selected id/version independently and returns approved, skipped or stale outcomes without approving an ineligible version.
 - No outbound delivery occurs. A valid approved CoverNote is exposed to the desktop agent, which fills it only into an
   explicitly cover-letter-like free-text field. Unapproved, edited or revoked text is never returned to the agent.
+
+### JD circle (JDC1)
+
+Code: `Application/Circle/CircleService.cs`, `Domain/Circle/`
+
+- The circle is the people around a job or company lead: recruiters, the likely hiring manager, people on the team, and the
+  person's own connections at the company. Any lead mode; a lead without a company name cannot be requested (400).
+- Mapping happens only when the person asks (`POST …/circle/request`), and only in the person's own logged-in LinkedIn browser
+  through the desktop agent (`npm run agent -- circle linkedin`). The API never contacts LinkedIn.
+- Status: NotRequested (never asked), Waiting (asked and nothing delivered since), Ready. Asking again while waiting changes nothing;
+  asking after Ready queues a fresh mapping. A request is not a pipeline change (the opportunity's version and status stay).
+- A profile link is accepted only as a LinkedIn member link and stored as `https://www.linkedin.com/in/{slug}` (any linkedin.com
+  host, http/https, query, fragment and anything after the slug dropped; the slug keeps its case; ≤400). Company pages and other
+  sites are refused.
+- Stored per person: name ≤200, headline/title ≤300, profile link, relation (Recruiter, HiringManager, Team, Connection, Other),
+  degree 1/2/3 or empty, source, found time. No email, phone or anything else from the profile.
+- Agent delivery: ≤50 people per request, upserted by profile link (compared case-insensitively; the last duplicate in a request
+  wins), the lead is marked mapped even when nobody was found, and a `Note` activity records the count. A person added by hand
+  keeps the relation the person chose when the agent finds them again. At most 200 people per lead (400 beyond).
+- By hand: add (same rules, 409 when the link is already there) and remove. Everything is owner-scoped; another owner's lead or
+  person answers 404, also for the agent's key.
+
+### LinkedIn outbox (LI1)
+
+Code: `Application/Outreach/LinkedInOutbox.cs`, `Application/Outreach/ProviderGateway.cs`
+
+- LinkedIn automation runs **only in the person's own logged-in browser** via the desktop agent. The API never contacts LinkedIn
+  and stores no LinkedIn password or cookie.
+- A `LinkedInMessage` draft may be addressed to a name (the person sends it themselves) or to a LinkedIn profile link (normalised
+  as above; any other link is refused). Only drafts addressed to a profile link reach the agent.
+- The outbox lists LinkedInMessage drafts that are Approved with a still-valid approval (exact version and SHA-256 content hash),
+  addressed to a profile link, not suppressed, and with no pending or successful execution for the approved content; oldest
+  approval first, max 50. `body` is the exact approved text; `fitsConnectionNote` says whether it fits LinkedIn's 300-character note.
+- Every send goes through the provider gateway as provider `LinkedInAgent`: `start` checks the exact version, the approval, the
+  suppression list, the gateway's daily quota (100 executions) and a LinkedIn ceiling of 25 agent sends per UTC day (failed ones do
+  not count). The same approved content executes at most once: a second `start` returns the existing execution with `reused: true`
+  and the agent must not send again. Only `confirm` with a receipt marks the draft Sent (and the lead Contacted, plus a follow-up);
+  `fail` records the reason and lets a new attempt start. Confirm/fail without a pending agent send is 409.
+- If the agent clicked Send but could not see LinkedIn confirm it, it leaves the execution pending (never fails it, so it cannot be
+  sent twice); the person checks LinkedIn and confirms or fails it in the app.
 
 ### Third-party contact data (REACH2: Hunter, Apollo)
 

@@ -44,6 +44,8 @@ public static class DependencyInjection
         services.AddScoped<ContactFinder>();
         services.AddScoped<PeopleFinder>();
         services.AddScoped<AgentResearchService>();
+        services.AddScoped<Circle.CircleService>();
+        services.AddScoped<LinkedInOutboxService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
         services.AddScoped<DraftService>();

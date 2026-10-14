@@ -84,7 +84,7 @@ Query enums that fail to bind return 400 from model binding.
 | GET | `/api/v1/applications/summary` | user | — | 200 `ApplicationSummaryDto` |
 | POST | `/api/v1/applications/report` | **agent key** | `ApplicationReportRequest` (1–100 items) | 200 `{ accepted }`; 400 field errors; 409 concurrent report |
 | GET | `/api/v1/agent-keys` | user | — | 200 `AgentKeyDto[]` (active keys, newest first, prefix only) |
-| POST | `/api/v1/agent-keys` | user | `{ name }` | 201 `CreatedAgentKeyDto` (the only time `key` is returned); 400 (name, 10 active keys) |
+| POST | `/api/v1/agent-keys` | user | `{ name, scopes? }` (`Research`, `Shortlist`, `Applications`, `People`; omitted = all four) | 201 `CreatedAgentKeyDto` (the only time `key` is returned); 400 (name, unknown scope, 10 active keys) |
 | DELETE | `/api/v1/agent-keys/{id}` | user | — | 204 (idempotent); 404 |
 
 ### Desktop agent research
@@ -95,6 +95,41 @@ Query enums that fail to bind return 400 from model binding.
 | POST | `/api/v1/agent/campaigns/{id}/postings` | **agent key** | `AgentPostingsRequest`; body ≤4 MB | 200 `{ accepted, sourceId, jobId }` (`jobId` null unless `queueResearch`); 400 (not a Job campaign, field errors); 404; 409; 413 |
 | GET | `/api/v1/agent/shortlist` | **agent key** | query `platform?` (LinkedIn, Naukri, Other) | 200 `AgentShortlistItem[]`, best score first, max 200 |
 
+### JD circle and LinkedIn outbox (JDC1, LI1)
+
+Code: `Application/Circle/CircleService.cs`, `Application/Outreach/LinkedInOutbox.cs`, `Api/Controllers/CircleController.cs`,
+`Api/Controllers/AgentPeopleController.cs`. Agent endpoints need an agent key with the **People** scope (part of every default key;
+a key without it gets 403). The API never contacts LinkedIn: the agent searches and sends in the person's own logged-in browser.
+Rules: [business-rules.md → JD circle](business-rules.md#jd-circle-jdc1) and [→ LinkedIn outbox](business-rules.md#linkedin-outbox-li1).
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/opportunities/{id}/circle` | user | — | 200 `CircleDto`; 404 (not found or not yours) |
+| POST | `/api/v1/opportunities/{id}/circle/request` | user | — | 200 `CircleDto` with `status: "Waiting"`; idempotent while a request waits (keeps the first `requestedAt`); 400 `organization` when the lead has no company name; 404; 409 |
+| POST | `/api/v1/opportunities/{id}/circle` | user | `{ name, profileUrl, relation, title?, degree? }` | 201 `CirclePersonDto` (`source: "Manual"`); 400 field errors (`profileUrl` must be a LinkedIn `/in/` link; `relation`; `degree` 1–3; `people` when the circle already holds 200); 404; 409 "This person is already in the circle." |
+| DELETE | `/api/v1/opportunities/{id}/circle/{personId}` | user | — | 204; 404 |
+| GET | `/api/v1/agent/circle-requests` | **agent key (People)** | — | 200 `AgentCircleRequestDto[]`: waiting requests of the key's owner with a company name, oldest first, max 20 |
+| POST | `/api/v1/agent/circle` | **agent key (People)** | `{ opportunityId, people: [{ name, title?, profileUrl, relation, degree? }] }` (0–50; body ≤512 KB) | 200 `{ accepted, added, updated, total }`; upsert by profile link (same link twice in one request: the last wins); marks the lead mapped even when `people` is empty; adds a `Note` activity; 400 field errors (`people[i].…`, more than 50, circle over 200); 404 lead not found or not the key owner's; 409 concurrent save |
+| GET | `/api/v1/agent/linkedin-outbox` | **agent key (People)** | — | 200 `LinkedInOutboxItem[]`, oldest approval first, max 50 |
+| POST | `/api/v1/agent/linkedin-outbox/{draftId}/start` | **agent key (People)** | `{ version }` | 200 `ProviderExecutionDto` (`provider: "LinkedInAgent"`, `state: "AwaitingManualConfirmation"`). A start for content that already has a pending or successful execution returns it with `reused: true` — the agent must not send then. 400 `draft` (not a LinkedInMessage / not approved), `recipient` (not a profile link, or suppressed), `quota` (gateway daily limit, or 25 agent LinkedIn sends today); 404; 409 stale version |
+| POST | `/api/v1/agent/linkedin-outbox/{draftId}/confirm` | **agent key (People)** | `{ receipt, providerReference? }` (`providerReference`: `connect` or `message`) | 200 `ProviderExecutionDto` `Succeeded`; the draft becomes Sent, the lead Contacted (from New/Suggested/Shortlisted), a follow-up is scheduled; 400 `receipt`; 404; 409 when no agent send is pending for the draft (never started, already confirmed or failed) or the draft changed after the start |
+| POST | `/api/v1/agent/linkedin-outbox/{draftId}/fail` | **agent key (People)** | `{ reason }` | 200 `ProviderExecutionDto` `Failed` (the draft returns to the outbox for a new attempt); 400; 404; 409 as confirm |
+
+```json
+// CircleDto
+{ "opportunityId": "…", "requestedAt": "2026-10-14T09:00:00Z", "mappedAt": "2026-10-14T09:30:00Z", "status": "Ready",
+  "people": [ { "id": "…", "name": "Asha Rao", "title": "Talent Acquisition at Northwind", "profileUrl": "https://www.linkedin.com/in/asha-rao",
+                "relation": "Recruiter", "degree": 2, "source": "LinkedInAgent", "foundAt": "2026-10-14T09:30:00Z" } ] }
+// AgentCircleRequestDto
+{ "opportunityId": "…", "mode": "Job", "organization": "Northwind", "title": "Senior .NET Engineer", "location": "Pune", "requestedAt": "…" }
+// LinkedInOutboxItem
+{ "draftId": "…", "opportunityId": "…", "version": 3, "profileUrl": "https://www.linkedin.com/in/asha-rao", "body": "<exact approved text>",
+  "fitsConnectionNote": true, "organization": "Northwind", "title": "Senior .NET Engineer", "personName": "Asha Rao" }
+```
+
+`status`: `NotRequested` (never asked), `Waiting` (asked; nothing delivered since), `Ready`. People are ordered Recruiter,
+HiringManager, Team, Connection, Other, then by degree and name.
+
 ### Cover-note drafts
 
 Only deterministic `CoverNote` generation is implemented in this slice. It requires a Job opportunity whose campaign
@@ -102,7 +137,7 @@ profile is confirmed. No message is sent; approval only makes the exact approved
 
 | Method | Path | Auth | Request | Response / errors |
 |---|---|---|---|---|
-| POST | `/api/v1/opportunities/{id}/drafts` | user | `{ channel: Email|CoverNote|LinkedInMessage|ContactForm, recipient? }` | 201 `DraftDto`; confirmed profile required; CoverNote is Job-only; 404/409 |
+| POST | `/api/v1/opportunities/{id}/drafts` | user | `{ channel: Email|CoverNote|LinkedInMessage|ContactForm, recipient? }` | 201 `DraftDto`; confirmed profile required; CoverNote is Job-only; a LinkedInMessage recipient that looks like a link must be a LinkedIn profile link and is stored as `https://www.linkedin.com/in/{slug}` (400 `recipient` otherwise; the same on PUT); 404/409 |
 | GET | `/api/v1/opportunities/{id}/drafts` | user | — | 200 `DraftDto[]`, newest first; 404 |
 | GET | `/api/v1/drafts/{id}` | user | — | 200 `DraftDto`; 404 |
 | PUT | `/api/v1/drafts/{id}` | user | `{ recipient?, subject?, body, expectedVersion }` | 200 `DraftDto`; material edits increment version and clear approval; 400; 404; 409 |
@@ -272,7 +307,9 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 | ApplicationReportRequest | `items: { platform (LinkedIn, Naukri, Instahyre), externalJobId, jobUrl, title, company, location?, status (Applied, DryRun, NeedsManual, Skipped, Failed), detail?, occurredAt, opportunityId? }[]` |
 | ApplicationDto | `id, platform, externalJobId, jobUrl, title, company, location?, status, detail?, occurredAt, updatedAt` |
 | ApplicationSummaryDto | `applied, appliedLast7Days, needsManual, dryRun, skipped, failed, lastActivityAt?` |
-| AgentKeyDto | `id, name, prefix, createdAt, lastUsedAt?` (CreatedAgentKeyDto adds `key`) |
+| AgentKeyDto | `id, name, prefix, createdAt, lastUsedAt?, scopes[]` (CreatedAgentKeyDto adds `key`) |
+| ProviderExecutionDto | `id, subject (OutreachDraft, SalesBid), subjectId, subjectVersion, provider (Manual, Gmail, Freelancer, Upwork, Outlook, Smtp, LinkedInAgent), state (AwaitingManualConfirmation, Succeeded, Failed), idempotencyKey, receipt?, providerReference?, safeFailure?, createdAt, completedAt?, instructions, reused` |
+| CirclePersonDto | `id, name, title?, profileUrl, relation (Recruiter, HiringManager, Team, Connection, Other), degree? (1–3), source (LinkedInAgent, Hunter, Apollo, Manual), foundAt` |
 | AgentCampaignDto | `id, name, mode, criteria: CampaignCriteria` |
 | AgentPostingsRequest | `platform (LinkedIn or Naukri), items: { externalId, url, title, company, location?, description? }[] (1–100), queueResearch: bool` |
 | AgentShortlistItem | `opportunityId, campaignId, platform, externalId, url, title, organization, coverNote?`; `coverNote` is non-null only for a currently hash-valid approved CoverNote |

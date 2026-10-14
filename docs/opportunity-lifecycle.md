@@ -158,3 +158,22 @@ states, not provider claims. Recruiter applications use `New`, `Reviewing`, `Sho
 `Hired` and `Rejected`. Demo application decisions are reversible local simulations. Live accept/reject transitions
 will be executed only through the MCP action gateway with current-state display, explicit confirmation and a provider
 re-read; an uncertain provider result does not advance the stored state.
+
+## JD circle request
+
+Derived from `opportunities.CircleRequestedAt` / `CircleMappedAt` (no stored status column):
+
+| Status | When | Moves to |
+|---|---|---|
+| `NotRequested` | never asked | `Waiting` on `POST …/circle/request` |
+| `Waiting` | requested, and no agent delivery since | `Ready` when the agent posts the circle (an empty one counts); asking again keeps the first request time |
+| `Ready` | delivered after the last request | `Waiting` on a new request |
+
+The opportunity's own status and version never change because of the circle.
+
+## LinkedIn send by the desktop agent
+
+A LinkedInMessage draft addressed to a profile link uses the provider-execution states with provider `LinkedInAgent`:
+`start` → `AwaitingManualConfirmation` (the agent is sending) → `Succeeded` on `confirm` (draft `Sent`, lead `Contacted` from
+New/Suggested/Shortlisted) or `Failed` on `fail` (the draft returns to the outbox; a new attempt is a new execution). An execution the
+agent cannot settle (clicked Send, saw no confirmation) stays `AwaitingManualConfirmation` until the person confirms or fails it.

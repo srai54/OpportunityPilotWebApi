@@ -30,7 +30,7 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
     public const int DailyExecutionLimit = 100;
     public const int DefaultFollowUpDays = 5;
 
-    /// <param name="provider">Manual unless a connected mailbox is about to send the message itself.</param>
+    /// <param name="provider">Manual unless a connected mailbox (or the desktop agent, for LinkedIn) is about to send the message itself.</param>
     public async Task<ProviderExecutionDto> StartDraftAsync(Guid draftId, StartExecutionRequest r, CancellationToken ct, ExecutionProvider provider = ExecutionProvider.Manual)
     {
         var draft = await db.OutreachDrafts.FirstOrDefaultAsync(d => d.Id == draftId && d.OwnerId == user.OwnerId, ct)
@@ -73,9 +73,12 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
                     draft.MarkSent(Now);
                     var opportunity = await db.Opportunities.FirstAsync(o => o.Id == draft.OpportunityId && o.OwnerId == user.OwnerId, ct);
                     db.Activities.Add(new Activity(user.OwnerId, opportunity.Id, ActivityKinds.StatusChanged, Now,
-                        execution.Provider == ExecutionProvider.Manual
-                            ? $"{draft.Channel} sent by you ({execution.Provider}): {execution.Receipt}"
-                            : $"{draft.Channel} sent from your connected mailbox ({execution.Provider}): {execution.Receipt}"));
+                        execution.Provider switch
+                        {
+                            ExecutionProvider.Manual => $"{draft.Channel} sent by you ({execution.Provider}): {execution.Receipt}",
+                            ExecutionProvider.LinkedInAgent => $"{draft.Channel} sent by the desktop agent from your own LinkedIn browser: {execution.Receipt}",
+                            _ => $"{draft.Channel} sent from your connected mailbox ({execution.Provider}): {execution.Receipt}"
+                        }));
                     if (opportunity.Status is OpportunityStatus.New or OpportunityStatus.Suggested or OpportunityStatus.Shortlisted)
                         if (opportunity.ChangeStatus(OpportunityStatus.Contacted, Now) is { } moved) db.Activities.Add(moved);
                     // A message nobody follows up on is a message wasted: schedule a reminder unless one is already open.
@@ -176,7 +179,9 @@ public sealed class ProviderGateway(IAppDbContext db, ICurrentUser user, TimePro
             {
                 ExecutionState.AwaitingManualConfirmation => e.Subject == ExecutionSubject.SalesBid
                     ? "Place exactly this bid on the provider yourself, then confirm with the provider's reference."
-                    : "Send exactly this approved text yourself, then confirm with the sent item's subject or id.",
+                    : e.Provider == ExecutionProvider.LinkedInAgent
+                        ? "The desktop agent is sending exactly this approved text from your own LinkedIn browser; it records the result when done."
+                        : "Send exactly this approved text yourself, then confirm with the sent item's subject or id.",
                 ExecutionState.Succeeded => "Done. The receipt is stored.",
                 _ => "Not done. You can start again for the same approved version."
             },
