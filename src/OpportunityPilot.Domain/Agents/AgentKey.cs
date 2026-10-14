@@ -2,7 +2,7 @@ using OpportunityPilot.Domain.Common;
 
 namespace OpportunityPilot.Domain.Agents;
 
-/// <summary>What a key may do. Keys created before scopes existed keep All.</summary>
+/// <summary>What a key may do. Keys created before scopes existed keep All; keys that had every scope before People existed were moved to the new All by a migration.</summary>
 [Flags]
 public enum AgentKeyScope
 {
@@ -13,7 +13,9 @@ public enum AgentKeyScope
     Shortlist = 2,
     /// <summary>Report application results.</summary>
     Applications = 4,
-    All = Research | Shortlist | Applications
+    /// <summary>Map the people around a lead (JD circle) and send approved LinkedIn notes from the person's own browser.</summary>
+    People = 8,
+    All = Research | Shortlist | Applications | People
 }
 
 /// <summary>

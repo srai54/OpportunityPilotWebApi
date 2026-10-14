@@ -68,6 +68,28 @@ public class Opportunity : IOwned
     public DateTime UpdatedAt { get; private set; }
     public int Version { get; private set; }
 
+    /// <summary>When the person last asked the desktop agent to map the people around this lead (JD circle); null = never.</summary>
+    public DateTime? CircleRequestedAt { get; private set; }
+
+    /// <summary>When the agent last delivered a circle (possibly empty) for this lead.</summary>
+    public DateTime? CircleMappedAt { get; private set; }
+
+    /// <summary>True while a circle request waits for the agent: requested, and nothing delivered since.</summary>
+    public bool CircleWaiting => CircleRequestedAt is { } requested && (CircleMappedAt is not { } mapped || mapped < requested);
+
+    /// <summary>
+    /// Queues a circle mapping for the desktop agent. Idempotent while one is waiting (the first request time is kept). Not a pipeline
+    /// change, so <see cref="Version"/> is left alone.
+    /// </summary>
+    public void RequestCircle(DateTime utcNow)
+    {
+        if (CircleWaiting) return;
+        CircleRequestedAt = utcNow;
+    }
+
+    /// <summary>The agent delivered its search results (an empty result counts: it looked and found nobody).</summary>
+    public void MarkCircleMapped(DateTime utcNow) => CircleMappedAt = utcNow;
+
     /// <summary>Overwrites what research knows about the candidate. Deliberately leaves <see cref="Status"/> alone.</summary>
     public void ApplyResearch(
         string title, string? organization, string? location, string? url, string? applyUrl,

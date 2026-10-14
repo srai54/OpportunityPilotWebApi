@@ -3,7 +3,8 @@ using OpportunityPilot.Domain.Common;
 namespace OpportunityPilot.Domain.Outreach;
 
 public enum ExecutionSubject { OutreachDraft, SalesBid }
-public enum ExecutionProvider { Manual, Gmail, Freelancer, Upwork, Outlook, Smtp }
+/// <summary>Stored as a string. LinkedInAgent = the desktop agent sent it from the person's own logged-in LinkedIn browser.</summary>
+public enum ExecutionProvider { Manual, Gmail, Freelancer, Upwork, Outlook, Smtp, LinkedInAgent }
 public enum ExecutionState { AwaitingManualConfirmation, Succeeded, Failed }
 
 /// <summary>

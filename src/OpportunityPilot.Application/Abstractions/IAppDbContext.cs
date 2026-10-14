@@ -63,6 +63,7 @@ public interface IAppDbContext
     DbSet<Domain.Integrations.IntegrationConnection> IntegrationConnections { get; }
     DbSet<CandidateProgressLink> CandidateProgressLinks { get; }
     DbSet<UserEvent> UserEvents { get; }
+    DbSet<Domain.Circle.CirclePerson> CirclePeople { get; }
 
     /// <summary>The research runner clears tracked state before recording a failure, so a half-applied batch is not saved.</summary>
     Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }

@@ -70,6 +70,7 @@ Indexes: unique `(OwnerId, Platform, ExternalJobId)`; `(OwnerId, OccurredAt)`. N
 | Prefix | string(12) | first 12 characters of the key, for display |
 | CreatedAt | time | |
 | LastUsedAt, RevokedAt | time, null | revocation keeps the first time |
+| Scopes | int | `AgentKeyScope` flags (stored as a number, not a string): Research 1, Shortlist 2, Applications 4, People 8; default and "every scope" = 15. Migration AddJdCircle moved keys stored with 7 (every scope before People existed) to 15 |
 
 Indexes: unique `KeyHash`; `OwnerId`.
 
@@ -226,8 +227,28 @@ Indexes: `(CampaignId, SourceId, ContentHash)` (not unique); `OwnerId`.
 | LastResearchJobId | uuid, null | no FK |
 | CreatedAt, UpdatedAt | time | |
 | Version | int | concurrency token |
+| CircleRequestedAt | time, null | JD circle: when the person last asked the desktop agent to map the people around this lead. Asking again while a request waits keeps the first time. Not a pipeline change: `Version` is not bumped |
+| CircleMappedAt | time, null | when the agent last delivered a circle (an empty one counts). Waiting = requested and (`CircleMappedAt` null or earlier than `CircleRequestedAt`) |
 
 Indexes: unique `(CampaignId, DedupeKey)`; `(OwnerId, CampaignId, Score)`; `(OwnerId, Status, UpdatedAt)`.
+
+### circle_people — `Domain/Circle/CirclePerson.cs`
+
+The people around a job or company lead (JD circle). Only what a LinkedIn search card shows is stored — no email or phone.
+
+| Column | Type | Notes |
+|---|---|---|
+| Id, OwnerId | uuid | |
+| OpportunityId | uuid | FK → opportunities, Cascade |
+| Name | string(200) | |
+| Headline | string(300), null | the person's headline or title as the card showed it (`title` in the API) |
+| ProfileUrl | string(400) | always `https://www.linkedin.com/in/{slug}` (`LinkedInProfileUrl`): host, scheme, query and trailing path normalised; the slug keeps its case (LinkedIn's `ACoAA…` ids are case-sensitive) |
+| Relation | string(32) | `CircleRelation`: Recruiter, HiringManager, Team, Connection, Other |
+| Degree | int, null | 1, 2 or 3 (3rd+) connection degree; null when unknown |
+| Source | string(32) | `CircleSource`: LinkedInAgent, Hunter, Apollo, Manual. A later agent delivery never changes the relation of a Manual row |
+| FoundAt, UpdatedAt | time | |
+
+Indexes: unique `(OwnerId, OpportunityId, ProfileUrl)` (case-sensitive on Postgres; `CircleService` also compares links case-insensitively, and InMemory relies on that check); `OpportunityId` (FK).
 
 ### opportunity_evidence — `Domain/Opportunities/Activity.cs` (`OpportunityEvidence`)
 
@@ -257,7 +278,7 @@ Indexes: `(OpportunityId, OccurredAt)`; `OwnerId`.
 | Id, OwnerId | uuid | |
 | OpportunityId | uuid | FK → opportunities, Cascade |
 | Channel | string(32) | `DraftChannel`; CoverNote is the implemented generator |
-| Recipient | string(320), null | |
+| Recipient | string(320), null | for `LinkedInMessage` either a name or a LinkedIn profile link, stored as `https://www.linkedin.com/in/{slug}`; only drafts with a link reach the agent's LinkedIn outbox |
 | RecipientVerified | bool | false for the current CoverNote flow |
 | Subject | string(300), null | |
 | Body | string(10000) | exact user-editable draft text |
@@ -426,7 +447,7 @@ Indexes: unique `TokenHash` for authentication lookup; `ExpiresAt` for bounded c
 | campaigns | sources, import_batches, research_jobs, evidence, opportunities | Cascade |
 | sources | source_items | Cascade (and deleted explicitly by `SourceService`, because InMemory runs no cascades) |
 | research_jobs | research_events | Cascade |
-| opportunities | opportunity_evidence, activities, outreach_drafts, next_actions | Cascade |
+| opportunities | opportunity_evidence, activities, outreach_drafts, next_actions, circle_people | Cascade |
 | sales_projects | sales_bids | Cascade |
 | sales_projects | upwork_opportunities | SetNull |
 | wellfound_jobs | wellfound_applications | Cascade |
@@ -468,5 +489,7 @@ Both sets must contain the same logical migrations in the same order.
 | 8 | AddOutreachFollowUps | `20261006182426_AddOutreachFollowUps` | `20261006182652_AddOutreachFollowUps` | suppressions, next_actions, evidence excerpt 8000 |
 | 9 | AddAutomationSnapshotsAndStaffingCrm | `20261007053856_AddAutomationSnapshotsAndStaffingCrm` | `20261007053903_AddAutomationSnapshotsAndStaffingCrm` | profile_versions, campaign_schedules, research input snapshots, staffing accounts/contacts/deals/activities |
 | 10 | AddProviderResearchQueues | `20261007103650_AddProviderResearchQueues` | `20261007103644_AddProviderResearchQueues` | upwork_opportunities, wellfound_jobs, wellfound_applications, wellfound_activities |
+| 11–21 | (see the migration folders) | | | staffing pipeline, schedules, security events and key scopes, AI usage, provider executions, mailboxes, user events, progress links, auto-approve, integrations |
+| 22 | AddJdCircle | `20261014055510_AddJdCircle` | `20261014055528_AddJdCircle` | circle_people; nullable `opportunities.CircleRequestedAt`/`CircleMappedAt`; `agent_keys.Scopes` default 7 → 15 and a data step moving stored 7 to 15 (Down strips the People bit and revokes People-only keys) |
 
 Persisted AI usage records from [M4_M5_CONTRACT.md](M4_M5_CONTRACT.md) remain unbuilt; suppressions and next actions are built.

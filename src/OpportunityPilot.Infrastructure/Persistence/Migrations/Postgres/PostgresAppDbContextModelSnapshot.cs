@@ -58,7 +58,7 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.Property<int>("Scopes")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
-                        .HasDefaultValue(7);
+                        .HasDefaultValue(15);
 
                     b.HasKey("Id");
 
@@ -354,6 +354,60 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.ToTable("campaigns", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Circle.CirclePerson", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("Degree")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("FoundAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Headline")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OpportunityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProfileUrl")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("Relation")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OpportunityId");
+
+                    b.HasIndex("OwnerId", "OpportunityId", "ProfileUrl")
+                        .IsUnique();
+
+                    b.ToTable("circle_people", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Drafts.OutreachDraft", b =>
                 {
                     b.Property<Guid>("Id")
@@ -579,6 +633,12 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
 
                     b.Property<Guid>("CampaignId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CircleMappedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CircleRequestedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Coverage")
                         .HasColumnType("integer");
@@ -2701,6 +2761,15 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                         .WithMany()
                         .HasForeignKey("ProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpportunityPilot.Domain.Circle.CirclePerson", b =>
+                {
+                    b.HasOne("OpportunityPilot.Domain.Opportunities.Opportunity", null)
+                        .WithMany()
+                        .HasForeignKey("OpportunityId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

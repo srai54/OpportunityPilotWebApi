@@ -117,7 +117,7 @@ public static class AuthSetup
 
         var authz = builder.Services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder(schemes.ToArray()).RequireAuthenticatedUser().Build());
-        foreach (var scope in new[] { "Research", "Shortlist", "Applications" })
+        foreach (var scope in new[] { "Research", "Shortlist", "Applications", "People" })
             authz.AddPolicy($"agent:{scope}", p => p.AddAuthenticationSchemes(AgentKeyAuthenticationHandler.SchemeName)
                 .RequireAuthenticatedUser().RequireClaim(AgentKeyAuthenticationHandler.ScopeClaim, scope));
 
