@@ -12,7 +12,7 @@ Envelope, naming and error rules: [conventions.md](conventions.md). Limits and r
 | Auth | How the caller proves it | Where accepted |
 |---|---|---|
 | anonymous | nothing | only endpoints marked `[AllowAnonymous]` |
-| user | `Authorization: Bearer <Supabase JWT>`; in demo mode a guest token from `POST /api/v1/auth/guest`; in Development with `Auth:DevBypass` the header `X-Dev-User: <any name>` | every endpoint without its own scheme (the fallback policy) |
+| user | `Authorization: Bearer <Supabase JWT>`, or a Hanko session JWT when `Auth:HankoApiUrl` is set (owner id derived from the Hanko user id); in demo mode a guest token from `POST /api/v1/auth/guest`; in Development with `Auth:DevBypass` the header `X-Dev-User: <any name>` | every endpoint without its own scheme (the fallback policy) |
 | agent key | `X-Agent-Key: opk_…` | only endpoints marked `[Authorize(AuthenticationSchemes = "AgentKey")]`; user credentials are rejected there (401) and agent keys are rejected everywhere else (401) |
 
 Owner identity is always the token's `sub`. Another owner's id answers **404**, never 403.
@@ -35,7 +35,7 @@ Query enums that fail to bind return 400 from model binding.
 | GET | `/health/live` | anonymous | — | 200 `{ status: "live" }` |
 | GET | `/health/ready` | anonymous | — | 200 `{ status: "ready", checks: { database: "Healthy" } }`; 503 with `status: "not-ready"` |
 | GET | `/api/v1/capabilities` | anonymous | — | 200 `CapabilitiesDto` (no secrets) |
-| POST | `/api/v1/auth/guest` | anonymous | — | 200 `{ token, expiresAt }`; 404 when guest sign-in is off (Supabase configured or dev bypass on) |
+| POST | `/api/v1/auth/guest` | anonymous | — | 200 `{ token, expiresAt }`; 404 when guest sign-in is off (`Auth:AllowGuests=false` with Supabase or Hanko configured, or dev bypass on) |
 | GET | `/openapi/v1.json` | anonymous | — | OpenAPI document, **Development only** |
 
 ### Overview, analytics and profiles
@@ -84,7 +84,7 @@ Query enums that fail to bind return 400 from model binding.
 | GET | `/api/v1/applications/summary` | user | — | 200 `ApplicationSummaryDto` |
 | POST | `/api/v1/applications/report` | **agent key** | `ApplicationReportRequest` (1–100 items) | 200 `{ accepted }`; 400 field errors; 409 concurrent report |
 | GET | `/api/v1/agent-keys` | user | — | 200 `AgentKeyDto[]` (active keys, newest first, prefix only) |
-| POST | `/api/v1/agent-keys` | user | `{ name }` | 201 `CreatedAgentKeyDto` (the only time `key` is returned); 400 (name, 10 active keys) |
+| POST | `/api/v1/agent-keys` | user | `{ name, scopes? }` (`Research`, `Shortlist`, `Applications`, `People`; omitted = all four) | 201 `CreatedAgentKeyDto` (the only time `key` is returned); 400 (name, unknown scope, 10 active keys) |
 | DELETE | `/api/v1/agent-keys/{id}` | user | — | 204 (idempotent); 404 |
 
 ### Desktop agent research
@@ -95,6 +95,41 @@ Query enums that fail to bind return 400 from model binding.
 | POST | `/api/v1/agent/campaigns/{id}/postings` | **agent key** | `AgentPostingsRequest`; body ≤4 MB | 200 `{ accepted, sourceId, jobId }` (`jobId` null unless `queueResearch`); 400 (not a Job campaign, field errors); 404; 409; 413 |
 | GET | `/api/v1/agent/shortlist` | **agent key** | query `platform?` (LinkedIn, Naukri, Other) | 200 `AgentShortlistItem[]`, best score first, max 200 |
 
+### JD circle and LinkedIn outbox (JDC1, LI1)
+
+Code: `Application/Circle/CircleService.cs`, `Application/Outreach/LinkedInOutbox.cs`, `Api/Controllers/CircleController.cs`,
+`Api/Controllers/AgentPeopleController.cs`. Agent endpoints need an agent key with the **People** scope (part of every default key;
+a key without it gets 403). The API never contacts LinkedIn: the agent searches and sends in the person's own logged-in browser.
+Rules: [business-rules.md → JD circle](business-rules.md#jd-circle-jdc1) and [→ LinkedIn outbox](business-rules.md#linkedin-outbox-li1).
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/opportunities/{id}/circle` | user | — | 200 `CircleDto`; 404 (not found or not yours) |
+| POST | `/api/v1/opportunities/{id}/circle/request` | user | — | 200 `CircleDto` with `status: "Waiting"`; idempotent while a request waits (keeps the first `requestedAt`); 400 `organization` when the lead has no company name; 404; 409 |
+| POST | `/api/v1/opportunities/{id}/circle` | user | `{ name, profileUrl, relation, title?, degree? }` | 201 `CirclePersonDto` (`source: "Manual"`); 400 field errors (`profileUrl` must be a LinkedIn `/in/` link; `relation`; `degree` 1–3; `people` when the circle already holds 200); 404; 409 "This person is already in the circle." |
+| DELETE | `/api/v1/opportunities/{id}/circle/{personId}` | user | — | 204; 404 |
+| GET | `/api/v1/agent/circle-requests` | **agent key (People)** | — | 200 `AgentCircleRequestDto[]`: waiting requests of the key's owner with a company name, oldest first, max 20 |
+| POST | `/api/v1/agent/circle` | **agent key (People)** | `{ opportunityId, people: [{ name, title?, profileUrl, relation, degree? }] }` (0–50; body ≤512 KB) | 200 `{ accepted, added, updated, total }`; upsert by profile link (same link twice in one request: the last wins); marks the lead mapped even when `people` is empty; adds a `Note` activity; 400 field errors (`people[i].…`, more than 50, circle over 200); 404 lead not found or not the key owner's; 409 concurrent save |
+| GET | `/api/v1/agent/linkedin-outbox` | **agent key (People)** | — | 200 `LinkedInOutboxItem[]`, oldest approval first, max 50 |
+| POST | `/api/v1/agent/linkedin-outbox/{draftId}/start` | **agent key (People)** | `{ version }` | 200 `ProviderExecutionDto` (`provider: "LinkedInAgent"`, `state: "AwaitingManualConfirmation"`). A start for content that already has a pending or successful execution returns it with `reused: true` — the agent must not send then. 400 `draft` (not a LinkedInMessage / not approved), `recipient` (not a profile link, or suppressed), `quota` (gateway daily limit, or 25 agent LinkedIn sends today); 404; 409 stale version |
+| POST | `/api/v1/agent/linkedin-outbox/{draftId}/confirm` | **agent key (People)** | `{ receipt, providerReference? }` (`providerReference`: `connect` or `message`) | 200 `ProviderExecutionDto` `Succeeded`; the draft becomes Sent, the lead Contacted (from New/Suggested/Shortlisted), a follow-up is scheduled; 400 `receipt`; 404; 409 when no agent send is pending for the draft (never started, already confirmed or failed) or the draft changed after the start |
+| POST | `/api/v1/agent/linkedin-outbox/{draftId}/fail` | **agent key (People)** | `{ reason }` | 200 `ProviderExecutionDto` `Failed` (the draft returns to the outbox for a new attempt); 400; 404; 409 as confirm |
+
+```json
+// CircleDto
+{ "opportunityId": "…", "requestedAt": "2026-10-14T09:00:00Z", "mappedAt": "2026-10-14T09:30:00Z", "status": "Ready",
+  "people": [ { "id": "…", "name": "Asha Rao", "title": "Talent Acquisition at Northwind", "profileUrl": "https://www.linkedin.com/in/asha-rao",
+                "relation": "Recruiter", "degree": 2, "source": "LinkedInAgent", "foundAt": "2026-10-14T09:30:00Z" } ] }
+// AgentCircleRequestDto
+{ "opportunityId": "…", "mode": "Job", "organization": "Northwind", "title": "Senior .NET Engineer", "location": "Pune", "requestedAt": "…" }
+// LinkedInOutboxItem
+{ "draftId": "…", "opportunityId": "…", "version": 3, "profileUrl": "https://www.linkedin.com/in/asha-rao", "body": "<exact approved text>",
+  "fitsConnectionNote": true, "organization": "Northwind", "title": "Senior .NET Engineer", "personName": "Asha Rao" }
+```
+
+`status`: `NotRequested` (never asked), `Waiting` (asked; nothing delivered since), `Ready`. People are ordered Recruiter,
+HiringManager, Team, Connection, Other, then by degree and name.
+
 ### Cover-note drafts
 
 Only deterministic `CoverNote` generation is implemented in this slice. It requires a Job opportunity whose campaign
@@ -102,7 +137,7 @@ profile is confirmed. No message is sent; approval only makes the exact approved
 
 | Method | Path | Auth | Request | Response / errors |
 |---|---|---|---|---|
-| POST | `/api/v1/opportunities/{id}/drafts` | user | `{ channel: Email|CoverNote|LinkedInMessage|ContactForm, recipient? }` | 201 `DraftDto`; confirmed profile required; CoverNote is Job-only; 404/409 |
+| POST | `/api/v1/opportunities/{id}/drafts` | user | `{ channel: Email|CoverNote|LinkedInMessage|ContactForm, recipient? }` | 201 `DraftDto`; confirmed profile required; CoverNote is Job-only; a LinkedInMessage recipient that looks like a link must be a LinkedIn profile link and is stored as `https://www.linkedin.com/in/{slug}` (400 `recipient` otherwise; the same on PUT); 404/409 |
 | GET | `/api/v1/opportunities/{id}/drafts` | user | — | 200 `DraftDto[]`, newest first; 404 |
 | GET | `/api/v1/drafts/{id}` | user | — | 200 `DraftDto`; 404 |
 | PUT | `/api/v1/drafts/{id}` | user | `{ recipient?, subject?, body, expectedVersion }` | 200 `DraftDto`; material edits increment version and clear approval; 400; 404; 409 |
@@ -198,16 +233,22 @@ jobs and applications remain a separate OAuth/MCP capability. Public observation
 Every connect checks the address or token against the real service before storing it encrypted (`TokenProtector`, the mail key).
 Secrets are never returned, logged or exported. Outbound calls go through `IConnectorHttp`: https only, no redirects, 20 s timeout,
 1 MB read, public addresses only (checked on the address actually connected). `kind` is `Slack`, `Teams`, `Webhook`, `HubSpot`,
-`Notion`, `Airtable` or `CalendarFeed`.
+`Notion`, `Airtable`, `CalendarFeed`, `Hunter` or `Apollo`. Hunter and Apollo keys travel only in a header (`X-API-KEY`, `x-api-key`), never in a URL.
 
 | Method | Path | Auth | Request | Response / errors |
 |---|---|---|---|---|
-| GET | `/api/v1/integrations` | user | — | one `IntegrationDto` per kind: `{ kind, connected, label, events[], connectedAt, lastUsedAt, lastError, feedUrl }` |
-| PUT | `/api/v1/integrations/{kind}` | user, `connectors` 60/h | webhooks `{ url, events? }`; HubSpot `{ token }`; Notion `{ token, target }` (database link); Airtable `{ token, target, table? }` (base link); CalendarFeed `{}` | the connection; 400 with the service's reason (wrong domain, refused token, database not shared, missing scope) |
+| GET | `/api/v1/integrations` | user | — | one `IntegrationDto` per kind: `{ kind, connected, label, events[], connectedAt, lastUsedAt, lastError, feedUrl, oauthConfigured, oauthConnected, needsTarget }`. `oauthConfigured`: the server has a sign-in app for Notion/HubSpot/Slack/Airtable ("Connect with …" works); `oauthConnected`: connected by sign-in; `needsTarget`: Notion/Airtable signed in but no database/table chosen yet |
+| PUT | `/api/v1/integrations/{kind}` | user, `connectors` 60/h | webhooks `{ url, events? }`; HubSpot `{ token }`; Notion `{ token, target }` (database link); Airtable `{ token, target, table? }` (base link); Hunter/Apollo `{ token }` (the API key); CalendarFeed `{}` | the connection; 400 with the service's reason (wrong domain, refused token, database not shared, missing scope). Hunter is checked with `GET /v2/account` (label "Hunter {plan} plan ({account email})"); Apollo with `GET /api/v1/auth/health` plus a 0-credit `POST /api/v1/mixed_people/api_search?per_page=1` (403 → "create a key with access to People API Search and People Enrichment") |
 | POST | `/api/v1/integrations/{kind}/test` | user, `connectors` | — | `{ ok, message }`; a webhook gets a test message, a CRM re-checks the token; failures are stored as `lastError` |
 | PUT | `/api/v1/integrations/{kind}/events` | user | `{ events: ["sent","leads","digest","replies"] }` | webhooks only |
 | DELETE | `/api/v1/integrations/{kind}` | user | — | 204; deleting the calendar feed revokes its link |
+| POST | `/api/v1/integrations/{kind}/oauth` | user, `connectors` | — | `{ url }` of the service's own consent screen (Notion, HubSpot, Slack, Airtable); 409 "… not switched on on this server yet. Use a token instead." when `Integrations__{Kind}__ClientId`/`ClientSecret`, `Mail__TokenKey` (or the fallback) or `Mail__WebBase` is missing; 400 for other kinds. The URL carries a sealed, 10-minute state (owner, kind, PKCE verifier for Airtable) |
+| GET | `/api/v1/integrations/oauth/callback/{kind}` | anonymous (sealed state), `public-progress` | `code`, `state`, `error` | 302 to `<Mail:WebBase>/connectors?connected={kind}`, or `?error=declined|expired|failed&service={kind}`. Exchanges the code, stores the access token as the encrypted secret and the refresh token encrypted inside the settings; tokens never appear in the redirect. Slack stores `incoming_webhook.url` exactly like a pasted webhook (all events on, one welcome message); HubSpot runs the account check; Notion/Airtable are stored with `needsTarget` |
+| GET | `/api/v1/integrations/{kind}/targets` | user, `connectors` | — | Notion: databases shared on Notion's screen (`POST /v1/search`, databases only); Airtable: tables in bases the person can edit (first 10 bases). `[{ target, table, name, group }]`; 404 when not connected; 409 with the service's reason |
+| PUT | `/api/v1/integrations/{kind}/target` | user, `connectors` | `{ target, table? }` (Notion database id; Airtable base id + table id) | the connection; runs the same column matching as a pasted link and clears `needsTarget`; 400 with the reason |
 | POST | `/api/v1/integrations/{kind}/push` | user, `connectors` | `{ opportunityIds: [≤25] }` | per lead `{ opportunityId, outcome: Added|AlreadyThere|Failed, reason, link }`; HubSpot/Notion/Airtable only; duplicates are found by domain or name and not created again |
+| POST | `/api/v1/opportunities/{id}/people/find` | user, `connectors` | `{ source: "Hunter"|"Apollo", titles?: string[≤10, ≤80 chars], website? }` | 200 `{ source, domain, people: [{ source, name, title?, email?, emailConfidence?, linkedinUrl?, personId?, note }], creditsNote }` (≤10 people). Domain: `website` from the request, else the lead's website for Customer/Company leads (a Job lead's link is the board, so it needs `website`). 400 `source` (not Hunter/Apollo), `titles`, `website` "Add the company website first." / not a public domain; 404 lead not found or not yours; 409 "Connect Hunter in Connectors first." (or Apollo), or the service's refusal in words (key refused, limit used up, key may not call the endpoint), also stored as the connection's `lastError`. Hunter: `GET /v2/domain-search?domain=&limit=10&department=hr,executive,management,it` — emails with Hunter's confidence and page count, wanted titles first; uses one Hunter search when someone is found. Apollo: `POST /api/v1/mixed_people/api_search` with `q_organization_domains_list[]` and `person_titles[]` (default: recruiter, talent acquisition, HR, hiring manager, head of engineering, CTO, founder) — 0 credits, no emails, last name obfuscated, `personId` for reveal. Writes only a `Note` activity "Looked up N people at {domain} with {source} (third-party data, not verified)." |
+| POST | `/api/v1/opportunities/{id}/people/reveal` | user, `connectors` | `{ source: "Apollo", personId }` | 200 `{ source: "Apollo", person, creditsNote }`; **uses the person's Apollo credits** (Apollo `POST /api/v1/people/match?id=&reveal_personal_emails=false`: 1 credit when it returns data, none when it finds nothing). `person.email` is null when Apollo has no work email. 400 for Hunter or a malformed id; 404 lead not yours or Apollo has no such person; 409 not connected / refused. Writes a `Note` activity without the address |
 | GET | `/api/v1/calendar/{id}/{key}.ics` | anonymous, `public-progress` | — | iCalendar of open follow-ups (last 30 days onward) and scheduled interviews; 404 for a wrong key |
 | POST | `/api/v1/campaigns/{campaignId}/drafts/prepare` | user | — | INT1: writes an email draft (not approved) for up to 15 shortlisted leads without one, to an address the company published; `{ written, skipped, remaining, items[] }` |
 
@@ -249,7 +290,7 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 
 | DTO | Fields |
 |---|---|
-| CapabilitiesDto | `environment, databaseProvider, aiMode, setupRequired: string[], guestSignIn: bool, temporaryStorage: bool, items: CapabilityDto[]` |
+| CapabilitiesDto | `environment, databaseProvider, aiMode, setupRequired: string[], guestSignIn: bool, temporaryStorage: bool, items: CapabilityDto[], signInProviders: string[]` (`"hanko"` and/or `"supabase"`, in that order; empty in demo mode) |
 | CapabilityDto | `key, name, category, status (Ready, Configured, NotConfigured, Disabled, ManualHandoff, NotBuilt, LocalAgent), detail, can: string[], cannot: string[]` |
 | AnalyticsOverviewDto | `workspace, days, generatedAt, campaignCount, kpis, funnel, fitHistogram, unknownCriteria, sources, applicationsPerDay?, attention, activeResearch?, qualifiedByIndustry?, signalsFound?`; fields that stored data cannot answer are `null`, never estimates (full semantics in `ANALYTICS_CONTRACT.md`) |
 | ProfileSummaryDto | `id, type, name, version, confirmedAt?, updatedAt` |
@@ -270,7 +311,9 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 | ApplicationReportRequest | `items: { platform (LinkedIn, Naukri, Instahyre), externalJobId, jobUrl, title, company, location?, status (Applied, DryRun, NeedsManual, Skipped, Failed), detail?, occurredAt, opportunityId? }[]` |
 | ApplicationDto | `id, platform, externalJobId, jobUrl, title, company, location?, status, detail?, occurredAt, updatedAt` |
 | ApplicationSummaryDto | `applied, appliedLast7Days, needsManual, dryRun, skipped, failed, lastActivityAt?` |
-| AgentKeyDto | `id, name, prefix, createdAt, lastUsedAt?` (CreatedAgentKeyDto adds `key`) |
+| AgentKeyDto | `id, name, prefix, createdAt, lastUsedAt?, scopes[]` (CreatedAgentKeyDto adds `key`) |
+| ProviderExecutionDto | `id, subject (OutreachDraft, SalesBid), subjectId, subjectVersion, provider (Manual, Gmail, Freelancer, Upwork, Outlook, Smtp, LinkedInAgent), state (AwaitingManualConfirmation, Succeeded, Failed), idempotencyKey, receipt?, providerReference?, safeFailure?, createdAt, completedAt?, instructions, reused` |
+| CirclePersonDto | `id, name, title?, profileUrl, relation (Recruiter, HiringManager, Team, Connection, Other), degree? (1–3), source (LinkedInAgent, Hunter, Apollo, Manual), foundAt` |
 | AgentCampaignDto | `id, name, mode, criteria: CampaignCriteria` |
 | AgentPostingsRequest | `platform (LinkedIn or Naukri), items: { externalId, url, title, company, location?, description? }[] (1–100), queueResearch: bool` |
 | AgentShortlistItem | `opportunityId, campaignId, platform, externalId, url, title, organization, coverNote?`; `coverNote` is non-null only for a currently hash-valid approved CoverNote |

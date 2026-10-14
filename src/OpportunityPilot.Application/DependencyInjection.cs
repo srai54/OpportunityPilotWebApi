@@ -42,7 +42,10 @@ public static class DependencyInjection
         services.AddScoped<ResearchService>();
         services.AddScoped<OpportunityService>();
         services.AddScoped<ContactFinder>();
+        services.AddScoped<PeopleFinder>();
         services.AddScoped<AgentResearchService>();
+        services.AddScoped<Circle.CircleService>();
+        services.AddScoped<LinkedInOutboxService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
         services.AddScoped<DraftService>();
@@ -65,7 +68,10 @@ public static class DependencyInjection
         services.AddScoped<Integrations.ILeadTarget, Integrations.HubSpotTarget>();
         services.AddScoped<Integrations.ILeadTarget, Integrations.NotionTarget>();
         services.AddScoped<Integrations.ILeadTarget, Integrations.AirtableTarget>();
+        services.AddScoped<Integrations.IPeopleSource, Integrations.HunterSource>();
+        services.AddScoped<Integrations.IPeopleSource, Integrations.ApolloSource>();
         services.AddScoped<Integrations.IntegrationService>();
+        services.AddScoped<Integrations.ConnectorOauthService>();
         services.AddScoped<Agents.AgentStatusService>();
         services.AddScoped<Integrations.IntegrationNotifier>();
         services.AddScoped<Analytics.UserEventLog>();

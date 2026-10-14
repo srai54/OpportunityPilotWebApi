@@ -10,6 +10,8 @@ public interface ILeadTarget
     IntegrationKind Kind { get; }
     Task<(string Label, string SettingsJson)> VerifyAsync(string token, string? target, string? table, CancellationToken ct);
     Task<PushLeadResult> PushAsync(string token, string settingsJson, LeadRecord lead, CancellationToken ct);
+    /// <summary>Where leads could go with this token (Notion databases, Airtable tables), so a person who signed in can pick one. Empty for HubSpot.</summary>
+    Task<IReadOnlyList<IntegrationTargetDto>> ListTargetsAsync(string token, CancellationToken ct);
 }
 
 internal static class Reply
@@ -109,6 +111,8 @@ public sealed class HubSpotTarget(IConnectorHttp http) : ILeadTarget
         return r.Json().TryGetProperty("results", out var rs) && rs.ValueKind == JsonValueKind.Array && rs.GetArrayLength() > 0 ? rs[0].Str("id") : null;
     }
 
+    public Task<IReadOnlyList<IntegrationTargetDto>> ListTargetsAsync(string token, CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationTargetDto>>([]);
+
     internal static string Cut(string s, int max) => s.Length > max ? s[..max] : s;
 }
 
@@ -189,6 +193,24 @@ public sealed partial class NotionTarget(IConnectorHttp http) : ILeadTarget
         return new(lead.Id, "Added", null, r.Json().Str("url"));
     }
 
+    /// <summary>The databases the person shared while signing in (Notion's search, databases only, newest edits first).</summary>
+    public async Task<IReadOnlyList<IntegrationTargetDto>> ListTargetsAsync(string token, CancellationToken ct)
+    {
+        var r = await http.SendAsync(new(HttpMethod.Post, $"{Api}/search", ConnectorJson.Write(new
+        {
+            filter = new { property = "object", value = "database" },
+            sort = new { timestamp = "last_edited_time", direction = "descending" },
+            page_size = 100
+        }), token, Version), ct);
+        if (!r.Ok) throw Reply.Problem("Notion", r, "Read content capability");
+        if (!r.Json().TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) return [];
+        return results.EnumerateArray()
+            .Where(d => d.Str("object") == "database" && DatabaseId(d.Str("id")) is not null)
+            .Select(d => new IntegrationTargetDto(DatabaseId(d.Str("id"))!, null,
+                d.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.Array && t.GetArrayLength() > 0 && t[0].Str("plain_text") is { Length: > 0 } name ? name : "Untitled database", null))
+            .ToList();
+    }
+
     private static object Text(string s) => new { type = "text", text = new { content = HubSpotTarget.Cut(s, 1900) } };
 }
 
@@ -261,5 +283,26 @@ public sealed partial class AirtableTarget(IConnectorHttp http) : ILeadTarget
         if (!r.Ok) throw Reply.Problem("Airtable", r, Scopes);
         var id = r.Json().TryGetProperty("records", out var made) && made.GetArrayLength() > 0 ? made[0].Str("id") : null;
         return new(lead.Id, "Added", null, id is null ? null : $"https://airtable.com/{s.Str("baseId")}/{s.Str("tableId")}/{id}");
+    }
+
+    public const int MaxBases = 10;
+
+    /// <summary>Tables in the bases the person can edit (at most <see cref="MaxBases"/> bases), each with its base name.</summary>
+    public async Task<IReadOnlyList<IntegrationTargetDto>> ListTargetsAsync(string token, CancellationToken ct)
+    {
+        var r = await http.SendAsync(new(HttpMethod.Get, $"{Api}/meta/bases", Bearer: token), ct);
+        if (!r.Ok) throw Reply.Problem("Airtable", r, Scopes);
+        var bases = r.Json().TryGetProperty("bases", out var bs) && bs.ValueKind == JsonValueKind.Array
+            ? bs.EnumerateArray().Where(b => b.Str("permissionLevel") is "edit" or "create" && b.Str("id") is { Length: > 0 }).Take(MaxBases).ToList() : [];
+        var list = new List<IntegrationTargetDto>();
+        foreach (var b in bases)
+        {
+            var t = await http.SendAsync(new(HttpMethod.Get, $"{Api}/meta/bases/{b.Str("id")}/tables", Bearer: token), ct);
+            if (!t.Ok) throw Reply.Problem("Airtable", t, Scopes);
+            if (!t.Json().TryGetProperty("tables", out var ts) || ts.ValueKind != JsonValueKind.Array) continue;
+            list.AddRange(ts.EnumerateArray().Where(x => x.Str("id") is { Length: > 0 })
+                .Select(x => new IntegrationTargetDto(b.Str("id")!, x.Str("id"), x.Str("name") ?? "Table", b.Str("name"))));
+        }
+        return list;
     }
 }

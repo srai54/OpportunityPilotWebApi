@@ -27,6 +27,12 @@ export interface Config {
     maxPages: number
     /** Postings `collect` opens and sends per run. */
     maxPostingsPerCollect: number
+    /** Leads `circle` maps per run. */
+    maxCircleLeadsPerRun: number
+    /** Result pages read per LinkedIn people search (1–3). */
+    circlePages: number
+    /** LinkedIn notes/messages `outreach --submit` sends per day (counted in the local log). */
+    maxLinkedInNotesPerDay: number
   }
   search: { postedWithinDays: number }
   /** acceptTermsCheckboxes: tick "I agree / I confirm" boxes on application forms. Off = such forms become "Needs you". */
@@ -39,7 +45,10 @@ export interface Config {
 export const EXAMPLE_CONFIG: Config = {
   api: { url: 'https://opportunitypilotwebapi.onrender.com', key: '' },
   iUnderstandAccountRisk: false,
-  limits: { maxApplicationsPerRun: 10, maxApplicationsPerDay: 25, pauseSeconds: [8, 20], maxPages: 2, maxPostingsPerCollect: 30 },
+  limits: {
+    maxApplicationsPerRun: 10, maxApplicationsPerDay: 25, pauseSeconds: [8, 20], maxPages: 2, maxPostingsPerCollect: 30,
+    maxCircleLeadsPerRun: 5, circlePages: 1, maxLinkedInNotesPerDay: 10,
+  },
   search: { postedWithinDays: 7 },
   profile: { resumePath: '', followCompanies: false, acceptTermsCheckboxes: false },
   schedule: DEFAULT_SCHEDULE,
@@ -96,6 +105,9 @@ export function loadConfig(path = CONFIG_PATH): Config {
   if (!(c.limits.maxApplicationsPerRun > 0)) problems.push('limits.maxApplicationsPerRun must be above 0')
   if (!(c.limits.maxApplicationsPerDay > 0)) problems.push('limits.maxApplicationsPerDay must be above 0')
   if (!Array.isArray(c.limits.pauseSeconds) || c.limits.pauseSeconds.length !== 2) problems.push('limits.pauseSeconds must be [min, max]')
+  if (!(c.limits.maxCircleLeadsPerRun > 0)) problems.push('limits.maxCircleLeadsPerRun must be above 0')
+  if (!(c.limits.circlePages >= 1 && c.limits.circlePages <= 3)) problems.push('limits.circlePages must be 1, 2 or 3')
+  if (!(c.limits.maxLinkedInNotesPerDay > 0 && c.limits.maxLinkedInNotesPerDay <= 25)) problems.push('limits.maxLinkedInNotesPerDay must be between 1 and 25')
   if (!Array.isArray(c.answers.fields) || c.answers.fields.some((r) => !Array.isArray(r.match) || typeof r.value !== 'string'))
     problems.push('answers.fields must be a list of { "match": ["..."], "value": "..." }')
   if (c.profile.resumePath && !existsSync(c.profile.resumePath)) problems.push(`profile.resumePath does not exist: ${c.profile.resumePath}`)

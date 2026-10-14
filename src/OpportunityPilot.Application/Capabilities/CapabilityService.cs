@@ -24,10 +24,11 @@ public sealed record CapabilityDto(string Key, string Name, string Category, Cap
 /// <param name="SetupRequired">Plain-language list of missing configuration; empty when the deployment is complete.</param>
 /// <param name="GuestSignIn">"Continue as guest" is offered (demo mode, or next to accounts when allowed).</param>
 /// <param name="TemporaryStorage">Demo mode: no database, so data is kept in memory until the server restarts.</param>
+/// <param name="SignInProviders">Account sign-in systems whose tokens are accepted: "hanko" and/or "supabase"; empty in demo mode.</param>
 public sealed record CapabilitiesDto(
     string Environment, string DatabaseProvider, string AiMode,
     IReadOnlyList<string> SetupRequired, bool GuestSignIn, bool TemporaryStorage,
-    IReadOnlyList<CapabilityDto> Items);
+    IReadOnlyList<CapabilityDto> Items, IReadOnlyList<string> SignInProviders);
 
 public sealed class CapabilityService(
     IOptions<FeatureOptions> features,
@@ -56,7 +57,8 @@ public sealed class CapabilityService(
 
             setup.AuthConfigured
                 ? new("auth", "Sign-in", "Core", CapabilityStatus.Ready,
-                    "Requests are accepted only with a valid signed token.", ["Keep each account's data separate"], [])
+                    "Requests are accepted only with a valid signed token." + SignInDetail(setup.SignInProviders),
+                    ["Keep each account's data separate"], [])
                 : new("auth", "Sign-in", "Core", CapabilityStatus.NotConfigured,
                     "Demo mode: no Supabase project URL (Auth__SupabaseUrl), so each browser continues as a random guest. Guests cannot see each other's data.",
                     ["Continue as a guest"], ["Create accounts", "Sign in from another device"]),
@@ -145,8 +147,11 @@ public sealed class CapabilityService(
 
             new("linkedin", "LinkedIn", "Platforms", CapabilityStatus.LocalAgent,
                 "Applies through your own logged-in browser on your computer with the OpportunityPilot agent. Unofficial automation: LinkedIn may restrict accounts that use it.",
-                ["Search jobs with your filters", "Fill and submit Easy Apply forms from your saved answers", "Record each application here"],
-                ["Answer questions your saved answers do not cover", "Get past security checks — the agent stops and asks you"]),
+                ["Search jobs with your filters", "Fill and submit Easy Apply forms from your saved answers", "Record each application here",
+                    "Map the people around a job (recruiters, hiring managers, your connections) when you ask",
+                    "Send your approved connection notes and messages (a dry run unless you allow sending)"],
+                ["Answer questions your saved answers do not cover", "Get past security checks — the agent stops and asks you",
+                    "Send anything you have not approved, or more than your daily cap"]),
 
             new("naukri", "Naukri", "Platforms", CapabilityStatus.LocalAgent,
                 "Applies through your own logged-in browser on your computer with the OpportunityPilot agent. Unofficial automation: Naukri may restrict accounts that use it.",
@@ -173,7 +178,16 @@ public sealed class CapabilityService(
             environment,
             setup.DatabaseConfigured ? database.Value.Provider : "In-memory (temporary)",
             geminiKeyPresent ? "Gemini (key present)" : "Rules",
-            setup.Missing, setup.GuestsEnabled, !setup.DatabaseConfigured, items);
+            setup.Missing, setup.GuestsEnabled, !setup.DatabaseConfigured, items, setup.SignInProviders);
+
+        static string SignInDetail(IReadOnlyList<string> providers) =>
+            (providers.Contains("hanko"), providers.Contains("supabase")) switch
+            {
+                (true, true) => " Accounts: Hanko (passkeys, passwords, email codes, two-factor) and the older Supabase sign-in.",
+                (true, false) => " Accounts: Hanko (passkeys, passwords, email codes, two-factor).",
+                (false, true) => " Accounts: Supabase.",
+                _ => ""
+            };
 
         static CapabilityDto PublicBoard(string key, string name, string detail, bool company = true) =>
             new(key, name, "Sources", CapabilityStatus.Ready,

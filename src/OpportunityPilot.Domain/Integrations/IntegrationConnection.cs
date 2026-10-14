@@ -4,9 +4,10 @@ namespace OpportunityPilot.Domain.Integrations;
 
 /// <summary>
 /// Slack, Teams and Webhook post messages to a URL the person pasted. HubSpot, Notion and Airtable receive leads with a token the person
-/// created in that service. CalendarFeed is a private link a calendar app subscribes to.
+/// created in that service. CalendarFeed is a private link a calendar app subscribes to. Hunter and Apollo look up people at a company
+/// with the person's own API key (third-party data, never stored).
 /// </summary>
-public enum IntegrationKind { Slack, Teams, Webhook, HubSpot, Notion, Airtable, CalendarFeed }
+public enum IntegrationKind { Slack, Teams, Webhook, HubSpot, Notion, Airtable, CalendarFeed, Hunter, Apollo }
 
 /// <summary>
 /// A service the person connected. The secret (webhook URL, access token or feed key) opens that service, so it is stored only encrypted
@@ -49,6 +50,21 @@ public sealed class IntegrationConnection : IOwned
     /// <summary>The same person connecting again replaces what was stored.</summary>
     public void Reconnect(string label, string encryptedSecret, string settingsJson, string events, DateTime utcNow) =>
         Apply(label, encryptedSecret, settingsJson, events, utcNow);
+
+    /// <summary>A refreshed sign-in: the new access token and settings (with the new refresh token) replace the old ones; nothing else changes.</summary>
+    public void RotateSecret(string encryptedSecret, string settingsJson)
+    {
+        EncryptedSecret = Guard.Required(encryptedSecret, MaxSecretLength, nameof(encryptedSecret));
+        SettingsJson = Guard.Required(settingsJson, MaxSettingsLength, nameof(settingsJson));
+    }
+
+    /// <summary>The person chose where leads go (a Notion database or an Airtable table) after signing in.</summary>
+    public void ChangeTarget(string label, string settingsJson)
+    {
+        Label = Guard.Required(label, MaxLabelLength, nameof(label));
+        SettingsJson = Guard.Required(settingsJson, MaxSettingsLength, nameof(settingsJson));
+        LastError = null;
+    }
 
     public void SetEvents(string events) => Events = Guard.Optional(events, MaxEventsLength, nameof(events)) ?? string.Empty;
 

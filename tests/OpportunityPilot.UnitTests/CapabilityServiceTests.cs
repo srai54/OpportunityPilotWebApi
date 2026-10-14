@@ -6,10 +6,28 @@ namespace OpportunityPilot.UnitTests;
 
 public class CapabilityServiceTests
 {
-    private static CapabilitiesDto Get(FeatureOptions f, AiOptions a, AdzunaOptions? adzuna = null) =>
+    private static CapabilitiesDto Get(FeatureOptions f, AiOptions a, AdzunaOptions? adzuna = null, SetupState? setup = null) =>
         new CapabilityService(Options.Create(f), Options.Create(a), Options.Create(new DatabaseOptions { Provider = "Postgres" }),
-                Options.Create(adzuna ?? new AdzunaOptions()), Options.Create(new JsearchOptions()), new SetupState())
+                Options.Create(adzuna ?? new AdzunaOptions()), Options.Create(new JsearchOptions()), setup ?? new SetupState())
             .Get("Test");
+
+    [Fact]
+    public void Sign_in_providers_are_listed_and_named_in_the_sign_in_capability()
+    {
+        var caps = Get(new FeatureOptions(), new AiOptions(), setup: new SetupState { SignInProviders = ["hanko", "supabase"] });
+
+        Assert.Equal(["hanko", "supabase"], caps.SignInProviders);
+        var auth = caps.Items.Single(i => i.Key == "auth");
+        Assert.Equal(CapabilityStatus.Ready, auth.Status);
+        Assert.Contains("Hanko", auth.Detail);
+        Assert.Contains("Supabase", auth.Detail);
+    }
+
+    [Fact]
+    public void Without_accounts_no_sign_in_provider_is_listed()
+    {
+        Assert.Empty(Get(new FeatureOptions(), new AiOptions()).SignInProviders);
+    }
 
     [Theory]
     [InlineData("greenhouse", "Public job boards of companies that use Greenhouse; no key needed.")]

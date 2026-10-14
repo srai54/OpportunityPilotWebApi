@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
-import { agentCampaigns, report, sendPostings, shortlist } from './api.ts'
+import { agentCampaigns, circleRequests, linkedInOutbox, report, sendPostings, shortlist } from './api.ts'
+import { mapCircles } from './circle.ts'
+import { OutreachLog, sendOutreach, submitRefusal } from './outreach.ts'
 import { collectPostings } from './collect.ts'
 import { openBrowser } from './browser.ts'
 import { AGENT_DIR, CONFIG_PATH, DATA_DIR, loadConfig, writeExampleConfig } from './config.ts'
@@ -27,6 +29,13 @@ const HELP = `OpportunityPilot agent — research input and applications from yo
         --submit      send real applications (needs "iUnderstandAccountRisk": true)
         --limit N     at most N applications this run
         --headless    no visible window (not recommended)
+  npm run agent -- circle linkedin [--limit N]
+                                             map the people around the leads you asked for (recruiters, hiring
+                                             managers, your connections) from LinkedIn people search; nothing is sent
+  npm run agent -- outreach linkedin         DRY RUN over your approved LinkedIn notes: fills Connect → "Add a note"
+                                             or the message box, never clicks Send
+        --submit      really send them (needs "iUnderstandAccountRisk": true); max limits.maxLinkedInNotesPerDay a day
+        --limit N     at most N notes this run
   npm run agent -- cycle                     one scheduled round now: for each schedule.targets entry, collect, then apply
                                              to the jobs you approved (a dry run unless schedule.submit is true)
   npm run agent -- watch                     keep running: a cycle every schedule.everyHours inside schedule.window
@@ -111,6 +120,67 @@ To send real applications, set "iUnderstandAccountRisk": true in config.json, th
   return { stoppedBecause: summary.stoppedBecause }
 }
 
+const LINKEDIN = 'https://www.linkedin.com'
+
+function linkedInOnly(platform: string | undefined, command: string) {
+  if (platform !== 'linkedin') throw new Error(`Only LinkedIn is supported: npm run agent -- ${command} linkedin`)
+}
+
+async function circleRun(platform: string | undefined, opts: { limit?: number; headless: boolean }): Promise<{ stoppedBecause: string | null; mapped: number }> {
+  linkedInOnly(platform, 'circle')
+  const config = loadConfig()
+  const requests = await circleRequests(config.api)
+  if (!requests.ok) throw new Error(`Could not read the circle requests: ${requests.reason}`)
+  if (requests.data.length === 0) {
+    console.log('No leads are waiting to be mapped. Ask for the people around a lead first (POST /api/v1/opportunities/{id}/circle/request).')
+    return { stoppedBecause: null, mapped: 0 }
+  }
+  const { context, page } = await openBrowser({ headless: opts.headless })
+  try {
+    if (!(await linkedIn().isLoggedIn(page))) return { stoppedBecause: 'Not logged in to LinkedIn. Run: npm run agent -- login linkedin', mapped: 0 }
+    const summary = await mapCircles({
+      page, base: LINKEDIN, api: config.api, requests: requests.data, limit: opts.limit ?? config.limits.maxCircleLeadsPerRun,
+      pages: config.limits.circlePages, pauseSeconds: config.limits.pauseSeconds,
+    })
+    console.log(`Mapped ${summary.mapped.length} lead(s)${summary.failed.length ? `, ${summary.failed.length} failed` : ''}. Open each lead in the web app to see its people.`)
+    return { stoppedBecause: summary.stoppedBecause, mapped: summary.mapped.length }
+  } finally {
+    await context.close()
+  }
+}
+
+async function outreachRun(platform: string | undefined, opts: { submit: boolean; limit?: number; headless: boolean }): Promise<{ stoppedBecause: string | null; refused?: boolean; sent: number }> {
+  linkedInOnly(platform, 'outreach')
+  const config = loadConfig()
+  const refusal = submitRefusal(opts.submit, config.iUnderstandAccountRisk)
+  if (refusal) {
+    console.error(`${RISK}
+
+${refusal}`)
+    return { stoppedBecause: null, refused: true, sent: 0 }
+  }
+  const outbox = await linkedInOutbox(config.api)
+  if (!outbox.ok) throw new Error(`Could not read your approved LinkedIn notes: ${outbox.reason}`)
+  if (outbox.data.length === 0) {
+    console.log('No approved LinkedIn notes to send. Address a LinkedIn message draft to a profile link and approve it in the web app.')
+    return { stoppedBecause: null, sent: 0 }
+  }
+  console.log(`${RISK}
+`)
+  const { context, page } = await openBrowser({ headless: opts.headless })
+  try {
+    if (!(await linkedIn().isLoggedIn(page))) return { stoppedBecause: 'Not logged in to LinkedIn. Run: npm run agent -- login linkedin', sent: 0 }
+    const summary = await sendOutreach({
+      page, base: LINKEDIN, api: config.api, log: new OutreachLog(join(DATA_DIR, 'linkedin-outreach.jsonl')), items: outbox.data,
+      submit: opts.submit, limit: opts.limit ?? config.limits.maxLinkedInNotesPerDay, maxPerDay: config.limits.maxLinkedInNotesPerDay,
+      pauseSeconds: config.limits.pauseSeconds,
+    })
+    return { stoppedBecause: summary.stoppedBecause, sent: summary.results.filter((r) => r.status === 'Sent').length }
+  } finally {
+    await context.close()
+  }
+}
+
 const STATE_PATH = join(DATA_DIR, 'schedule-state.json')
 const LOCK_PATH = join(DATA_DIR, 'schedule.lock')
 
@@ -128,6 +198,8 @@ async function cycleOnce(): Promise<number> {
         const r = await applyRun(t.platform, { submit: o.submit, limit: o.limit, headless: false })
         return { stoppedBecause: r.stoppedBecause }
       },
+      circle: () => circleRun('linkedin', { headless: false }),
+      outreach: () => outreachRun('linkedin', { submit: true, headless: false }),
       log: (line) => console.log(line),
     }, readState(STATE_PATH))
     writeState(STATE_PATH, state)
@@ -212,6 +284,19 @@ async function main(argv: string[]) {
       const r = await applyRun(platform, { submit: flag('--submit'), limit, headless: flag('--headless') })
       if (r.refused) process.exitCode = 1
       else if (r.stoppedBecause) process.exitCode = 2
+      return
+    }
+
+    case 'circle': {
+      const r = await circleRun(platform, { limit, headless: flag('--headless') })
+      if (r.stoppedBecause) { console.log(`Stopped: ${r.stoppedBecause}`); process.exitCode = 2 }
+      return
+    }
+
+    case 'outreach': {
+      const r = await outreachRun(platform, { submit: flag('--submit'), limit, headless: flag('--headless') })
+      if (r.refused) process.exitCode = 1
+      else if (r.stoppedBecause) { console.log(`Stopped: ${r.stoppedBecause}`); process.exitCode = 2 }
       return
     }
 

@@ -77,7 +77,25 @@ public sealed class AuthOptions
     public string? LegacyJwtSecret { get; set; }
 
     /// <summary>
-    /// Keep "Continue as guest" next to real accounts once SupabaseUrl is set (default true). Guests always get their
+    /// Hanko API URL from the Hanko console, e.g. https://abc123.hanko.io (https only). When set, Hanko session tokens
+    /// are accepted next to Supabase ones; keys come from {HankoApiUrl}/.well-known/jwks.json.
+    /// </summary>
+    public string? HankoApiUrl { get; set; }
+
+    /// <summary>
+    /// Optional, recommended: the Hanko token audience, comma-separated. Hanko sets "aud" to the passkey relying-party id,
+    /// which is the web app's domain (e.g. opportunitypilot.vercel.app). Unset: the audience is not checked.
+    /// </summary>
+    public string? HankoAudience { get; set; }
+
+    /// <summary>
+    /// Optional: the exact "iss" Hanko tokens carry, only if the Hanko project sets a custom issuer. Unset: a token may
+    /// carry no issuer or the Hanko API URL; any other issuer is rejected.
+    /// </summary>
+    public string? HankoIssuer { get; set; }
+
+    /// <summary>
+    /// Keep "Continue as guest" next to real accounts once SupabaseUrl or HankoApiUrl is set (default true). Guests always get their
     /// own isolated identity; set false to require an account.
     /// </summary>
     public bool AllowGuests { get; set; } = true;

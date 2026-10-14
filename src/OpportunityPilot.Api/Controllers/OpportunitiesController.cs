@@ -7,13 +7,25 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/opportunities")]
-public sealed class OpportunitiesController(OpportunityService opportunities, ContactFinder contacts) : ControllerBase
+public sealed class OpportunitiesController(OpportunityService opportunities, ContactFinder contacts, PeopleFinder people) : ControllerBase
 {
     /// <summary>Suggests contact details that the posting or the company's own contact pages publish. Reads at most three public pages; nothing is stored.</summary>
     [HttpPost("{id:guid}/contacts/find")]
     [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
     public async Task<ActionResult<FindContactsResult>> FindContacts(Guid id, FindContactsRequest? request, CancellationToken ct) =>
         await contacts.FindAsync(id, request, ct);
+
+    /// <summary>Looks up recruiters and decision makers at the company with the person's own Hunter or Apollo key. Third-party data; nothing is stored but an activity line.</summary>
+    [HttpPost("{id:guid}/people/find")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.Connectors)]
+    public async Task<ActionResult<FindPeopleResult>> FindPeople(Guid id, FindPeopleRequest request, CancellationToken ct) =>
+        await people.FindAsync(id, request, ct);
+
+    /// <summary>Apollo only: reveals one person's work email. This uses the person's Apollo credits.</summary>
+    [HttpPost("{id:guid}/people/reveal")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.Connectors)]
+    public async Task<ActionResult<RevealPersonResult>> RevealPerson(Guid id, RevealPersonRequest request, CancellationToken ct) =>
+        await people.RevealAsync(id, request, ct);
 
     /// <summary>sort = score (default), recent (last updated), found (newest first) or oldest (first found first); take 1–200 (default 50).</summary>
     [HttpGet("/api/v1/campaigns/{campaignId:guid}/opportunities")]

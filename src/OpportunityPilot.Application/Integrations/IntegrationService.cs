@@ -15,7 +15,8 @@ namespace OpportunityPilot.Application.Integrations;
 /// real service before anything is stored; the secret is stored only encrypted and never returned.
 /// </summary>
 public sealed class IntegrationService(
-    IAppDbContext db, ICurrentUser user, TimeProvider clock, TokenProtector protector, IConnectorHttp http, IEnumerable<ILeadTarget> targets)
+    IAppDbContext db, ICurrentUser user, TimeProvider clock, TokenProtector protector, IConnectorHttp http, IEnumerable<ILeadTarget> targets,
+    IEnumerable<IPeopleSource> people, ConnectorOauthService oauth)
 {
     public const int MaxPush = 25;
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
@@ -26,7 +27,7 @@ public sealed class IntegrationService(
         return Enum.GetValues<IntegrationKind>().Select(k =>
         {
             var row = rows.FirstOrDefault(r => r.Kind == k);
-            return row is null ? new IntegrationDto(k, false, null, [], null, null, null, null) : Dto(row, feedBase);
+            return row is null ? new IntegrationDto(k, false, null, [], null, null, null, null, oauth.Configured(k)) : Dto(row, feedBase);
         }).ToList();
     }
 
@@ -55,6 +56,14 @@ public sealed class IntegrationService(
             catch (ConnectorProblem p) { throw Invalid(kind == IntegrationKind.HubSpot ? "token" : "target", p.Message); }
             secret = token;
         }
+        else if (IntegrationKinds.IsPeopleSource(kind))
+        {
+            var key = r.Token?.Trim();
+            if (string.IsNullOrEmpty(key) || key.Length > 200 || key.Any(char.IsWhiteSpace)) throw Invalid("token", $"Paste the {IntegrationKinds.Name(kind)} API key.");
+            try { label = await Source(kind).VerifyAsync(key, ct); }
+            catch (ConnectorProblem p) { throw Invalid("token", p.Message); }
+            secret = key;
+        }
         else
         {
             secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
@@ -73,7 +82,9 @@ public sealed class IntegrationService(
     public async Task<IntegrationTestResult> TestAsync(IntegrationKind kind, CancellationToken ct)
     {
         var row = await RowAsync(kind, ct);
-        var secret = protector.Unprotect(row.EncryptedSecret) ?? throw new ConflictException("The stored login can no longer be read on this server. Connect again.");
+        if (ConnectorOauthService.Flags(row.SettingsJson).NeedsTarget) return new(false, NeedsTargetMessage(kind));
+        var secret = IntegrationKinds.IsLeadTarget(kind) ? await oauth.AccessTokenAsync(row, ct)
+            : protector.Unprotect(row.EncryptedSecret) ?? throw new ConflictException("The stored login can no longer be read on this server. Connect again.");
         try
         {
             if (IntegrationKinds.IsWebhook(kind))
@@ -84,9 +95,12 @@ public sealed class IntegrationService(
                 var target = kind == IntegrationKind.Notion ? s.Str("databaseId") : s.Str("baseId");
                 await Target(kind).VerifyAsync(secret, target, s.Str("tableId"), ct);
             }
+            else if (IntegrationKinds.IsPeopleSource(kind))
+                await Source(kind).VerifyAsync(secret, ct);
             row.MarkUsed(Now);
             await db.SaveChangesAsync(ct);
-            return new(true, IntegrationKinds.IsWebhook(kind) ? "Sent. Check the channel." : $"{IntegrationKinds.Name(kind)} accepted the token.");
+            return new(true, IntegrationKinds.IsWebhook(kind) ? "Sent. Check the channel."
+                : IntegrationKinds.IsPeopleSource(kind) ? $"{IntegrationKinds.Name(kind)} accepted the API key." : $"{IntegrationKinds.Name(kind)} accepted the token.");
         }
         catch (ConnectorProblem p)
         {
@@ -121,7 +135,8 @@ public sealed class IntegrationService(
         if (ids.Count == 0) throw Invalid("opportunityIds", "Choose at least one lead.");
         if (ids.Count > MaxPush) throw Invalid("opportunityIds", $"At most {MaxPush} leads at once.");
         var row = await RowAsync(kind, ct);
-        var token = protector.Unprotect(row.EncryptedSecret) ?? throw new ConflictException("The stored token can no longer be read on this server. Connect again.");
+        if (ConnectorOauthService.Flags(row.SettingsJson).NeedsTarget) throw new ConflictException(NeedsTargetMessage(kind));
+        var token = await oauth.AccessTokenAsync(row, ct);
 
         var owner = user.OwnerId;
         var opps = await db.Opportunities.AsNoTracking().Where(o => o.OwnerId == owner && ids.Contains(o.Id)).ToListAsync(ct);
@@ -148,6 +163,35 @@ public sealed class IntegrationService(
         return results;
     }
 
+    /// <summary>Notion databases or Airtable tables the connection can see, so the person can choose where leads go.</summary>
+    public async Task<IReadOnlyList<IntegrationTargetDto>> TargetsAsync(IntegrationKind kind, CancellationToken ct)
+    {
+        if (kind is not (IntegrationKind.Notion or IntegrationKind.Airtable)) throw Invalid("kind", "Only Notion and Airtable have a database or table to choose.");
+        var row = await RowAsync(kind, ct);
+        var token = await oauth.AccessTokenAsync(row, ct);
+        try { return await Target(kind).ListTargetsAsync(token, ct); }
+        catch (ConnectorProblem p) { throw new ConflictException(p.Message); }
+    }
+
+    /// <summary>Chooses where leads go; the choice is checked with the service and its columns are matched, as when a link is pasted.</summary>
+    public async Task<IntegrationDto> SetTargetAsync(IntegrationKind kind, SelectIntegrationTargetRequest r, string feedBase, CancellationToken ct)
+    {
+        if (kind is not (IntegrationKind.Notion or IntegrationKind.Airtable)) throw Invalid("kind", "Only Notion and Airtable have a database or table to choose.");
+        if (string.IsNullOrWhiteSpace(r?.Target) || r.Target.Length > 200 || r.Table?.Length > 200)
+            throw Invalid("target", kind == IntegrationKind.Notion ? "Choose a database." : "Choose a table.");
+        var row = await RowAsync(kind, ct);
+        var token = await oauth.AccessTokenAsync(row, ct);
+        string label, settings;
+        try { (label, settings) = await Target(kind).VerifyAsync(token, r.Target, r.Table, ct); }
+        catch (ConnectorProblem p) { throw Invalid("target", p.Message); }
+        row.ChangeTarget(label, ConnectorOauthService.KeepOauth(settings, row.SettingsJson));
+        await db.SaveChangesAsync(ct);
+        return Dto(row, feedBase);
+    }
+
+    private static string NeedsTargetMessage(IntegrationKind kind) =>
+        kind == IntegrationKind.Notion ? "Choose which Notion database leads go to first." : "Choose which Airtable table leads go to first.";
+
     public static LeadRecord Lead(Opportunity o, string? email)
     {
         var website = o.Mode == OpportunityMode.Job ? null : o.Url;
@@ -160,14 +204,19 @@ public sealed class IntegrationService(
     }
 
     private ILeadTarget Target(IntegrationKind kind) => targets.First(t => t.Kind == kind);
+    private IPeopleSource Source(IntegrationKind kind) => people.First(t => t.Kind == kind);
 
     private async Task<IntegrationConnection> RowAsync(IntegrationKind kind, CancellationToken ct) =>
         await db.IntegrationConnections.FirstOrDefaultAsync(c => c.OwnerId == user.OwnerId && c.Kind == kind, ct)
         ?? throw new NotFoundException($"{IntegrationKinds.Name(kind)} is not connected.");
 
-    private IntegrationDto Dto(IntegrationConnection row, string feedBase) => new(row.Kind, true, row.Label, IntegrationEvents.Parse(row.Events),
-        row.ConnectedAt, row.LastUsedAt, row.LastError,
-        row.Kind == IntegrationKind.CalendarFeed && protector.Unprotect(row.EncryptedSecret) is { } key ? $"{feedBase.TrimEnd('/')}/api/v1/calendar/{row.Id:N}/{key}.ics" : null);
+    private IntegrationDto Dto(IntegrationConnection row, string feedBase)
+    {
+        var (signedIn, needsTarget) = ConnectorOauthService.Flags(row.SettingsJson);
+        return new(row.Kind, true, row.Label, IntegrationEvents.Parse(row.Events), row.ConnectedAt, row.LastUsedAt, row.LastError,
+            row.Kind == IntegrationKind.CalendarFeed && protector.Unprotect(row.EncryptedSecret) is { } key ? $"{feedBase.TrimEnd('/')}/api/v1/calendar/{row.Id:N}/{key}.ics" : null,
+            oauth.Configured(row.Kind), signedIn, needsTarget);
+    }
 
     private static RequestValidationException Invalid(string field, string message) => new(new Dictionary<string, string[]> { [field] = [message] });
 }

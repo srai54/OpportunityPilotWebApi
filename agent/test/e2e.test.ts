@@ -29,7 +29,7 @@ const campaign: AgentCampaign = {
 const config = (api = { url: '', key: '' }): Config => ({
   ...EXAMPLE_CONFIG,
   api,
-  limits: { maxApplicationsPerRun: 10, maxApplicationsPerDay: 25, pauseSeconds: [0, 0], maxPages: 1, maxPostingsPerCollect: 30 },
+  limits: { ...EXAMPLE_CONFIG.limits, maxApplicationsPerRun: 10, maxApplicationsPerDay: 25, pauseSeconds: [0, 0], maxPages: 1, maxPostingsPerCollect: 30 },
   answers: { ...EXAMPLE_CONFIG.answers, skills: { 'c#': 6 } },
 })
 

@@ -28,7 +28,8 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
             throw Invalid("channel", "Cover notes can only be created for Job opportunities.");
         if (await db.OutreachDrafts.AnyAsync(d => d.OwnerId == ownerId && d.OpportunityId == opportunityId && d.Channel == request.Channel, ct))
             throw new ConflictException($"This opportunity already has a {ChannelName(request.Channel)} draft. Edit the existing draft instead.");
-        await EnsureNotSuppressedAsync(request.Recipient, ct);
+        var recipient = NormalizeRecipient(request.Channel, request.Recipient);
+        await EnsureNotSuppressedAsync(recipient, ct);
 
         var campaign = await db.Campaigns.FirstAsync(c => c.Id == opportunity.CampaignId && c.OwnerId == ownerId, ct);
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == campaign.ProfileId && p.OwnerId == ownerId, ct)
@@ -42,8 +43,8 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         // Every claim taken from the profile names the exact version it came from (P2).
         generated = (generated.Body, generated.Claims.Select(c => c.Basis == "Profile" ? c with { Basis = $"Profile v{profile.Version}" } : c).ToList());
         var now = clock.GetUtcNow().UtcDateTime;
-        var recipientEvidence = RecipientEvidence(request.Recipient, opportunity.FactsJson);
-        var draft = new OutreachDraft(ownerId, opportunity.Id, request.Channel, request.Recipient, recipientEvidence is not null, null,
+        var recipientEvidence = RecipientEvidence(recipient, opportunity.FactsJson);
+        var draft = new OutreachDraft(ownerId, opportunity.Id, request.Channel, recipient, recipientEvidence is not null, null,
             generated.Body, DraftSource.Template, JsonSerializer.Serialize(generated.Claims, Json), now);
         db.OutreachDrafts.Add(draft);
         events.Add(UserEventKinds.DraftCreated, $"Wrote {WithArticle(ChannelName(request.Channel))} draft", opportunity.Id, opportunity.Title);
@@ -111,11 +112,12 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         var draft = await FindAsync(id, ct);
         if (draft.Version != request.ExpectedVersion)
             throw new ConflictException($"Draft was changed elsewhere (now version {draft.Version}). Reload before saving.");
-        await EnsureNotSuppressedAsync(request.Recipient, ct);
+        var recipient = NormalizeRecipient(draft.Channel, request.Recipient);
+        await EnsureNotSuppressedAsync(recipient, ct);
         try
         {
-            var verified = RecipientEvidence(request.Recipient, await OpportunityFactsAsync(draft.OpportunityId, ct)) is not null;
-            draft.Update(request.Recipient, verified, request.Subject, request.Body, clock.GetUtcNow().UtcDateTime);
+            var verified = RecipientEvidence(recipient, await OpportunityFactsAsync(draft.OpportunityId, ct)) is not null;
+            draft.Update(recipient, verified, request.Subject, request.Body, clock.GetUtcNow().UtcDateTime);
             await LogDraftAsync(UserEventKinds.DraftEdited, $"Edited the {ChannelName(draft.Channel)} draft (version {draft.Version})", draft.OpportunityId, ct);
             await db.SaveChangesAsync(ct);
         }
@@ -352,6 +354,22 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         var match = facts.FirstOrDefault(f => !f.IsInference && !string.IsNullOrWhiteSpace(f.EvidenceId) &&
             f.Value.Replace("mailto:", string.Empty, StringComparison.OrdinalIgnoreCase).Contains(normalized, StringComparison.OrdinalIgnoreCase));
         return Guid.TryParse(match?.EvidenceId, out var id) ? id : null;
+    }
+
+    /// <summary>
+    /// A LinkedIn message may be addressed to a person's name or to their LinkedIn profile link; a link is stored in its one normal
+    /// form (https://www.linkedin.com/in/{slug}) so the desktop agent's outbox and the suppression list recognise it. Any other web
+    /// address is refused. Other channels keep the recipient as typed.
+    /// </summary>
+    private static string? NormalizeRecipient(DraftChannel channel, string? recipient)
+    {
+        if (channel != DraftChannel.LinkedInMessage || string.IsNullOrWhiteSpace(recipient)) return recipient;
+        var trimmed = recipient.Trim();
+        var looksLikeLink = trimmed.Contains("linkedin.com", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("://", StringComparison.Ordinal)
+                            || trimmed.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
+        if (!looksLikeLink) return recipient;
+        return Domain.Circle.LinkedInProfileUrl.NormalizeOrNull(trimmed)
+               ?? throw Invalid("recipient", "Use a LinkedIn profile link like https://www.linkedin.com/in/name, or the person's name.");
     }
 
     private static bool ContainsUnresolvedPlaceholder(string? value)

@@ -82,7 +82,7 @@ public sealed class AgentKeyService(IAppDbContext db, ICurrentUser user, TimePro
     }
 
     public static IReadOnlyList<string> ScopeNames(AgentKeyScope scopes) =>
-        new[] { AgentKeyScope.Research, AgentKeyScope.Shortlist, AgentKeyScope.Applications }.Where(s => scopes.HasFlag(s)).Select(s => s.ToString()).ToList();
+        new[] { AgentKeyScope.Research, AgentKeyScope.Shortlist, AgentKeyScope.Applications, AgentKeyScope.People }.Where(s => scopes.HasFlag(s)).Select(s => s.ToString()).ToList();
 
     private static AgentKeyScope ParseScopes(IReadOnlyList<string>? names)
     {
@@ -91,7 +91,7 @@ public sealed class AgentKeyService(IAppDbContext db, ICurrentUser user, TimePro
         foreach (var name in names)
         {
             if (!Enum.TryParse<AgentKeyScope>(name, ignoreCase: true, out var s) || s is AgentKeyScope.None or AgentKeyScope.All)
-                throw new RequestValidationException(new Dictionary<string, string[]> { ["scopes"] = [$"Unknown scope \"{name}\". Use Research, Shortlist or Applications."] });
+                throw new RequestValidationException(new Dictionary<string, string[]> { ["scopes"] = [$"Unknown scope \"{name}\". Use Research, Shortlist, Applications or People."] });
             result |= s;
         }
         return result;

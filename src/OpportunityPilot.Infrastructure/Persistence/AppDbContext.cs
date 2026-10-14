@@ -70,6 +70,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<Domain.Integrations.IntegrationConnection> IntegrationConnections => Set<Domain.Integrations.IntegrationConnection>();
     public DbSet<CandidateProgressLink> CandidateProgressLinks => Set<CandidateProgressLink>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
+    public DbSet<Domain.Circle.CirclePerson> CirclePeople => Set<Domain.Circle.CirclePerson>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -197,7 +198,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
         modelBuilder.Entity<AgentKey>(e =>
         {
             e.ToTable("agent_keys");
-            e.Property(k => k.Scopes).HasConversion<int>().HasDefaultValue(AgentKeyScope.All);
+            e.Property(k => k.Scopes).HasConversion<int>().HasDefaultValue(AgentKeyScope.All);  // 15 since People; migration AddJdCircle moved stored 7 to 15
             e.HasKey(k => k.Id);
             e.Property(k => k.Id).ValueGeneratedNever();
             e.Property(k => k.Name).HasMaxLength(100).IsRequired();
@@ -352,6 +353,22 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.HasIndex(o => new { o.CampaignId, o.DedupeKey }).IsUnique();
             e.HasIndex(o => new { o.OwnerId, o.CampaignId, o.Score });
             e.HasIndex(o => new { o.OwnerId, o.Status, o.UpdatedAt });
+            e.Ignore(o => o.CircleWaiting);
+        });
+
+        modelBuilder.Entity<Domain.Circle.CirclePerson>(e =>
+        {
+            e.ToTable("circle_people");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasMaxLength(Domain.Circle.CirclePerson.MaxNameLength).IsRequired();
+            e.Property(x => x.Headline).HasMaxLength(Domain.Circle.CirclePerson.MaxHeadlineLength);
+            e.Property(x => x.ProfileUrl).HasMaxLength(Domain.Circle.LinkedInProfileUrl.MaxLength).IsRequired();
+            e.Property(x => x.Relation).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Source).HasConversion<string>().HasMaxLength(32);
+            e.HasOne<Opportunity>().WithMany().HasForeignKey(x => x.OpportunityId).OnDelete(DeleteBehavior.Cascade);
+            // One row per person per lead; InMemory does not enforce it, so CircleService checks too.
+            e.HasIndex(x => new { x.OwnerId, x.OpportunityId, x.ProfileUrl }).IsUnique();
         });
 
         modelBuilder.Entity<OpportunityEvidence>(e =>

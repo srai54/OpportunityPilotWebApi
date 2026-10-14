@@ -123,3 +123,53 @@ The agent shortlist now lists only LinkedIn, Naukri and InstaHyre jobs (before, 
 | LinkedIn feed (`linkedin.com/feed`) | Behind your login; LinkedIn APIs are partner-only; reading it would be scraping | Live LinkedIn postings (above); the local agent applies through your own browser |
 | Stellantis "thehub" (`idpm.stellantis.com`) | A private corporate sign-in portal (employee/supplier identity), not a job source; no public jobs or API | Nothing. Add Stellantis' public careers board as a campaign source if it uses a supported ATS |
 | Upwork | Official GraphQL API (`api.upwork.com/graphql`, `marketplaceJobPostingsSearch`) needs an approved key and the Authorization Code grant (your Upwork account connected); job RSS feeds were retired in 2024 | Shown as *Not built yet* (W14). The client is built once the key is approved and the query can be tested (TASKS U6 → W16). Proposals/Connects are never spent by the app |
+
+## 2026-10-14 — JD circle and LinkedIn notes run only in the person's own browser (JDC1, LI1)
+
+**Decision:** the people around a lead (recruiters, hiring managers, team, the person's own connections) are read by the local
+desktop agent from LinkedIn people search in the person's own logged-in browser, only for leads the person asked to map, and only
+from the visible result cards (name, headline, profile link, degree). Approved `LinkedInMessage` drafts addressed to a profile link
+are sent by the same agent: a dry run by default (fills the Connect → "Add a note" dialog or the message box, no final click);
+real sends need `--submit` and `"iUnderstandAccountRisk": true`, are capped per day (config, default 10; server ceiling 25), stop at
+any checkpoint or CAPTCHA, and go through the provider gateway (provider `LinkedInAgent`) so approval-version, suppression, quota and
+at-most-once hold exactly as for mailbox sends. The circle request is two nullable columns on `opportunities`
+(`CircleRequestedAt`, `CircleMappedAt`) rather than a table: one request per lead is all that is needed.
+
+**Why:** the user asked for the people around a job and for notes that actually get sent. The API stays free of logged-in platform
+automation (CLAUDE.md guardrail); the agent already holds the person's own LinkedIn session for Easy Apply. Unofficial automation can
+restrict a LinkedIn account, hence dry-run default, low caps and the same explicit risk opt-in as applying. Not verified against
+live LinkedIn: selectors follow LinkedIn's known structure and are proven only against the mock site.
+
+## 2026-10-14 — One-click connectors by sign-in (Notion, HubSpot, Slack, Airtable)
+
+People could not create and paste access tokens. These four now also connect through the service's own consent screen (OAuth), the
+way ChatGPT's connectors do; the token/webhook form stays as "Use a token instead".
+
+- One provider table (`OauthProviders`) holds each service's addresses, scopes, PKCE and client-authentication style, taken from its docs.
+- The existing `integration_connections` row is reused, so no migration: the access token is the encrypted secret (as a pasted token was);
+  the refresh token is encrypted again inside `settings_json` under `oauth` with its expiry. Slack keeps only `incoming_webhook.url`, so
+  notifications are unchanged. Access tokens are refreshed 2 minutes before they expire (HubSpot 30 min, Airtable 60 min).
+- The sealed state reuses `TokenProtector` with a `connector` purpose, so a mailbox sign-in state cannot be replayed here.
+- Notion and Airtable need a second step: the person picks the database/table (`GET …/targets`, `PUT …/target`), then the same column
+  matching runs as for a pasted link.
+- Notion's search is called with the `Notion-Version` the rest of the connector uses (2022-06-28, filter `object = database`); the newest API
+  version renames databases to data sources, which would change every Notion call and is left for a separate change.
+
+## 2026-10-14 — Hanko is the main sign-in; Supabase stays as the fallback (HANKO)
+
+**Decision:** when `Auth:HankoApiUrl` is set, the API accepts Hanko session JWTs through a second JwtBearer scheme
+(`Hanko`) next to the unchanged Supabase scheme. Keys come from `{HankoApiUrl}/.well-known/jwks.json` (cached, refreshed on
+an unknown `kid` at most every 30 s); only asymmetric algorithms; expiry required; `aud` checked when `Auth:HankoAudience`
+is set (Hanko puts the passkey relying-party id there); `iss` must be absent or the Hanko API URL unless `Auth:HankoIssuer`
+names it. The owner id is a name-based UUID (RFC 9562 v8, SHA-256) of `hanko:{user id}` under a fixed namespace, so Hanko
+owners never collide with Supabase users or guests; the Hanko id is kept as the `hanko_sub` claim. Tokens issued by the
+configured Supabase project and guest tokens are skipped by the Hanko scheme. The web app shows Hanko's `<hanko-auth>` first
+and "Use the older sign-in (Supabase)" second.
+
+**Why:** the user chose Hanko (open source; passkeys, passwords, email codes, TOTP and security-key MFA) as the main sign-in
+and wants Supabase to keep working. Two independent schemes keep Supabase validation exactly as it was.
+
+**Trade-offs:** a Hanko session revoked in Hanko keeps working on this API until its JWT expires (the API does not call
+Hanko's session-validate endpoint per request; Supabase access tokens behave the same way). The same person signing in once
+with Supabase and once with Hanko gets two separate workspaces; no account linking. Not verified against a live Hanko
+project (OQ-BE-032).
