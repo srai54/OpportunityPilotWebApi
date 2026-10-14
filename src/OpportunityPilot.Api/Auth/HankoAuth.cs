@@ -42,8 +42,10 @@ public static class HankoAuth
             return null;
         }
 
+        // Hanko puts the app's domain in "aud"; accept the setting written as a host or as a full URL, with or without a slash.
         var audiences = (options.HankoAudience ?? "")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .SelectMany(AudienceForms).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var issuer = string.IsNullOrWhiteSpace(options.HankoIssuer) ? null : options.HankoIssuer.Trim();
         return new Settings(url, audiences, issuer);
     }
@@ -84,11 +86,17 @@ public static class HankoAuth
                 ? issuer!
                 : throw new SecurityTokenInvalidIssuerException("The token issuer is not the configured Hanko issuer.");
 
-        // Hanko adds "iss" only when the project sets one. No issuer, or the API URL itself, is this project.
-        if (string.IsNullOrEmpty(issuer)) return settings.ApiUrl;
-        return string.Equals(issuer.TrimEnd('/'), settings.ApiUrl, StringComparison.OrdinalIgnoreCase)
-            ? issuer
-            : throw new SecurityTokenInvalidIssuerException("The token issuer is not this Hanko project.");
+        // The signing keys come only from this project's JWKS, so the signature already proves the token is this project's.
+        // Hanko Cloud may put the app's URL (not the API URL) in "iss"; requiring a match here only caused false sign-outs.
+        return string.IsNullOrEmpty(issuer) ? settings.ApiUrl : issuer;
+    }
+
+    /// <summary>"app.example.com", "https://app.example.com" and "https://app.example.com/" all name the same audience.</summary>
+    public static IEnumerable<string> AudienceForms(string value)
+    {
+        var v = value.Trim().TrimEnd('/');
+        var host = Uri.TryCreate(v, UriKind.Absolute, out var u) && u.Scheme is "https" or "http" ? u.Authority : v;
+        return [host, $"https://{host}", $"https://{host}/"];
     }
 
     /// <summary>

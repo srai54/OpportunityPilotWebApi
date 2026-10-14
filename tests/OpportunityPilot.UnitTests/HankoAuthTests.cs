@@ -103,7 +103,9 @@ public class HankoAuthTests
         var settings = Settings(" app.example.test , localhost ");
         Assert.Equal(ApiUrl, settings.ApiUrl);
         Assert.Equal($"{ApiUrl}/.well-known/jwks.json", settings.JwksUrl);
-        Assert.Equal(["app.example.test", "localhost"], settings.Audiences);
+        Assert.Contains("app.example.test", settings.Audiences);
+        Assert.Contains("localhost", settings.Audiences);
+        Assert.Contains("https://app.example.test", settings.Audiences);
     }
 
     [Fact]
@@ -152,16 +154,25 @@ public class HankoAuthTests
     }
 
     [Theory]
-    [InlineData("https://other-project.hanko.io")]
-    [InlineData("https://abc.supabase.co/auth/v1")]
-    public async Task A_token_from_another_issuer_is_rejected(string issuer)
+    [InlineData("https://opportunity-pilot-webapp.vercel.app")]
+    [InlineData("hanko")]
+    public async Task A_token_signed_by_this_project_is_accepted_whatever_issuer_hanko_cloud_writes(string issuer)
     {
         var (jwks, _) = Keys(() => Jwks(KeyA));
 
-        var result = await Validate(Token(KeyA, issuer: issuer), Settings(), jwks);
+        Assert.True((await Validate(Token(KeyA, issuer: issuer), Settings(), jwks)).IsValid);
+    }
 
-        Assert.False(result.IsValid);
-        Assert.IsType<SecurityTokenInvalidIssuerException>(result.Exception);
+    [Theory]
+    [InlineData("app.example.test")]
+    [InlineData("https://app.example.test")]
+    [InlineData("https://app.example.test/")]
+    public async Task The_audience_setting_works_as_a_host_or_a_url(string setting)
+    {
+        var (jwks, _) = Keys(() => Jwks(KeyA));
+
+        Assert.True((await Validate(Token(KeyA, audience: "app.example.test"), Settings(audience: setting), jwks)).IsValid);
+        Assert.False((await Validate(Token(KeyA, audience: "other.example.test"), Settings(audience: setting), jwks)).IsValid);
     }
 
     [Fact]
