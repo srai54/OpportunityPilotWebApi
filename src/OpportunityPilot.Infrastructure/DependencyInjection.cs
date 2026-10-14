@@ -41,7 +41,8 @@ public static class DependencyInjection
         services.AddSingleton<FetchConcurrency>();
         services.AddSingleton<IContentParser, ContentParser>();
         services.AddScoped<IWellfoundPublicJobReader, WellfoundPublicJobReader>();
-        services.AddHttpClient<IJobBoardSearch, JsearchBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
+        // 130 s: a Naukri search runs an Apify scraper synchronously (usually 20–60 s); JSearch answers in a few seconds.
+        services.AddHttpClient<IJobBoardSearch, JsearchBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(130));
         services.AddHttpClient<IRapidApiBoardSearch, RapidApiBoardClient>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddHttpClient<Application.Mail.IMailTransport, Mail.MailTransport>(c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddScoped<Application.Mail.IMailboxReader, Mail.ImapMailboxReader>();

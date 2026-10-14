@@ -12,7 +12,7 @@ namespace OpportunityPilot.Infrastructure.Research;
 /// logged. Identical searches are served from memory for <see cref="JsearchOptions.CacheMinutes"/> so the free quota lasts.
 /// </summary>
 public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions> options, TimeProvider clock,
-    ILogger<JsearchBoardClient> logger, Application.Common.OperationalMetrics metrics) : IJobBoardSearch
+    ILogger<JsearchBoardClient> logger, Application.Common.OperationalMetrics metrics, IOptions<ApifyOptions>? apify = null) : IJobBoardSearch
 {
     private static readonly ConcurrentDictionary<string, JobBoardSearchResult> Cache = new();
     private static int? LastRemaining;
@@ -27,6 +27,7 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
         if (!o.Configured)
             return new(request.Board, "NotConfigured", [], 0, $"Live {name} listings need a JSearch key on the server (Jsearch__Key).", null, false, source);
 
+        if (request.Board == JobBoard.Naukri && apify?.Value is { Configured: true } a) return await NaukriAsync(request, a, ct);
         // Naukri and Instahyre do not publish to Google for Jobs (live check 2026-10-14: 19 postings, none from Naukri), so
         // JSearch cannot return them; say so instead of spending the monthly quota on empty searches.
         if (request.Board is JobBoard.Naukri or JobBoard.Instahyre)
@@ -112,6 +113,49 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
             logger.LogWarning("JSearch request failed: {Type}", e.GetType().Name);
             metrics.Record("jsearch.search", clock.GetElapsedTime(started), e.GetType().Name);
             return new(request.Board, "Failed", [], 0, "JSearch could not be reached. Try again later.", now, false, source);
+        }
+    }
+
+    /// <summary>Naukri through the Apify actor: one synchronous run returns the jobs on Naukri's own search page. Cached per search.</summary>
+    private async Task<JobBoardSearchResult> NaukriAsync(JobBoardSearchRequest request, ApifyOptions a, CancellationToken ct)
+    {
+        const string source = "Naukri, read through an Apify scraper";
+        var now = clock.GetUtcNow().UtcDateTime;
+        var searchUrl = NaukriApify.SearchUrl(request.Query, request.Location);
+        var cacheKey = "naukri|" + searchUrl;
+        if (Cache.TryGetValue(cacheKey, out var cached) && cached.ObservedAt > now.AddMinutes(-a.CacheMinutes)) return cached with { FromCache = true };
+        try
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Post,
+                $"https://api.apify.com/v2/acts/{Uri.EscapeDataString(a.NaukriActor)}/run-sync-get-dataset-items?timeout=110&clean=true");
+            message.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", a.Token);
+            message.Content = new StringContent(NaukriApify.Input(searchUrl, a.MaxJobs), System.Text.Encoding.UTF8, "application/json");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(120));
+            using var response = await http.SendAsync(message, timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                var code = (int)response.StatusCode;
+                logger.LogWarning("Apify Naukri run answered {Code}", code);
+                var why = code switch
+                {
+                    401 or 403 => "Apify refused the token. Check Apify__Token on the server.",
+                    402 => "The free Apify credit for this month is used up. Naukri search resumes next month.",
+                    408 => "Naukri took too long to answer. Try again in a minute.",
+                    _ => $"The Naukri reader answered {code}. Try again later.",
+                };
+                return new(request.Board, "Failed", [], 0, why, now, false, source);
+            }
+            var jobs = NaukriApify.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            var result = new JobBoardSearchResult(request.Board, "Ready", jobs, jobs.Count,
+                jobs.Count == 0 ? "Naukri had no jobs for this search. Try fewer words or another city." : null, now, false, source);
+            if (jobs.Count > 0) Cache[cacheKey] = result;
+            return result;
+        }
+        catch (Exception e) when ((e is HttpRequestException or TaskCanceledException or JsonException) && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Apify Naukri run failed: {Type}", e.GetType().Name);
+            return new(request.Board, "Failed", [], 0, "Naukri could not be read right now. Try again in a minute.", now, false, source);
         }
     }
 }
