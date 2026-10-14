@@ -47,7 +47,7 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
                 break;
             case SourceKind.Greenhouse or SourceKind.Lever or SourceKind.Adzuna or SourceKind.Ashby or SourceKind.SmartRecruiters or
                 SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.Remotive or SourceKind.RemoteOk or SourceKind.Arbeitnow or SourceKind.Jobicy or
-                SourceKind.WeWorkRemotely or SourceKind.TheMuse when mode != OpportunityMode.Job:
+                SourceKind.WeWorkRemotely or SourceKind.TheMuse or SourceKind.Instahyre when mode != OpportunityMode.Job:
                 errors["kind"] = [$"{request.Kind} sources list jobs, so they can only be added to Job campaigns."];
                 break;
             case SourceKind.Greenhouse:
@@ -88,7 +88,7 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
                         ? "Enter the company's Workday careers URL, e.g. https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite."
                         : "Enter a public careers URL on myworkdayjobs.com (https://<company>.wd<N>.myworkdayjobs.com/<site>); sign-in and account pages are not accepted."];
                 break;
-            case SourceKind.Remotive or SourceKind.RemoteOk or SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse:
+            case SourceKind.Remotive or SourceKind.RemoteOk or SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse or SourceKind.Instahyre:
                 break;
             case SourceKind.JobSearch:
                 // The board is stored; the search itself uses the campaign's keywords and first location at run time.
@@ -179,6 +179,7 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
             SourceKind.Jobicy => "Jobicy remote jobs",
             SourceKind.WeWorkRemotely => "We Work Remotely jobs",
             SourceKind.TheMuse => "The Muse jobs",
+            SourceKind.Instahyre => "Instahyre jobs",
             _ => kind.ToString()
         };
     }

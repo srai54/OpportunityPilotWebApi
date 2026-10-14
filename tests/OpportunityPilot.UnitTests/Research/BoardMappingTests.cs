@@ -484,4 +484,23 @@ public class BoardMappingTests
         Assert.True(JobBoardGatherer.MatchesKeywords(intern, ["react developer", "compliance"]));
         Assert.True(JobBoardGatherer.MatchesKeywords(intern, []));
     }
+
+    [Fact]
+    public void Instahyre_maps_company_place_skills_and_public_link_and_drops_a_posting_without_one()
+    {
+        const string page = """
+            {"meta":{"total_count":2},"objects":[
+              {"id":445945,"title":"SDE III - Agentic AI","locations":"Bangalore","keywords":["Agentic AI","LLM"],
+               "public_url":"https://www.instahyre.com/job-445945-sde-iii-agentic-ai-at-arintra-bangalore/",
+               "employer":{"company_name":"Arintra","company_tagline":"Improving revenue for hospitals"}},
+              {"id":2,"title":"No link","locations":"Work From Home","employer":{"company_name":"X"}}]}
+            """;
+        var items = BoardMapping.InstahyreCandidates(page, SourceOf(SourceKind.Instahyre, null, "Instahyre"))!;
+
+        var job = Assert.Single(items);
+        Assert.Equal((JobPlatform.Instahyre, "445945", "Arintra", "Bangalore"), (job.Platform, job.ExternalId, job.Organization, job.Location));
+        Assert.Equal("https://www.instahyre.com/job-445945-sde-iii-agentic-ai-at-arintra-bangalore/", job.ApplyUrl);
+        Assert.Contains("Skills: Agentic AI, LLM", job.Text);
+        Assert.Null(BoardMapping.InstahyreCandidates("{\"detail\":\"blocked\"}", SourceOf(SourceKind.Instahyre, null, "Instahyre")));
+    }
 }

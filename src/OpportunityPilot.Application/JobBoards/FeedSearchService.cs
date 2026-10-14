@@ -12,7 +12,7 @@ namespace OpportunityPilot.Application.JobBoards;
 /// The job sites "Search all" can read live. All are free public feeds without a key, except Adzuna, which needs the server's
 /// <c>Adzuna__AppId</c>/<c>Adzuna__AppKey</c> and reports NotConfigured (without calling out) when they are missing.
 /// </summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna }
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -54,6 +54,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.Remotive => "Remotive",
         FeedSite.Himalayas => "Himalayas",
         FeedSite.TheMuse => "The Muse",
+        FeedSite.Instahyre => "Instahyre",
         FeedSite.Adzuna => "Adzuna",
         _ => "Remote OK"
     };
@@ -97,11 +98,14 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         if (site != FeedSite.Himalayas && Cache.TryGetValue(site, out var hit) && now - hit.At < CacheFor) { pages = hit.Pages; fromCache = true; }
         else
         {
-            if (site == FeedSite.TheMuse)
+            if (site is FeedSite.TheMuse or FeedSite.Instahyre)
             {
-                // No word search and 20 postings a page: the newest few pages are read together. The first must answer; a later one failing is skipped.
-                var answers = await Task.WhenAll(Enumerable.Range(0, ResearchOptions.TheMusePages)
-                    .Select(p => fetcher.FetchJsonAsync(ResearchOptions.TheMuseUrl(_limits.TheMuseApiBase, p), ct, ResearchOptions.LargeFeedBytes)));
+                // No word search: the newest few pages are read together. The first must answer; a later one failing is skipped.
+                var answers = site == FeedSite.TheMuse
+                    ? await Task.WhenAll(Enumerable.Range(0, ResearchOptions.TheMusePages)
+                        .Select(p => fetcher.FetchJsonAsync(ResearchOptions.TheMuseUrl(_limits.TheMuseApiBase, p), ct, ResearchOptions.LargeFeedBytes)))
+                    : await Task.WhenAll(Enumerable.Range(0, ResearchOptions.InstahyrePages)
+                        .Select(p => fetcher.FetchJsonAsync(ResearchOptions.InstahyreUrl(_limits.InstahyreApiBase, p), ct, ResearchOptions.LargeFeedBytes)));
                 if (!answers[0].Ok || answers[0].Content is null)
                     return (site, [], new(name, "Failed", 0, 0, answers[0].FailureReason ?? $"{name} could not be read.", false));
                 pages = answers.TakeWhile(a => a.Ok && a.Content is not null).Select(a => a.Content!).ToList();
@@ -126,7 +130,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var kind = site switch
         {
             FeedSite.Arbeitnow => SourceKind.Arbeitnow, FeedSite.Jobicy => SourceKind.Jobicy, FeedSite.WeWorkRemotely => SourceKind.WeWorkRemotely,
-            FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, FeedSite.TheMuse => SourceKind.TheMuse, _ => SourceKind.RemoteOk
+            FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, FeedSite.TheMuse => SourceKind.TheMuse, FeedSite.Instahyre => SourceKind.Instahyre, _ => SourceKind.RemoteOk
         };
         var source = new Source(Guid.NewGuid(), Guid.NewGuid(), kind, name, null, null, null, null, now);
         var candidates = new List<Candidate>();
@@ -141,6 +145,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
                 FeedSite.Himalayas => BoardMapping.HimalayasCandidates(text, source, parser),
                 FeedSite.Remotive => BoardMapping.RemotiveCandidates(text, source, parser),
                 FeedSite.TheMuse => BoardMapping.TheMuseCandidates(text, source, parser),
+                FeedSite.Instahyre => BoardMapping.InstahyreCandidates(text, source),
                 _ => BoardMapping.RemoteOkCandidates(text, source, parser)
             };
             if (read is null && page == 0) return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", fromCache));

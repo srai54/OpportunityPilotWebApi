@@ -55,5 +55,8 @@ public enum SourceKind
     WeWorkRemotely,
 
     /// <summary>The free public The Muse jobs API (newest postings, US, Europe and remote).</summary>
-    TheMuse
+    TheMuse,
+
+    /// <summary>Instahyre's public job-search JSON (India tech jobs, no login or key).</summary>
+    Instahyre
 }

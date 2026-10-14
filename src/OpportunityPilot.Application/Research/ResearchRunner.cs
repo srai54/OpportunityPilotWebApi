@@ -147,7 +147,7 @@ public sealed class ResearchRunner(
         // rest; whatever a source leaves unused flows on to the next one.
         static bool Fetches(SourceKind k) => k is SourceKind.Url or SourceKind.Feed or SourceKind.Greenhouse or SourceKind.Lever or SourceKind.Adzuna or
             SourceKind.Ashby or SourceKind.SmartRecruiters or SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.JobSearch or SourceKind.Remotive or SourceKind.RemoteOk or
-            SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse;
+            SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse or SourceKind.Instahyre;
         var fetchingLeft = sources.Count(s => Fetches(s.Kind));
         var sourcesLeft = sources.Count;
         foreach (var source in sources)
@@ -307,7 +307,7 @@ public sealed class ResearchRunner(
             }
             case SourceKind.Greenhouse or SourceKind.Lever or SourceKind.Adzuna or SourceKind.Ashby or SourceKind.SmartRecruiters or
                 SourceKind.Recruitee or SourceKind.Workable or SourceKind.Workday or SourceKind.Remotive or SourceKind.RemoteOk or
-                SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse:
+                SourceKind.Arbeitnow or SourceKind.Jobicy or SourceKind.WeWorkRemotely or SourceKind.TheMuse or SourceKind.Instahyre:
             {
                 if (mode != OpportunityMode.Job)
                     return new(SourceStatus.Skipped, "Job-board sources are read for Job campaigns only.", [], 0,

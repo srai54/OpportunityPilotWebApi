@@ -45,6 +45,7 @@ public sealed class ResearchOptions
     public string HimalayasApiBase { get; set; } = DefaultHimalayasApiBase;
     public string WeWorkRemotelyBase { get; set; } = DefaultWeWorkRemotelyBase;
     public string TheMuseApiBase { get; set; } = DefaultTheMuseApiBase;
+    public string InstahyreApiBase { get; set; } = DefaultInstahyreApiBase;
 
     public const string DefaultGreenhouseApiBase = "https://boards-api.greenhouse.io";
     public const string DefaultLeverApiBase = "https://api.lever.co";
@@ -60,6 +61,14 @@ public sealed class ResearchOptions
     public const string DefaultHimalayasApiBase = "https://himalayas.app";
     public const string DefaultWeWorkRemotelyBase = "https://weworkremotely.com";
     public const string DefaultTheMuseApiBase = "https://www.themuse.com";
+    public const string DefaultInstahyreApiBase = "https://www.instahyre.com";
+
+    /// <summary>Instahyre answers 35 postings a page and ignores word filters, so a few pages are read and kept by keyword.</summary>
+    public const int InstahyrePages = 4;
+
+    /// <summary>Instahyre's public job search (the JSON its own job page loads), one page of 35.</summary>
+    public static string InstahyreUrl(string apiBase, int page) =>
+        $"{(string.IsNullOrWhiteSpace(apiBase) ? DefaultInstahyreApiBase : apiBase).TrimEnd('/')}/api/v1/job_search?limit=35&offset={page * 35}";
 
     /// <summary>The Muse answers 20 postings a page and has no word search, so its newest few pages are read (60 postings, one request each).</summary>
     public const int TheMusePages = 3;

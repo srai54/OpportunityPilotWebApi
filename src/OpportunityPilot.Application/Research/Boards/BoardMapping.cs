@@ -140,6 +140,29 @@ public static class BoardMapping
     /// The Muse's public jobs API (one page): <c>{ page, page_count, results: [{ id, name, contents, publication_date, locations: [{ name }],
     /// levels: [{ name }], company: { name }, refs: { landing_page } }] }</c>. A posting without a title or an http(s) link is dropped.
     /// </summary>
+    public static IReadOnlyList<Candidate>? InstahyreCandidates(string? json, Source source)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root ||
+            Child(root, "objects") is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            var title = Text(row, "title") ?? Text(row, "candidate_title");
+            var url = HttpUrl(Text(row, "public_url"));
+            if (title is null || url is null) continue;
+            var employer = Child(row, "employer");
+            var places = Text(row, "locations");
+            var skills = Child(row, "keywords") is { ValueKind: JsonValueKind.Array } k
+                ? string.Join(", ", k.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString())) : null;
+            var remote = places?.Contains("Work From Home", StringComparison.OrdinalIgnoreCase) == true;
+            result.Add(Build(source, JobPlatform.Instahyre, Text(row, "id") ?? url, title, Text(employer, "company_name") ?? string.Empty,
+                places, remote ? "remote" : null, url, url, null,
+                Lines(string.IsNullOrEmpty(skills) ? null : "Skills: " + skills, Text(employer, "company_tagline"), Text(employer, "instahyre_note")), null));
+        }
+        return result;
+    }
+
     public static IReadOnlyList<Candidate>? TheMuseCandidates(string? json, Source source, IContentParser parser)
     {
         using var document = Parse(json);

@@ -67,6 +67,8 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
             $"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss",
             xml => BoardMapping.WeWorkRemotelyCandidates(xml, source, parser), ct, ResearchOptions.LargeFeedBytes, rss: true, criteria: criteria),
         SourceKind.TheMuse => TheMuseAsync(source, room, fetchesLeft, criteria, ct),
+        SourceKind.Instahyre => PagedAsync(source, room, fetchesLeft, criteria, ResearchOptions.InstahyrePages,
+            page => ResearchOptions.InstahyreUrl(_limits.InstahyreApiBase, page), json => BoardMapping.InstahyreCandidates(json, source), "Instahyre", ct),
         _ => throw new ArgumentOutOfRangeException(nameof(source), "Not a job-board source.")
     };
 
@@ -112,21 +114,27 @@ public sealed class JobBoardGatherer(IWebFetcher fetcher, IContentParser parser,
     /// The Muse has no word search and answers 20 postings a page, so its newest <see cref="ResearchOptions.TheMusePages"/> pages are read
     /// (one request each, within the run's budget) and then kept by keyword like the other free feeds. A later page failing keeps what was read.
     /// </summary>
-    private async Task<BoardGathered> TheMuseAsync(Source source, int room, int fetchesLeft, CampaignCriteria criteria, CancellationToken ct)
+    private Task<BoardGathered> TheMuseAsync(Source source, int room, int fetchesLeft, CampaignCriteria criteria, CancellationToken ct) =>
+        PagedAsync(source, room, fetchesLeft, criteria, ResearchOptions.TheMusePages, page => ResearchOptions.TheMuseUrl(_limits.TheMuseApiBase, page),
+            json => BoardMapping.TheMuseCandidates(json, source, parser), "The Muse", ct);
+
+    /// <summary>A public feed with no word search, read a few pages at a time (one request each, within the run's budget) and kept by keyword.</summary>
+    private async Task<BoardGathered> PagedAsync(Source source, int room, int fetchesLeft, CampaignCriteria criteria, int pages, Func<int, string> url,
+        Func<string?, IReadOnlyList<Candidate>?> read, string name, CancellationToken ct)
     {
         if (fetchesLeft <= 0) return FetchLimitReached(source);
         var all = new List<Candidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);   // a posting can move to the next page between two reads
         var requests = 0;
-        for (var page = 0; page < ResearchOptions.TheMusePages && fetchesLeft - requests > 0; page++)
+        for (var page = 0; page < pages && fetchesLeft - requests > 0; page++)
         {
-            var response = await fetcher.FetchJsonAsync(ResearchOptions.TheMuseUrl(_limits.TheMuseApiBase, page), ct, ResearchOptions.LargeFeedBytes);
+            var response = await fetcher.FetchJsonAsync(url(page), ct, ResearchOptions.LargeFeedBytes);
             requests += response.Requests;
-            var jobs = response.Ok ? BoardMapping.TheMuseCandidates(response.Content, source, parser) : null;
+            var jobs = response.Ok ? read(response.Content) : null;
             if (jobs is null)
             {
                 if (page > 0) break;
-                return Failed(source, response.Ok ? "The Muse sent a response that could not be read." : response.FailureReason ?? "The Muse could not be read.", requests);
+                return Failed(source, response.Ok ? $"{name} sent a response that could not be read." : response.FailureReason ?? $"{name} could not be read.", requests);
             }
             all.AddRange(jobs.Where(j => seen.Add(j.ExternalId ?? j.Title)));
             if (jobs.Count == 0) break;
