@@ -47,7 +47,8 @@ public sealed class ConnectorHttp(HttpClient http) : IConnectorHttp
         if (r.Bearer is not null) message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", r.Bearer);
         foreach (var (name, value) in r.Headers ?? new Dictionary<string, string>()) message.Headers.TryAddWithoutValidation(name, value);
         message.Headers.UserAgent.ParseAdd("OpportunityPilot/1.0");
-        if (r.JsonBody is not null) message.Content = new StringContent(r.JsonBody, Encoding.UTF8, "application/json");
+        if (r.Form is not null) message.Content = new FormUrlEncodedContent(r.Form);
+        else if (r.JsonBody is not null) message.Content = new StringContent(r.JsonBody, Encoding.UTF8, "application/json");
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
