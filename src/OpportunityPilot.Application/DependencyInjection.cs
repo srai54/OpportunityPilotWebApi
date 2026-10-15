@@ -32,7 +32,7 @@ public static class DependencyInjection
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
         services.AddScoped<AiService>();
-        services.AddScoped<DraftRewriteService>();
+        services.AddScoped<IDraftRewriteService, DraftRewriteService>();
         services.AddScoped<ApplicationService>();
         services.AddScoped<AgentKeyService>();
         services.AddScoped<GuestSessionService>();
@@ -48,8 +48,8 @@ public static class DependencyInjection
         services.AddScoped<LinkedInOutboxService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<AnalyticsService>();
-        services.AddScoped<DraftService>();
-        services.AddScoped<DraftPreparer>();
+        services.AddScoped<IDraftService, DraftService>();
+        services.AddScoped<IDraftPreparer, DraftPreparer>();
         services.AddScoped<OutreachService>();
         services.AddScoped<SalesService>();
         services.AddScoped<UpworkOpportunityService>();

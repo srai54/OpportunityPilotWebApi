@@ -15,7 +15,14 @@ namespace OpportunityPilot.Application.Drafts;
 /// opportunity's stated facts; a suggestion that adds a link or email address is dropped, other new numbers and names are
 /// flagged. Shares the AI switch and daily budget with <see cref="AiService"/>; never fakes a rewrite.
 /// </summary>
-public sealed class DraftRewriteService(IAppDbContext db, ICurrentUser user, ILlmClient llm, AiService ai)
+/// <summary>AI rewrite of one draft's tone or length.</summary>
+public interface IDraftRewriteService
+{
+    Task<DraftRewriteDto> RewriteAsync(Guid id, RewriteDraftRequest request, CancellationToken ct);
+}
+
+// Data access not yet behind IDraftRepository: unit tests build this service on an InMemory context.
+public sealed class DraftRewriteService(IAppDbContext db, ICurrentUser user, ILlmClient llm, AiService ai) : IDraftRewriteService
 {
     public const string Operation = "RewriteDraft";
     public const int MaxInstructionLength = 200;

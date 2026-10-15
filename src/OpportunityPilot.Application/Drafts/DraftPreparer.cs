@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Abstractions;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.Opportunities;
@@ -12,11 +11,17 @@ public sealed record PreparedDraftDto(Guid OpportunityId, string Title, string O
 
 public sealed record PrepareDraftsResult(int Written, int Skipped, int Remaining, IReadOnlyList<PreparedDraftDto> Items);
 
+/// <summary>Writes email drafts for a campaign's shortlisted leads (Sales hands-off, step one).</summary>
+public interface IDraftPreparer
+{
+    Task<PrepareDraftsResult> PrepareAsync(Guid campaignId, CancellationToken ct);
+}
+
 /// <summary>
 /// Sales hands-off, step one: for the shortlisted leads of a campaign that have no email yet, find the contact address the company itself
 /// published (never guessed) and write the email. Nothing is approved or sent here; the person still reviews and approves, then sends.
 /// </summary>
-public sealed class DraftPreparer(IAppDbContext db, ICurrentUser user, ContactFinder contacts, DraftService drafts)
+public sealed class DraftPreparer(IDraftRepository repository, ICurrentUser user, ContactFinder contacts, IDraftService drafts) : IDraftPreparer
 {
     /// <summary>One run looks at this many leads, because finding a contact can read the company's own pages.</summary>
     public const int MaxPerRun = 15;
@@ -24,12 +29,9 @@ public sealed class DraftPreparer(IAppDbContext db, ICurrentUser user, ContactFi
     public async Task<PrepareDraftsResult> PrepareAsync(Guid campaignId, CancellationToken ct)
     {
         var owner = user.OwnerId;
-        if (!await db.Campaigns.AnyAsync(c => c.Id == campaignId && c.OwnerId == owner, ct)) throw new NotFoundException("Campaign not found.");
+        if (!await repository.CampaignExistsAsync(owner, campaignId, ct)) throw new NotFoundException("Campaign not found.");
 
-        var withEmail = db.OutreachDrafts.Where(d => d.OwnerId == owner && d.Channel == DraftChannel.Email).Select(d => d.OpportunityId);
-        var pending = await db.Opportunities.AsNoTracking()
-            .Where(o => o.OwnerId == owner && o.CampaignId == campaignId && o.Status == OpportunityStatus.Shortlisted && !withEmail.Contains(o.Id))
-            .OrderByDescending(o => o.Score).ThenBy(o => o.Id).ToListAsync(ct);
+        var pending = await repository.ShortlistedWithoutEmailDraftAsync(owner, campaignId, ct);
 
         var items = new List<PreparedDraftDto>();
         foreach (var o in pending.Take(MaxPerRun))
@@ -49,7 +51,7 @@ public sealed class DraftPreparer(IAppDbContext db, ICurrentUser user, ContactFi
             }
             catch (Exception ex) when (ex is ConflictException or RequestValidationException or NotFoundException)
             {
-                db.ChangeTracker.Clear();
+                repository.ClearTracked();
                 var reason = ex is RequestValidationException v ? string.Join(" ", v.Errors.SelectMany(e => e.Value)) : ex.Message;
                 items.Add(new(o.Id, o.Title, "Skipped", reason, null, email));
             }
