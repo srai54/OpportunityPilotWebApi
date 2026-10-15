@@ -32,6 +32,9 @@ services:
       # Optional, main sign-in when set: Hanko Cloud API URL (https://<id>.hanko.io). Set VITE_HANKO_API_URL on the web too.
       - key: Auth__HankoApiUrl
         sync: false
+      # Optional: Whisper transcription for voice commands in browsers without speech recognition (POST /api/v1/voice/transcribe).
+      - key: OpenAi__Key
+        sync: false
       # Optional, recommended with Hanko: the web app's domain (passkey relying-party id), e.g. opportunitypilot.vercel.app
       - key: Auth__HankoAudience
         sync: false

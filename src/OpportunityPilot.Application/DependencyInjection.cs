@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddSingleton<Common.OperationalMetrics>();
         services.AddScoped<Common.RetentionService>();
         services.AddScoped<Outreach.ProviderGateway>();
+        services.AddScoped<Outreach.FollowUpDraftService>();
         services.AddSingleton<Mail.TokenProtector>();
         services.AddScoped<Mail.MailboxService>();
         services.AddScoped<Mail.ReplyCheckService>();

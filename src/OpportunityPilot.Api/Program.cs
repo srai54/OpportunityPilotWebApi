@@ -59,6 +59,7 @@ builder.Services.AddHostedService<ScheduleProcessor>();
 builder.Services.AddHostedService<RetentionProcessor>();
 builder.Services.AddHostedService<DigestProcessor>();
 builder.Services.AddHostedService<ReplyCheckProcessor>();
+builder.Services.AddHostedService<FollowUpDraftProcessor>();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 var allowedOriginPatterns = builder.Configuration.GetSection("Cors:AllowedOriginPatterns").Get<string[]>() ?? [];
