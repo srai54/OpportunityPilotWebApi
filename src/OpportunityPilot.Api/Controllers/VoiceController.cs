@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 
@@ -20,7 +21,40 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         : (config["OpenAi:Key"], "https://api.openai.com/v1/audio/transcriptions", "whisper-1");
 
     [HttpGet("status")]
-    public ActionResult<VoiceStatusDto> Status() => new VoiceStatusDto(!string.IsNullOrWhiteSpace(Provider.Key), Provider.Model);
+    public ActionResult<VoiceStatusDto> Status() => new VoiceStatusDto(!string.IsNullOrWhiteSpace(Provider.Key), Provider.Model, !string.IsNullOrWhiteSpace(GroqKey));
+
+    /// <summary>
+    /// A natural (human-sounding) English voice for the assistant's reply: Groq's Orpheus text-to-speech, returned as WAV. 503 without
+    /// a Groq key, 502 when Groq refuses (for example the model terms were not accepted yet); the browser then uses its own voice.
+    /// </summary>
+    [HttpPost("speak")]
+    public async Task<IActionResult> Speak(SpeakRequest request, CancellationToken ct)
+    {
+        var key = GroqKey;
+        if (string.IsNullOrWhiteSpace(key))
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Natural voice is not set up", detail: "Set Groq__ApiKey on the server.");
+        var text = request?.Text?.Trim() ?? "";
+        if (text.Length == 0) return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Nothing to say");
+        if (text.Length > 600) text = text[..600];
+        using var message = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/audio/speech")
+        {
+            Content = JsonContent.Create(new
+            {
+                model = config["Groq:TtsModel"] ?? "canopylabs/orpheus-v1-english",
+                voice = config["Groq:TtsVoice"] ?? "autumn",
+                input = text,
+                response_format = "wav",
+            }),
+        };
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        var client = http.CreateClient(nameof(VoiceController));
+        client.Timeout = TimeSpan.FromSeconds(30);
+        using var response = await client.SendAsync(message, ct);
+        if (!response.IsSuccessStatusCode)
+            return Problem(statusCode: StatusCodes.Status502BadGateway, title: "Natural voice unavailable", detail: $"The speech service answered {(int)response.StatusCode}.");
+        var audio = await response.Content.ReadAsByteArrayAsync(ct);
+        return File(audio, response.Content.Headers.ContentType?.MediaType ?? "audio/wav");
+    }
 
     [HttpPost("transcribe")]
     [RequestSizeLimit(MaxBytes + 64 * 1024)]
@@ -58,5 +92,6 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
     }
 }
 
-public sealed record VoiceStatusDto(bool Whisper, string Model);
+public sealed record VoiceStatusDto(bool Whisper, string Model, bool NaturalVoice = false);
+public sealed record SpeakRequest(string Text);
 public sealed record VoiceTranscriptDto(string Text);
