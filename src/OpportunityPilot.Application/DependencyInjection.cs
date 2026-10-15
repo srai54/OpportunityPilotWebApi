@@ -28,7 +28,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
-        services.AddScoped<ProfileService>();
+        services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
         services.AddScoped<AiService>();

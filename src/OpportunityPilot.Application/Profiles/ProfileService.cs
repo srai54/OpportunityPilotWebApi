@@ -9,20 +9,15 @@ using OpportunityPilot.Domain.Profiles;
 
 namespace OpportunityPilot.Application.Profiles;
 
-public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProvider clock, UserEventLog events)
+public sealed class ProfileService(IProfileRepository profiles, ICurrentUser user, TimeProvider clock, UserEventLog events) : IProfileService
 {
     public const int MaxNameLength = 200;
     public const int MaxDataBytes = 32 * 1024;
 
-    private IQueryable<Profile> Owned => db.Profiles.Where(p => p.OwnerId == user.OwnerId);
-
     public async Task<IReadOnlyList<ProfileSummaryDto>> ListAsync(CancellationToken ct) =>
-        await Owned
-            .OrderByDescending(p => p.UpdatedAt)
-            .Select(p => new ProfileSummaryDto(p.Id, p.Type, p.Name, p.Version, p.ConfirmedAt, p.UpdatedAt))
-            .ToListAsync(ct);
+        await profiles.ListAsync(user.OwnerId, ct);
 
-    public async Task<int> CountAsync(CancellationToken ct) => await Owned.CountAsync(ct);
+    public async Task<int> CountAsync(CancellationToken ct) => await profiles.CountAsync(user.OwnerId, ct);
 
     public async Task<ProfileDto> GetAsync(Guid id, CancellationToken ct) =>
         ToDto(await FindOwnedAsync(id, ct));
@@ -30,8 +25,7 @@ public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProv
     public async Task<IReadOnlyList<ProfileVersionDto>> VersionsAsync(Guid id, CancellationToken ct)
     {
         var profile = await FindOwnedAsync(id, ct);
-        var versions = await db.ProfileVersions.Where(v => v.ProfileId == id && v.OwnerId == user.OwnerId)
-            .OrderByDescending(v => v.Version).ToListAsync(ct);
+        var versions = await profiles.VersionsAsync(user.OwnerId, id, ct);
         if (versions.Count == 0) return [ToVersionDto(new ProfileVersion(profile, profile.UpdatedAt))];
         return versions.Select(ToVersionDto).ToList();
     }
@@ -40,10 +34,10 @@ public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProv
     {
         var data = Validate(request.Name, request.Data, typeIsDefined: Enum.IsDefined(request.Type));
         var profile = new Profile(user.OwnerId, request.Type, request.Name, data, request.Confirmed, clock.GetUtcNow().UtcDateTime);
-        db.Profiles.Add(profile);
-        db.ProfileVersions.Add(new ProfileVersion(profile, profile.UpdatedAt));
+        profiles.Add(profile);
+        profiles.AddVersion(new ProfileVersion(profile, profile.UpdatedAt));
         events.Add(UserEventKinds.ProfileSaved, $"Created profile \"{profile.Name}\"");
-        await db.SaveChangesAsync(ct);
+        await profiles.SaveChangesAsync(ct);
         return ToDto(profile);
     }
 
@@ -55,11 +49,11 @@ public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProv
             throw new ConflictException($"Profile was changed elsewhere (now version {profile.Version}). Reload before saving.");
 
         profile.Update(request.Name, data, request.Confirmed, clock.GetUtcNow().UtcDateTime);
-        db.ProfileVersions.Add(new ProfileVersion(profile, profile.UpdatedAt));
+        profiles.AddVersion(new ProfileVersion(profile, profile.UpdatedAt));
         events.Add(UserEventKinds.ProfileSaved, $"Saved profile \"{profile.Name}\" as version {profile.Version}");
         try
         {
-            await db.SaveChangesAsync(ct);
+            await profiles.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -69,7 +63,7 @@ public sealed class ProfileService(IAppDbContext db, ICurrentUser user, TimeProv
     }
 
     private async Task<Profile> FindOwnedAsync(Guid id, CancellationToken ct) =>
-        await Owned.FirstOrDefaultAsync(p => p.Id == id, ct)
+        await profiles.FindAsync(user.OwnerId, id, ct)
         ?? throw new NotFoundException("Profile not found.");
 
     private static string Validate(string? name, JsonElement? data, bool typeIsDefined)

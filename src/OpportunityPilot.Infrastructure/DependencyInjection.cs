@@ -120,6 +120,7 @@ public static class DependencyInjection
     {
         services.AddScoped<Application.Campaigns.ICampaignRepository, Persistence.Repositories.CampaignRepository>();
         services.AddScoped<Application.Opportunities.IOpportunityRepository, Persistence.Repositories.OpportunityRepository>();
+        services.AddScoped<Application.Profiles.IProfileRepository, Persistence.Repositories.ProfileRepository>();
         return services;
     }
 }
