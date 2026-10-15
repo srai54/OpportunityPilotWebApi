@@ -10,7 +10,8 @@ errors step by step: [skills/error-handling.SKILL.md](../skills/error-handling.S
 |---|---|---|
 | Namespaces | file-scoped, equal to the folder path | `OpportunityPilot.Application.Research.Rules` |
 | Feature folder | singular or plural noun, the same name in every layer | `Campaigns/`, `Research/`, `Agents/` |
-| Service | `<Feature>Service`, one per feature, registered scoped | `CampaignService` |
+| Service | `<Feature>Service : I<Feature>Service`, one per feature, registered scoped by its interface | `CampaignService : ICampaignService` |
+| Repository | `I<Feature>Repository` in Application, `<Feature>Repository` in `Infrastructure/Persistence/Repositories` | `ICampaignRepository` |
 | Controller | `<Feature>Controller`, route `api/v1/<kebab-case>` | `AgentKeysController` → `api/v1/agent-keys` |
 | Route ids | constrained `{id:guid}`, `{campaignId:guid}` | |
 | DTOs | `<Thing>Dto`; inputs `<Verb><Thing>Request`; all in `<Feature>Dtos.cs` beside the service | `CreateCampaignRequest`, `CampaignSummaryDto` |
@@ -31,11 +32,27 @@ errors step by step: [skills/error-handling.SKILL.md](../skills/error-handling.S
 | Records | every DTO and request is a `sealed record` with positional parameters |
 | Domain entities | non-sealed classes; private parameterless constructor for EF; a public constructor that validates and sets `Id = Guid.NewGuid()`; private setters; behaviour as methods (`ChangeStatus`, `Claim`); length limits as `const` |
 | Domain invariants | `ArgumentException` / `ArgumentOutOfRangeException` / `InvalidOperationException`: these are programming errors (500). Services validate user input first |
-| Owned queries | a private `Owned` property filtering by `user.OwnerId`, and `FindOwnedAsync` that throws `NotFoundException` |
-| Persistence | Application code talks to `IAppDbContext` only; no raw SQL, no provider-specific calls, so SqlServer, Postgres and InMemory all work |
+| Owned queries | repository methods take `Guid ownerId` and filter by it; the service passes `user.OwnerId` and owns `FindOwnedAsync`, which throws `NotFoundException`. Unlayered services still use a private `Owned` property |
+| Persistence | Application code talks to an `I<Feature>Repository` (layered modules, see Layering) or `IAppDbContext` (the rest) only; no raw SQL, no provider-specific calls, so SqlServer, Postgres and InMemory all work |
 | Time | inject `TimeProvider clock` and use `clock.GetUtcNow().UtcDateTime`; domain methods take a `DateTime utcNow` argument. Never `DateTime.UtcNow` in Domain or Application |
 | Collections | collection expressions (`[]`, `[..x]`), `IReadOnlyList<T>` in DTOs |
 | Formatting | 4 spaces, Allman braces, expression-bodied members for one-liners; most lines stay under ~150 characters (generated regexes are longer). No `.editorconfig` or formatter is configured |
+
+## Layering
+
+Target shape for every module: **Controller → `I<Feature>Service` → `I<Feature>Repository` → EF Core**.
+
+| Layer | Holds | Must not |
+|---|---|---|
+| Controller (`Api/Controllers`) | routing, binding, status codes; depends on `I<Feature>Service` only | query data or hold rules |
+| Service (`Application/<Feature>/<Feature>Service.cs`) | validation, rules, versioning/conflicts, DTO mapping, owner id from `ICurrentUser` | build EF queries or touch `IAppDbContext` |
+| Repository interface (`Application/<Feature>/I<Feature>Repository.cs`) | the queries and writes the service needs, in domain types or DTO projections | expose `IQueryable` |
+| Repository (`Infrastructure/Persistence/Repositories/<Feature>Repository.cs`) | EF Core queries on the scoped `AppDbContext`, registered in `Infrastructure/DependencyInjection.AddRepositories` | hold business rules |
+
+Repositories share the request's `AppDbContext`, so `SaveChangesAsync` on any repository commits everything the request
+staged (for example a `UserEventLog` row); `DbUpdateConcurrencyException` is still caught in the service and mapped to
+`ConflictException`. Layered so far: **Campaigns, Opportunities, Profiles**. Other modules still use `IAppDbContext` from the
+service and move over one at a time, with no change to routes, shapes or status codes.
 
 ## Requests and validation
 

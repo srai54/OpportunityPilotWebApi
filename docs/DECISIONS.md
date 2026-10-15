@@ -196,3 +196,13 @@ Connect plan (https://pipedream.com/docs/connect/environments).
 consent screen shows Composio's app name, not OpportunityPilot. The managed allowance is 20K calls/month on Hobby. Composio sees the
 person's tokens. Google Sheets has a managed app but no action here yet. The older paths (`Integrations__…` apps, pasted tokens)
 stay as "Advanced". Not verified against a live Composio key.
+
+## 2026-10-15 — Controller → IService → IRepository layering (LAYERING)
+
+**Decision:** modules follow Controller → `I<Feature>Service` (business logic) → `I<Feature>Repository` (data access). Both
+interfaces live in Application; the EF repositories live in `Infrastructure/Persistence/Repositories` and share the scoped
+`AppDbContext` as the unit of work. Repository methods take the owner id explicitly, so owner scoping stays visible in the service.
+First moved: Campaigns, Opportunities, Profiles. The rest keep `IAppDbContext` in the service until moved, one module at a time.
+
+**Why:** the user asked for this layering; it keeps controllers free of concrete services and query code out of business logic.
+**Trade-offs:** more files per module; `DbUpdateConcurrencyException` still surfaces from `SaveChangesAsync` and is mapped in the service.
