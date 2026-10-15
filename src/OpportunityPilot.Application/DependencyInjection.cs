@@ -46,7 +46,7 @@ public static class DependencyInjection
         services.AddScoped<AgentResearchService>();
         services.AddScoped<Circle.CircleService>();
         services.AddScoped<LinkedInOutboxService>();
-        services.AddScoped<ApprovalService>();
+        services.AddScoped<IApprovalService, ApprovalService>();
         services.AddScoped<AnalyticsService>();
         services.AddScoped<IDraftService, DraftService>();
         services.AddScoped<IDraftPreparer, DraftPreparer>();

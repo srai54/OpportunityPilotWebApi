@@ -6,7 +6,7 @@ namespace OpportunityPilot.Api.Controllers;
 /// <summary>The batch approval queue: Suggested opportunities and the user's approve/reject decisions.</summary>
 [ApiController]
 [Route("api/v1/approvals")]
-public sealed class ApprovalsController(ApprovalService approvals) : ControllerBase
+public sealed class ApprovalsController(IApprovalService approvals) : ControllerBase
 {
     /// <summary>Suggested opportunities, highest score first; take 1–200 (default 100).</summary>
     [HttpGet]

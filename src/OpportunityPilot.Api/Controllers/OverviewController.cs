@@ -14,7 +14,7 @@ namespace OpportunityPilot.Api.Controllers;
 [Route("api/v1/overview")]
 public sealed class OverviewController(
     IProfileService profiles, IApplicationService applications, ICampaignService campaigns, IOpportunityService opportunities,
-    ApprovalService approvals, IDraftService drafts, OutreachService outreach) : ControllerBase
+    IApprovalService approvals, IDraftService drafts, OutreachService outreach) : ControllerBase
 {
     /// <param name="AwaitingApproval">Suggested opportunities waiting in the approval queue.</param>
     public sealed record OverviewDto(int Profiles, int Applied, int NeedsManual, int Campaigns, int Shortlisted, int AwaitingApproval,

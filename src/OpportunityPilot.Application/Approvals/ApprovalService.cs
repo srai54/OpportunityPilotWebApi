@@ -10,59 +10,41 @@ namespace OpportunityPilot.Application.Approvals;
 /// (→ Shortlisted) or rejects (→ Dismissed) many at once. Nothing is applied before approval: the agent shortlist only
 /// offers Shortlisted opportunities.
 /// </summary>
-public sealed class ApprovalService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class ApprovalService(IApprovalRepository approvals, ICurrentUser user, TimeProvider clock) : IApprovalService
 {
     public const int DefaultTake = 100;
     public const int MaxTake = 200;
     public const int MaxDecisions = 200;
     private const int SaveTries = 3;
 
-    private IQueryable<Opportunity> Suggested =>
-        db.Opportunities.Where(o => o.OwnerId == user.OwnerId && o.Status == OpportunityStatus.Suggested);
-
     /// <summary>Suggested opportunities, highest score first; optionally one campaign (404 when it is not the caller's).</summary>
     public async Task<ApprovalPageDto> ListAsync(Guid? campaignId, int take, int skip, CancellationToken ct)
     {
         take = Math.Clamp(take, 1, MaxTake);
         skip = Math.Max(0, skip);
-        var query = Suggested;
-        if (campaignId is { } id)
-        {
-            if (!await db.Campaigns.AnyAsync(c => c.Id == id && c.OwnerId == user.OwnerId, ct))
-                throw new NotFoundException("Campaign not found.");
-            query = query.Where(o => o.CampaignId == id);
-        }
+        if (campaignId is { } id && !await approvals.CampaignExistsAsync(user.OwnerId, id, ct))
+            throw new NotFoundException("Campaign not found.");
 
-        var total = await query.CountAsync(ct);
-        var items = await query
-            .OrderByDescending(o => o.Score).ThenByDescending(o => o.Coverage).ThenByDescending(o => o.UpdatedAt).ThenBy(o => o.Id)
-            .Skip(skip).Take(take)
-            .ToListAsync(ct);
+        var (total, items) = await approvals.PageSuggestedAsync(user.OwnerId, campaignId, take, skip, ct);
         var campaignIds = items.Select(o => o.CampaignId).Distinct().ToList();
-        var names = await db.Campaigns.Where(c => c.OwnerId == user.OwnerId && campaignIds.Contains(c.Id))
-            .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+        var names = await approvals.CampaignNamesAsync(user.OwnerId, campaignIds, ct);
 
         return new ApprovalPageDto(total, items.Select(o => new ApprovalItem(
             o.Id, o.CampaignId, names.GetValueOrDefault(o.CampaignId, string.Empty), o.Title, o.Organization, o.Location, o.Platform,
             o.ApplyUrl ?? o.Url, o.Score, o.Coverage, o.OutcomeReason, AppliesViaFor(o.Platform))).ToList());
     }
 
-    public async Task<int> CountAsync(CancellationToken ct) => await Suggested.CountAsync(ct);
+    public async Task<int> CountAsync(CancellationToken ct) => await approvals.CountSuggestedAsync(user.OwnerId, ct);
 
     public async Task<DecideApprovalsResult> DecideAllAsync(DecideAllApprovalsRequest request, CancellationToken ct)
     {
-        var query = Suggested;
-        if (request.CampaignId is { } campaignId)
-        {
-            if (!await db.Campaigns.AnyAsync(c => c.Id == campaignId && c.OwnerId == user.OwnerId, ct))
-                throw new NotFoundException("Campaign not found.");
-            query = query.Where(x => x.CampaignId == campaignId);
-        }
-        var rows = await query.ToListAsync(ct);
+        if (request.CampaignId is { } campaignId && !await approvals.CampaignExistsAsync(user.OwnerId, campaignId, ct))
+            throw new NotFoundException("Campaign not found.");
+        var rows = await approvals.SuggestedAsync(user.OwnerId, request.CampaignId, ct);
         var now = clock.GetUtcNow().UtcDateTime;
         foreach (var row in rows)
-            if (row.DecideSuggestion(request.Approve, now) is { } activity) db.Activities.Add(activity);
-        try { await db.SaveChangesAsync(ct); }
+            if (row.DecideSuggestion(request.Approve, now) is { } activity) approvals.AddActivity(activity);
+        try { await approvals.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new ConflictException("Some opportunities changed while the batch was being approved. Reload and try again."); }
         return request.Approve ? new(rows.Count, 0, 0) : new(0, rows.Count, 0);
     }
@@ -79,27 +61,27 @@ public sealed class ApprovalService(IAppDbContext db, ICurrentUser user, TimePro
         for (var attempt = 1; ; attempt++)
         {
             var ids = approve.Concat(reject).ToList();
-            var found = await Suggested.Where(o => ids.Contains(o.Id)).ToListAsync(ct);
+            var found = await approvals.SuggestedByIdsAsync(user.OwnerId, ids, ct);
             var now = clock.GetUtcNow().UtcDateTime;
             int approved = 0, rejected = 0;
             foreach (var o in found)
             {
                 var yes = approve.Contains(o.Id);
                 if (o.DecideSuggestion(yes, now) is not { } activity) continue;
-                db.Activities.Add(activity);
+                approvals.AddActivity(activity);
                 if (yes) approved++;
                 else rejected++;
             }
 
             try
             {
-                await db.SaveChangesAsync(ct);
+                await approvals.SaveChangesAsync(ct);
                 return new DecideApprovalsResult(approved, rejected, requested - approved - rejected);
             }
             catch (DbUpdateConcurrencyException) when (attempt < SaveTries)
             {
                 // Research re-scored (or the user moved) one of them in between: read again and re-apply the decisions.
-                db.ChangeTracker.Clear();
+                approvals.ClearTracked();
             }
             catch (DbUpdateConcurrencyException)
             {
