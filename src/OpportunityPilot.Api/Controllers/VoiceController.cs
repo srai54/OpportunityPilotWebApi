@@ -66,7 +66,7 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
 
     [HttpPost("transcribe")]
     [RequestSizeLimit(MaxBytes + 64 * 1024)]
-    public async Task<ActionResult<VoiceTranscriptDto>> Transcribe(IFormFile? audio, CancellationToken ct)
+    public async Task<ActionResult<VoiceTranscriptDto>> Transcribe(IFormFile? audio, [FromForm] string? language, CancellationToken ct)
     {
         var (key, url, model) = Provider;
         if (string.IsNullOrWhiteSpace(key))
@@ -83,6 +83,11 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         file.Headers.ContentType = MediaTypeHeaderValue.TryParse(audio.ContentType, out var type) ? type : new MediaTypeHeaderValue("audio/webm");
         form.Add(file, "file", string.IsNullOrWhiteSpace(audio.FileName) ? "voice.webm" : Path.GetFileName(audio.FileName));
         form.Add(new StringContent(model), "model");
+        // Whisper guesses the language per clip and short clips are often guessed wrong; the person's chosen language is sent
+        // instead (English or Hindi), and a short list of app words keeps names and terms spelt right.
+        var lang = language is "hi" or "en" ? language : "en";
+        form.Add(new StringContent(lang), "language");
+        form.Add(new StringContent("OpportunityPilot, campaign, jobs, leads, outreach, interview, Gurugram, Bengaluru, Pune, Noida, apply, approve, yes, no"), "prompt");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = form };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
