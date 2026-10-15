@@ -56,4 +56,22 @@ public sealed class AssistantTests
         Assert.Equal("You sent 3 messages today (2 by email) and 11 this week.", r.Reply);
         Assert.Null(r.Action);
     }
+
+    [Fact]
+    public void Without_ai_a_launch_keeps_the_posting_age_and_follow_ups_map_to_the_right_flow()
+    {
+        Assert.Equal(3, AssistantService.Rules("launch campaign of software engineer jobs in past 3 days in ggn", Facts, false, null).Action?.Days);
+        Assert.Equal("outreach", AssistantService.Rules("send the outreach", Facts, sales: true, null).Action?.Kind);
+        Assert.Equal("apply", AssistantService.Rules("apply to them", Facts, sales: false, null).Action?.Kind);
+        Assert.Equal("review", AssistantService.Rules("collect everything, I will review", Facts, false, null).Action?.Kind);
+        Assert.Equal("/outreach", AssistantService.Rules("send the outreach", Facts, sales: false, null).Action?.Page);
+    }
+
+    [Fact]
+    public void Model_cannot_propose_the_other_workspaces_flow()
+    {
+        Assert.Equal("outreach", AssistantService.Parse("""{"reply":"Shall I?","action":{"kind":"outreach"}}""", sales: true)?.Action?.Kind);
+        Assert.Null(AssistantService.Parse("""{"reply":"Shall I?","action":{"kind":"outreach"}}""", sales: false)?.Action);
+        Assert.Equal(3, AssistantService.Parse("""{"reply":"Shall I?","action":{"kind":"launch","query":"software engineer","location":"Gurugram","days":3}}""", false)?.Action?.Days);
+    }
 }
