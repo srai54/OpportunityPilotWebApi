@@ -123,6 +123,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Profiles.IProfileRepository, Persistence.Repositories.ProfileRepository>();
         services.AddScoped<Application.Drafts.IDraftRepository, Persistence.Repositories.DraftRepository>();
         services.AddScoped<Application.Sources.ISourceRepository, Persistence.Repositories.SourceRepository>();
+        services.AddScoped<Application.Applications.IApplicationRepository, Persistence.Repositories.ApplicationRepository>();
         return services;
     }
 }

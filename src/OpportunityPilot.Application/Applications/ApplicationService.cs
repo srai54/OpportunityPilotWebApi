@@ -7,7 +7,7 @@ using OpportunityPilot.Domain.Opportunities;
 
 namespace OpportunityPilot.Application.Applications;
 
-public sealed class ApplicationService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class ApplicationService(IApplicationRepository applications, ICurrentUser user, TimeProvider clock) : IApplicationService
 {
     public const int MaxItemsPerReport = 100;
     public const int MaxExternalJobIdLength = 100;
@@ -22,8 +22,6 @@ public sealed class ApplicationService(IAppDbContext db, ICurrentUser user, Time
     // Agent and server clocks drift; anything further ahead than this is a bug, not skew.
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromMinutes(5);
 
-    private IQueryable<JobApplication> Owned => db.JobApplications.Where(a => a.OwnerId == user.OwnerId);
-
     public async Task<ApplicationReportResult> ReportAsync(ApplicationReportRequest request, CancellationToken ct)
     {
         var now = clock.GetUtcNow().UtcDateTime;
@@ -36,9 +34,7 @@ public sealed class ApplicationService(IAppDbContext db, ICurrentUser user, Time
         var ownerId = user.OwnerId;
         var platforms = latest.Keys.Select(k => k.Platform).Distinct().ToList();
         var jobIds = latest.Keys.Select(k => k.JobId).Distinct().ToList();
-        var existing = (await Owned
-                .Where(a => platforms.Contains(a.Platform) && jobIds.Contains(a.ExternalJobId))
-                .ToListAsync(ct))
+        var existing = (await applications.FindByJobsAsync(ownerId, platforms, jobIds, ct))
             .ToDictionary(a => (a.Platform, a.ExternalJobId));
 
         foreach (var ((platform, jobId), item) in latest)
@@ -47,7 +43,7 @@ public sealed class ApplicationService(IAppDbContext db, ICurrentUser user, Time
             if (existing.TryGetValue((platform, jobId), out var row))
                 row.ApplyReport(item.JobUrl, item.Title, item.Company, item.Location, item.Status, item.Detail, occurredAt, now);
             else
-                db.JobApplications.Add(new JobApplication(ownerId, platform, jobId, item.JobUrl, item.Title, item.Company,
+                applications.Add(new JobApplication(ownerId, platform, jobId, item.JobUrl, item.Title, item.Company,
                     item.Location, item.Status, item.Detail, occurredAt, now));
         }
 
@@ -59,20 +55,18 @@ public sealed class ApplicationService(IAppDbContext db, ICurrentUser user, Time
         if (appliedTo.Count > 0)
         {
             var ids = appliedTo.Keys.ToList();
-            var opportunities = await db.Opportunities
-                .Where(o => o.OwnerId == ownerId && ids.Contains(o.Id) && o.Mode == OpportunityMode.Job && o.Status == OpportunityStatus.Shortlisted)
-                .ToListAsync(ct);
+            var opportunities = await applications.ShortlistedJobOpportunitiesAsync(ownerId, ids, ct);
             foreach (var opportunity in opportunities)
             {
                 var item = appliedTo[opportunity.Id];
                 var activity = opportunity.MarkApplied($"Applied on {item.Platform} by the desktop agent.", now);
-                if (activity is not null) db.Activities.Add(activity);
+                if (activity is not null) applications.AddActivity(activity);
             }
         }
 
         try
         {
-            await db.SaveChangesAsync(ct);
+            await applications.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
         {
@@ -89,29 +83,15 @@ public sealed class ApplicationService(IAppDbContext db, ICurrentUser user, Time
         take = Math.Clamp(take, 1, MaxTake);
         skip = Math.Max(0, skip);
 
-        var query = Owned;
-        if (status is { } s) query = query.Where(a => a.Status == s);
-        if (platform is { } p) query = query.Where(a => a.Platform == p);
-
-        var total = await query.CountAsync(ct);
-        var items = await query
-            .OrderByDescending(a => a.OccurredAt).ThenBy(a => a.Id)
-            .Skip(skip).Take(take)
-            .Select(a => new ApplicationDto(a.Id, a.Platform, a.ExternalJobId, a.JobUrl, a.Title, a.Company,
-                a.Location, a.Status, a.Detail, a.OccurredAt, a.UpdatedAt))
-            .ToListAsync(ct);
-        return new ApplicationPageDto(total, items);
+        return await applications.PageAsync(user.OwnerId, status, platform, take, skip, ct);
     }
 
     public async Task<ApplicationSummaryDto> SummaryAsync(CancellationToken ct)
     {
         var weekAgo = clock.GetUtcNow().UtcDateTime.AddDays(-7);
-        var counts = await Owned
-            .GroupBy(a => a.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
-        var appliedLast7Days = await Owned.CountAsync(a => a.Status == ApplicationStatus.Applied && a.OccurredAt >= weekAgo, ct);
-        var lastActivityAt = await Owned.MaxAsync(a => (DateTime?)a.OccurredAt, ct);
+        var counts = await applications.CountByStatusAsync(user.OwnerId, ct);
+        var appliedLast7Days = await applications.CountAppliedSinceAsync(user.OwnerId, weekAgo, ct);
+        var lastActivityAt = await applications.LastActivityAtAsync(user.OwnerId, ct);
 
         int Count(ApplicationStatus s) => counts.GetValueOrDefault(s);
         return new ApplicationSummaryDto(
