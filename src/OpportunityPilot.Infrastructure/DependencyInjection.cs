@@ -119,6 +119,7 @@ public static class DependencyInjection
     private static IServiceCollection AddRepositories(this IServiceCollection services)
     {
         services.AddScoped<Application.Campaigns.ICampaignRepository, Persistence.Repositories.CampaignRepository>();
+        services.AddScoped<Application.Opportunities.IOpportunityRepository, Persistence.Repositories.OpportunityRepository>();
         return services;
     }
 }
