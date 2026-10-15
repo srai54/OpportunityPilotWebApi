@@ -8,13 +8,14 @@ public sealed class AssistantTests
     {
         ["jobsFoundThisWeek"] = 12, ["goodMatches"] = 4, ["waitingForApproval"] = 3, ["approvedNotYetActedOn"] = 1,
         ["messagesToCheck"] = 2, ["applied"] = 5, ["replies"] = 1, ["agentNeedsYou"] = 0,
+        ["messagesSentToday"] = 3, ["emailsSentToday"] = 2, ["messagesSentThisWeek"] = 11,
     };
 
     [Fact]
     public void Without_ai_a_status_question_gets_the_summary_from_real_numbers()
     {
         var r = AssistantService.Rules("what is my status", Facts, sales: false, "NoKey");
-        Assert.Equal("This week 12 jobs found, 4 good matches, 3 waiting for your approval, 2 messages to check, 5 applied and 1 reply.", r.Reply);
+        Assert.Equal("This week 12 jobs found, 4 good matches, 3 waiting for your approval, 2 messages to check, 5 applied and 1 reply, 3 sent today.", r.Reply);
         Assert.Null(r.Action);
         Assert.Equal("Rules", r.Source);
     }
@@ -46,5 +47,13 @@ public sealed class AssistantTests
         Assert.Null(unknownPage!.Action);
         Assert.Null(AssistantService.Parse("""{"action":null}""", false));
         Assert.Null(AssistantService.Parse("not json", false));
+    }
+
+    [Fact]
+    public void Without_ai_how_many_sent_today_is_answered_from_todays_counts()
+    {
+        var r = AssistantService.Rules("how many mails sent today", Facts, sales: false, "NoKey");
+        Assert.Equal("You sent 3 messages today (2 by email) and 11 this week.", r.Reply);
+        Assert.Null(r.Action);
     }
 }

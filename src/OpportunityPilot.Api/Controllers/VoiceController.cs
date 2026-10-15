@@ -16,7 +16,7 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
     private const long MaxBytes = 5 * 1024 * 1024;
     private string? GroqKey => config["Groq:ApiKey"] ?? config["Ai:GroqApiKey"];
     private (string? Key, string Url, string Model) Provider => !string.IsNullOrWhiteSpace(GroqKey)
-        ? (GroqKey, "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo")
+        ? (GroqKey, "https://api.groq.com/openai/v1/audio/transcriptions", config["Groq:WhisperModel"] ?? "whisper-large-v3")
         : (config["OpenAi:Key"], "https://api.openai.com/v1/audio/transcriptions", "whisper-1");
 
     [HttpGet("status")]
