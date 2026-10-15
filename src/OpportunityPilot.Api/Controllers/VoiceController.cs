@@ -35,7 +35,8 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
             return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Natural voice is not set up", detail: "Set Groq__ApiKey on the server.");
         var text = request?.Text?.Trim() ?? "";
         if (text.Length == 0) return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Nothing to say");
-        if (text.Length > 600) text = text[..600];
+        // Orpheus takes at most 200 characters; the browser sends one sentence at a time.
+        if (text.Length > 200) text = text[..200];
         using var message = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/audio/speech")
         {
             Content = JsonContent.Create(new
@@ -51,7 +52,14 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         client.Timeout = TimeSpan.FromSeconds(30);
         using var response = await client.SendAsync(message, ct);
         if (!response.IsSuccessStatusCode)
-            return Problem(statusCode: StatusCodes.Status502BadGateway, title: "Natural voice unavailable", detail: $"The speech service answered {(int)response.StatusCode}.");
+        {
+            // Groq's own reason (for example "accept the model terms") is safe to show and says what to do; it never contains the key.
+            var reason = "";
+            try { using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct)); reason = doc.RootElement.GetProperty("error").GetProperty("message").GetString() ?? ""; }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
+            return Problem(statusCode: StatusCodes.Status502BadGateway, title: "Natural voice unavailable",
+                detail: $"The speech service answered {(int)response.StatusCode}. {(reason.Length > 300 ? reason[..300] : reason)}".Trim());
+        }
         var audio = await response.Content.ReadAsByteArrayAsync(ct);
         return File(audio, response.Content.Headers.ContentType?.MediaType ?? "audio/wav");
     }
