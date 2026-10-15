@@ -5,7 +5,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/profiles")]
-public sealed class ProfilesController(ProfileService profiles) : ControllerBase
+public sealed class ProfilesController(IProfileService profiles) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ProfileSummaryDto>>> List(CancellationToken ct) =>

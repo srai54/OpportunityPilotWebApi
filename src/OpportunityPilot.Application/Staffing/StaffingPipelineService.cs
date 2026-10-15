@@ -77,6 +77,48 @@ public sealed partial class StaffingPipelineService(IAppDbContext db, ICurrentUs
             interviews.Select(ToDto).ToList(), feedback.Select(ToDto).ToList(), offers.Select(ToDto).ToList(), proposals.Select(ToDto).ToList());
     }
 
+    /// <summary>
+    /// Every interview across deals and candidates for the sales tracker: upcoming first (soonest first), then the rest, newest change
+    /// first. At most <paramref name="take"/> rows.
+    /// </summary>
+    public async Task<IReadOnlyList<StaffingInterviewBoardRowDto>> InterviewBoardAsync(int take, CancellationToken ct)
+    {
+        take = Math.Clamp(take, 1, 500);
+        var interviews = await Owned(db.StaffingInterviews).AsNoTracking().OrderByDescending(x => x.UpdatedAt).Take(take).ToListAsync(ct);
+        var submissionIds = interviews.Select(x => x.SubmissionId).Distinct().ToList();
+        var dealIds = interviews.Select(x => x.DealId).Distinct().ToList();
+        var submissions = await Owned(db.StaffingSubmissions).AsNoTracking().Where(x => submissionIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.CandidateId }).ToDictionaryAsync(x => x.Id, ct);
+        var candidateIds = submissions.Values.Select(x => x.CandidateId).Distinct().ToList();
+        var candidates = await Owned(db.StaffingCandidates).AsNoTracking().Where(x => candidateIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Name, x.Email }).ToDictionaryAsync(x => x.Id, ct);
+        var deals = await Owned(db.StaffingDeals).AsNoTracking().Where(x => dealIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Title, x.AccountId }).ToDictionaryAsync(x => x.Id, ct);
+        var accountIds = deals.Values.Select(x => x.AccountId).Distinct().ToList();
+        var accounts = await Owned(db.StaffingAccounts).AsNoTracking().Where(x => accountIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Name }).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        var links = (await db.CandidateProgressLinks.AsNoTracking()
+                .Where(l => l.OwnerId == user.OwnerId && l.RevokedAt == null && candidateIds.Contains(l.CandidateId))
+                .Select(l => new { l.CandidateId, l.Show, l.CreatedAt }).ToListAsync(ct))
+            .GroupBy(l => l.CandidateId).ToDictionary(g => g.Key, g => g.OrderByDescending(l => l.CreatedAt).First().Show);
+
+        var now = Now;
+        return interviews
+            .OrderBy(i => i.State is InterviewState.Requested or InterviewState.Scheduled && (i.ScheduledAt is null || i.ScheduledAt >= now.AddHours(-1)) ? 0 : 1)
+            .ThenBy(i => i.State is InterviewState.Requested or InterviewState.Scheduled ? i.ScheduledAt ?? DateTime.MaxValue : DateTime.MaxValue)
+            .ThenByDescending(i => i.UpdatedAt).ThenBy(i => i.Id)
+            .Select(i =>
+            {
+                var candidateId = submissions.TryGetValue(i.SubmissionId, out var s) ? s.CandidateId : Guid.Empty;
+                var c = candidates.GetValueOrDefault(candidateId);
+                var d = deals.GetValueOrDefault(i.DealId);
+                var hasLink = links.TryGetValue(candidateId, out var show);
+                return new StaffingInterviewBoardRowDto(ToDto(i), candidateId, c?.Name ?? "Removed candidate", c?.Email, d?.Title ?? "Removed deal",
+                    d is not null ? accounts.GetValueOrDefault(d.AccountId) : null, hasLink, hasLink && show.HasFlag(ProgressShow.Interviews));
+            })
+            .ToList();
+    }
+
     public async Task<StaffingSubmissionDto> SaveSubmissionAsync(Guid dealId, Guid? id, SaveSubmissionRequest r, CancellationToken ct)
     {
         if (r is null) throw Invalid("body", "Request body is required.");

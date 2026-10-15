@@ -8,7 +8,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/applications")]
-public sealed class ApplicationsController(ApplicationService applications) : ControllerBase
+public sealed class ApplicationsController(IApplicationService applications) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<ApplicationPageDto>> List(

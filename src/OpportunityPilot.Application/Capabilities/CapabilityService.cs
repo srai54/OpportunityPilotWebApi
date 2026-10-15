@@ -43,7 +43,7 @@ public sealed class CapabilityService(
     {
         var f = features.Value;
         var a = ai.Value;
-        var geminiKeyPresent = f.GeminiEnabled && !string.IsNullOrWhiteSpace(a.GeminiApiKey);
+        var geminiKeyPresent = f.GeminiEnabled && a.HasKey;
 
         var items = new List<CapabilityDto>
         {
@@ -66,7 +66,7 @@ public sealed class CapabilityService(
             new("gemini", "Gemini API", "AI",
                 geminiKeyPresent ? CapabilityStatus.Configured : CapabilityStatus.NotConfigured,
                 geminiKeyPresent
-                    ? $"Server key present for {a.GeminiModel}. Goal parsing uses Gemini with validated rules fallback; live provider verification is still required."
+                    ? $"Server key present for {a.ProviderName} {a.ActiveModel}. Goal parsing uses AI with validated rules fallback; live provider verification is still required."
                     : "No server-side key. Rules/templates mode applies. The key is set in server configuration and is never returned to the browser.",
                 geminiKeyPresent ? ["Parse campaign goals with rules fallback"] : [], ["Extract facts with AI", "Summarise matches with AI"]),
 

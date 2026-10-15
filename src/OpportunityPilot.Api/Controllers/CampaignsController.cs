@@ -5,7 +5,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/campaigns")]
-public sealed class CampaignsController(CampaignService campaigns) : ControllerBase
+public sealed class CampaignsController(ICampaignService campaigns) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<CampaignSummaryDto>>> List(CancellationToken ct) =>
@@ -26,4 +26,8 @@ public sealed class CampaignsController(CampaignService campaigns) : ControllerB
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<CampaignDto>> Update(Guid id, UpdateCampaignRequest request, CancellationToken ct) =>
         await campaigns.UpdateAsync(id, request, ct);
+
+    /// <summary>Deletes the campaign with its leads, drafts and schedules. 404 when it is not the caller's.</summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct) { await campaigns.DeleteAsync(id, ct); return NoContent(); }
 }

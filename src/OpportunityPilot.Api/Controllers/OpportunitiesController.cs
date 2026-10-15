@@ -7,7 +7,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/opportunities")]
-public sealed class OpportunitiesController(OpportunityService opportunities, ContactFinder contacts, PeopleFinder people) : ControllerBase
+public sealed class OpportunitiesController(IOpportunityService opportunities, ContactFinder contacts, PeopleFinder people) : ControllerBase
 {
     /// <summary>Suggests contact details that the posting or the company's own contact pages publish. Reads at most three public pages; nothing is stored.</summary>
     [HttpPost("{id:guid}/contacts/find")]

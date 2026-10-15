@@ -56,7 +56,7 @@ Run from the repository root unless noted. dotnet-ef 10.x must be installed glob
 |---|---|
 | `src/OpportunityPilot.Domain/<Feature>/` | entities (`IOwned`, private setters, validating constructor, `Max…Length` constants) and one enum per file; `Common/` has `IOwned`, `OpportunityMode`, `Guard` |
 | `src/OpportunityPilot.Application/<Feature>/` | `<Feature>Service.cs` + `<Feature>Dtos.cs` (+ feature helpers, e.g. `Research/Rules/`); `Abstractions/` (`IAppDbContext`, `ICurrentUser`), `Common/AppExceptions.cs`, `Configuration/` (options, `SetupState`), `DependencyInjection.cs` |
-| `src/OpportunityPilot.Infrastructure/` | `Persistence/` (`AppDbContext`, `ProviderContexts`, `DesignTimeFactories`, `Migrations/SqlServer`, `Migrations/Postgres`); `Research/` (safe fetcher, address policy, content parser); `DependencyInjection.cs` |
+| `src/OpportunityPilot.Infrastructure/` | `Persistence/` (`AppDbContext`, `ProviderContexts`, `DesignTimeFactories`, `Repositories/` (EF `I<Feature>Repository` implementations), `Migrations/SqlServer`, `Migrations/Postgres`); `Research/` (safe fetcher, address policy, content parser); `DependencyInjection.cs` |
 | `src/OpportunityPilot.Api/` | `Controllers/`, `Auth/` (schemes, guest tokens, JWKS, `CurrentUser`), `Hosting/` (exception handler, correlation id, health check, research processor), `Program.cs`, `appsettings*.json` |
 | `tests/OpportunityPilot.UnitTests/` | pure tests; research ones under `Research/` |
 | `tests/OpportunityPilot.IntegrationTests/` | `<Feature>ApiTests.cs` on `PostgresApiFactory`; `StartupGuardTests.cs` for production/demo startup |
@@ -72,9 +72,10 @@ New feature `Foo`, in this order:
 |---|---|
 | 1 Domain | `Domain/Foo/Foo.cs` (+ `Domain/Foo/FooStatus.cs`) |
 | 2 Persistence | `DbSet<Foo>` in `Application/Abstractions/IAppDbContext.cs` and `Infrastructure/Persistence/AppDbContext.cs`; mapping in `AppDbContext.OnModelCreating`; provider-only parts in `ProviderContexts.cs`; migrations for both providers |
-| 3 Application | `Application/Foo/FooService.cs`, `Application/Foo/FooDtos.cs`; register in `Application/DependencyInjection.cs` |
+| 3 Application | `Application/Foo/IFooService.cs` + `FooService.cs`, `Application/Foo/IFooRepository.cs`, `Application/Foo/FooDtos.cs`; register `AddScoped<IFooService, FooService>()` in `Application/DependencyInjection.cs` |
+| 3b Repository | `Infrastructure/Persistence/Repositories/FooRepository.cs`; register in `AddRepositories` in `Infrastructure/DependencyInjection.cs` (layering: `docs/conventions.md` → Layering) |
 | 4 External adapter (if any) | interface in `Application/Foo/`, implementation in `Infrastructure/Foo/`, registered in `Infrastructure/DependencyInjection.cs` |
-| 5 Api | `Api/Controllers/FooController.cs` (`[ApiController]`, `[Route("api/v1/foo")]`, thin) |
+| 5 Api | `Api/Controllers/FooController.cs` (`[ApiController]`, `[Route("api/v1/foo")]`, thin, depends on `IFooService`) |
 | 6 Tests | `UnitTests/FooTests.cs`; `IntegrationTests/FooApiTests.cs` |
 | 7 Docs | `docs/db-schema.md`, `docs/api-contracts.md`, `docs/business-rules.md`, lifecycle doc if it has states |
 

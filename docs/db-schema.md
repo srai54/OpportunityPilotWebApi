@@ -250,6 +250,24 @@ The people around a job or company lead (JD circle). Only what a LinkedIn search
 
 Indexes: unique `(OwnerId, OpportunityId, ProfileUrl)` (case-sensitive on Postgres; `CircleService` also compares links case-insensitively, and InMemory relies on that check); `OpportunityId` (FK).
 
+### job_interviews — `Domain/Interviews/JobInterview.cs`
+
+Interviews the candidate records for a job lead they applied to (Candidate workspace). Typed in by the person; nothing is read from a calendar.
+
+| Column | Type | Notes |
+|---|---|---|
+| Id, OwnerId | uuid | |
+| OpportunityId | uuid | FK → opportunities, Cascade; a `Job` mode lead only (checked in `JobInterviewService`) |
+| Round | int | 1–20; defaults to the next round for that job |
+| ScheduledAt | time, null | UTC; null while the time is not agreed |
+| MeetingUrl | string(1000), null | http(s) only |
+| Notes | string(2000), null | |
+| Status | string(16) | `JobInterviewStatus`: Scheduled, Completed, NoShow, Cancelled. Completed/NoShow need a time |
+| Version | int | concurrency token |
+| CreatedAt, UpdatedAt | time | |
+
+Indexes: `(OwnerId, OpportunityId, Round)`, `(OwnerId, ScheduledAt)`, `OpportunityId` (FK).
+
 ### opportunity_evidence — `Domain/Opportunities/Activity.cs` (`OpportunityEvidence`)
 
 | Column | Type | Notes |
@@ -447,7 +465,7 @@ Indexes: unique `TokenHash` for authentication lookup; `ExpiresAt` for bounded c
 | campaigns | sources, import_batches, research_jobs, evidence, opportunities | Cascade |
 | sources | source_items | Cascade (and deleted explicitly by `SourceService`, because InMemory runs no cascades) |
 | research_jobs | research_events | Cascade |
-| opportunities | opportunity_evidence, activities, outreach_drafts, next_actions, circle_people | Cascade |
+| opportunities | opportunity_evidence, activities, outreach_drafts, next_actions, circle_people, job_interviews | Cascade |
 | sales_projects | sales_bids | Cascade |
 | sales_projects | upwork_opportunities | SetNull |
 | wellfound_jobs | wellfound_applications | Cascade |
@@ -491,5 +509,6 @@ Both sets must contain the same logical migrations in the same order.
 | 10 | AddProviderResearchQueues | `20261007103650_AddProviderResearchQueues` | `20261007103644_AddProviderResearchQueues` | upwork_opportunities, wellfound_jobs, wellfound_applications, wellfound_activities |
 | 11–21 | (see the migration folders) | | | staffing pipeline, schedules, security events and key scopes, AI usage, provider executions, mailboxes, user events, progress links, auto-approve, integrations |
 | 22 | AddJdCircle | `20261014055510_AddJdCircle` | `20261014055528_AddJdCircle` | circle_people; nullable `opportunities.CircleRequestedAt`/`CircleMappedAt`; `agent_keys.Scopes` default 7 → 15 and a data step moving stored 7 to 15 (Down strips the People bit and revokes People-only keys) |
+| 23 | AddJobInterviews | `20261015062624_AddJobInterviews` | `20261015062641_AddJobInterviews` | job_interviews |
 
 Persisted AI usage records from [M4_M5_CONTRACT.md](M4_M5_CONTRACT.md) remain unbuilt; suppressions and next actions are built.

@@ -6,27 +6,30 @@ namespace OpportunityPilot.Api.Controllers;
 
 /// <summary>
 /// Optional Whisper transcription for voice commands, used only when the browser has no speech recognition (for example
-/// Firefox). The OpenAI key lives in server settings (<c>OpenAi__Key</c>) and never reaches the browser. The audio is sent
-/// once to OpenAI for transcription and is not stored here.
+/// Firefox). Groq's Whisper (<c>Groq__ApiKey</c>, free tier) is used when set, else OpenAI (<c>OpenAi__Key</c>); the key never
+/// reaches the browser. The audio is sent once for transcription and is not stored here.
 /// </summary>
 [ApiController]
 [Route("api/v1/voice")]
 public sealed class VoiceController(IHttpClientFactory http, IConfiguration config) : ControllerBase
 {
     private const long MaxBytes = 5 * 1024 * 1024;
-    private const string Model = "whisper-1";
+    private string? GroqKey => config["Groq:ApiKey"] ?? config["Ai:GroqApiKey"];
+    private (string? Key, string Url, string Model) Provider => !string.IsNullOrWhiteSpace(GroqKey)
+        ? (GroqKey, "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo")
+        : (config["OpenAi:Key"], "https://api.openai.com/v1/audio/transcriptions", "whisper-1");
 
     [HttpGet("status")]
-    public ActionResult<VoiceStatusDto> Status() => new VoiceStatusDto(!string.IsNullOrWhiteSpace(config["OpenAi:Key"]), Model);
+    public ActionResult<VoiceStatusDto> Status() => new VoiceStatusDto(!string.IsNullOrWhiteSpace(Provider.Key), Provider.Model);
 
     [HttpPost("transcribe")]
     [RequestSizeLimit(MaxBytes + 64 * 1024)]
     public async Task<ActionResult<VoiceTranscriptDto>> Transcribe(IFormFile? audio, CancellationToken ct)
     {
-        var key = config["OpenAi:Key"];
+        var (key, url, model) = Provider;
         if (string.IsNullOrWhiteSpace(key))
             return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Voice transcription is not set up",
-                detail: "Set OpenAi__Key on the server, or use your browser's speech input.");
+                detail: "Set Groq__ApiKey (or OpenAi__Key) on the server, or use your browser's speech input.");
         if (audio is null || audio.Length == 0)
             return Problem(statusCode: StatusCodes.Status400BadRequest, title: "No audio received", detail: "Record a short voice command and try again.");
         if (audio.Length > MaxBytes)
@@ -37,9 +40,9 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         var file = new StreamContent(stream);
         file.Headers.ContentType = MediaTypeHeaderValue.TryParse(audio.ContentType, out var type) ? type : new MediaTypeHeaderValue("audio/webm");
         form.Add(file, "file", string.IsNullOrWhiteSpace(audio.FileName) ? "voice.webm" : Path.GetFileName(audio.FileName));
-        form.Add(new StringContent(Model), "model");
+        form.Add(new StringContent(model), "model");
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/audio/transcriptions") { Content = form };
+        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = form };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         var client = http.CreateClient(nameof(VoiceController));
         client.Timeout = TimeSpan.FromSeconds(60);

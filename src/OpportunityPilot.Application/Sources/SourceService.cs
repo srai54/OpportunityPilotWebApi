@@ -1,5 +1,4 @@
 using System.Globalization;
-using Microsoft.EntityFrameworkCore;
 using OpportunityPilot.Application.Abstractions;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.JobBoards;
@@ -10,18 +9,15 @@ using OpportunityPilot.Domain.Research;
 
 namespace OpportunityPilot.Application.Sources;
 
-public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvider clock, IWebFetcher fetcher)
+public sealed class SourceService(ISourceRepository sources, ICurrentUser user, TimeProvider clock, IWebFetcher fetcher) : ISourceService
 {
     public const int MaxSourcesPerCampaign = 20;
 
     public async Task<IReadOnlyList<SourceDto>> ListAsync(Guid campaignId, CancellationToken ct)
     {
         await EnsureCampaignAsync(campaignId, ct);
-        var sources = await db.Sources
-            .Where(s => s.OwnerId == user.OwnerId && s.CampaignId == campaignId)
-            .OrderBy(s => s.CreatedAt).ThenBy(s => s.Id)
-            .ToListAsync(ct);
-        return sources.Select(ToDto).ToList();
+        var list = await sources.ListAsync(user.OwnerId, campaignId, ct);
+        return list.Select(ToDto).ToList();
     }
 
     public async Task<SourceDto> CreateAsync(Guid campaignId, CreateSourceRequest request, CancellationToken ct)
@@ -120,7 +116,7 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
             errors["permissionNote"] = [$"Permission note must be at most {Source.MaxPermissionNoteLength} characters."];
         if (errors.Count > 0) throw new RequestValidationException(errors);
 
-        if (await db.Sources.CountAsync(s => s.OwnerId == user.OwnerId && s.CampaignId == campaignId, ct) >= MaxSourcesPerCampaign)
+        if (await sources.CountAsync(user.OwnerId, campaignId, ct) >= MaxSourcesPerCampaign)
             throw new RequestValidationException(new Dictionary<string, string[]>
             {
                 ["kind"] = [$"A campaign can have at most {MaxSourcesPerCampaign} sources. Delete one you no longer use first."]
@@ -129,8 +125,8 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
         var source = new Source(user.OwnerId, campaignId, request.Kind, string.IsNullOrEmpty(label) ? DefaultLabel(request.Kind, url) : label,
             url, text, note, platform: null, clock.GetUtcNow().UtcDateTime);
         if (request.Kind == SourceKind.Paste) source.SetItemCount(PasteParser.Parse(text).Count);
-        db.Sources.Add(source);
-        await db.SaveChangesAsync(ct);
+        sources.Add(source);
+        await sources.SaveChangesAsync(ct);
         return ToDto(source);
     }
 
@@ -138,12 +134,11 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
     public async Task DeleteAsync(Guid campaignId, Guid sourceId, CancellationToken ct)
     {
         await EnsureCampaignAsync(campaignId, ct);
-        var source = await db.Sources.FirstOrDefaultAsync(s => s.Id == sourceId && s.CampaignId == campaignId && s.OwnerId == user.OwnerId, ct)
+        var source = await sources.FindAsync(user.OwnerId, campaignId, sourceId, ct)
             ?? throw new NotFoundException("Source not found.");
-        // Explicit, because InMemory (demo mode) does not run database cascades.
-        db.SourceItems.RemoveRange(await db.SourceItems.Where(i => i.SourceId == source.Id).ToListAsync(ct));
-        db.Sources.Remove(source);
-        await db.SaveChangesAsync(ct);
+        // Items are removed explicitly, because InMemory (demo mode) does not run database cascades.
+        await sources.RemoveWithItemsAsync(source, ct);
+        await sources.SaveChangesAsync(ct);
     }
 
     public static SourceDto ToDto(Source s) => new(
@@ -152,7 +147,7 @@ public sealed class SourceService(IAppDbContext db, ICurrentUser user, TimeProvi
 
     private async Task<OpportunityMode> EnsureCampaignAsync(Guid campaignId, CancellationToken ct)
     {
-        var modes = await db.Campaigns.Where(c => c.Id == campaignId && c.OwnerId == user.OwnerId).Select(c => c.Mode).ToListAsync(ct);
+        var modes = await sources.CampaignModesAsync(user.OwnerId, campaignId, ct);
         return modes.Count == 1 ? modes[0] : throw new NotFoundException("Campaign not found.");
     }
 

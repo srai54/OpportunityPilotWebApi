@@ -19,11 +19,17 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, SetupState setup)
     {
         services.AddResearchInfrastructure(configuration);
-        services.AddHttpClient<ILlmClient, GeminiLlmClient>(c =>
+        services.AddHttpClient<GeminiLlmClient>(c =>
         {
             c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
             c.Timeout = Timeout.InfiniteTimeSpan;
         });
+        services.AddHttpClient<GroqLlmClient>(c =>
+        {
+            c.BaseAddress = new Uri("https://api.groq.com/");
+            c.Timeout = Timeout.InfiniteTimeSpan;
+        });
+        services.AddTransient<ILlmClient, RoutingLlmClient>();
         services.AddHttpClient<Integrations.ConnectorHttp>(Integrations.ConnectorHttp.ClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(Integrations.ConnectorHttp.Handler);
         // Requests made with a plugin connection go through the managed-connection platform's proxy; the rest go out directly.
@@ -93,7 +99,7 @@ public static class DependencyInjection
             services.AddScoped<AppDbContext>(sp => sp.GetRequiredService<InMemoryAppDbContext>());
             services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
             services.AddScoped<Application.Common.IDatabaseDiagnostics, Persistence.DatabaseDiagnosticsProbe>();
-            return services;
+            return services.AddRepositories();
         }
 
         switch (provider)
@@ -112,6 +118,20 @@ public static class DependencyInjection
 
         services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
         services.AddScoped<Application.Common.IDatabaseDiagnostics, Persistence.DatabaseDiagnosticsProbe>();
+        return services.AddRepositories();
+    }
+
+    /// <summary>EF repositories behind the Application's <c>I…Repository</c> interfaces; they share the scoped <see cref="AppDbContext"/>.</summary>
+    private static IServiceCollection AddRepositories(this IServiceCollection services)
+    {
+        services.AddScoped<Application.Campaigns.ICampaignRepository, Persistence.Repositories.CampaignRepository>();
+        services.AddScoped<Application.Opportunities.IOpportunityRepository, Persistence.Repositories.OpportunityRepository>();
+        services.AddScoped<Application.Profiles.IProfileRepository, Persistence.Repositories.ProfileRepository>();
+        services.AddScoped<Application.Drafts.IDraftRepository, Persistence.Repositories.DraftRepository>();
+        services.AddScoped<Application.Sources.ISourceRepository, Persistence.Repositories.SourceRepository>();
+        services.AddScoped<Application.Applications.IApplicationRepository, Persistence.Repositories.ApplicationRepository>();
+        services.AddScoped<Application.Approvals.IApprovalRepository, Persistence.Repositories.ApprovalRepository>();
+        services.AddScoped<Application.Staffing.IStaffingRepository, Persistence.Repositories.StaffingRepository>();
         return services;
     }
 }

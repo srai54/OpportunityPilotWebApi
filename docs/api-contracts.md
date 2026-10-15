@@ -95,6 +95,21 @@ Query enums that fail to bind return 400 from model binding.
 | POST | `/api/v1/agent/campaigns/{id}/postings` | **agent key** | `AgentPostingsRequest`; body ≤4 MB | 200 `{ accepted, sourceId, jobId }` (`jobId` null unless `queueResearch`); 400 (not a Job campaign, field errors); 404; 409; 413 |
 | GET | `/api/v1/agent/shortlist` | **agent key** | query `platform?` (LinkedIn, Naukri, Other) | 200 `AgentShortlistItem[]`, best score first, max 200 |
 
+### Interviews — candidate and sales tracker
+
+Code: `Application/Interviews/JobInterviewService.cs`, `Api/Controllers/JobInterviewsController.cs` (candidate);
+`StaffingPipelineService.InterviewBoardAsync`, `Api/Controllers/StaffingPipelineController.cs` (sales). Owner-scoped; another owner's
+record answers 404. Nothing is sent or read from a calendar.
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/interviews` | user | query `opportunityId?` | 200 `JobInterviewDto[]` (`id, opportunityId, title, organization, round, scheduledAt?, meetingUrl?, notes?, status, version, createdAt, updatedAt`), soonest first, undated last, max 500; 404 unknown job |
+| POST | `/api/v1/opportunities/{opportunityId}/interviews` | user | `{ round?, scheduledAt?, meetingUrl?, notes? }` (`scheduledAt` UTC with Z) | 201 `JobInterviewDto` (`round` defaults to the next one, status `Scheduled`); 400 `round` 1–20 / `scheduledAt` / `meetingUrl` http(s) / `notes` ≤2000 / `opportunity` (a company lead) / more than 20 per job; 404 |
+| PUT | `/api/v1/interviews/{id}` | user | `{ round?, scheduledAt?, meetingUrl?, notes?, expectedVersion }` | 200; 400; 404; 409 stale version |
+| POST | `/api/v1/interviews/{id}/status` | user | `{ status: Scheduled\|Completed\|NoShow\|Cancelled, expectedVersion }` | 200; 400; 404; 409 stale version, or Completed/NoShow without a time |
+| DELETE | `/api/v1/interviews/{id}` | user | — | 204; 404 |
+| GET | `/api/v1/staffing/interviews` | user | query `take` (1–500, default 200) | 200 `StaffingInterviewBoardRowDto[]`: `{ interview: StaffingInterviewDto, candidateId, candidateName, candidateEmail?, dealTitle, client?, progressLinkActive, progressShowsInterviews }`; open interviews (Requested, or Scheduled no more than an hour ago) first, soonest first, then the rest newest first. Status changes use the existing deal interview endpoints; the candidate's progress link reflects them when it shows interviews |
+
 ### JD circle and LinkedIn outbox (JDC1, LI1)
 
 Code: `Application/Circle/CircleService.cs`, `Application/Outreach/LinkedInOutbox.cs`, `Api/Controllers/CircleController.cs`,

@@ -71,6 +71,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<CandidateProgressLink> CandidateProgressLinks => Set<CandidateProgressLink>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
     public DbSet<Domain.Circle.CirclePerson> CirclePeople => Set<Domain.Circle.CirclePerson>();
+    public DbSet<Domain.Interviews.JobInterview> JobInterviews => Set<Domain.Interviews.JobInterview>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -369,6 +370,20 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.HasOne<Opportunity>().WithMany().HasForeignKey(x => x.OpportunityId).OnDelete(DeleteBehavior.Cascade);
             // One row per person per lead; InMemory does not enforce it, so CircleService checks too.
             e.HasIndex(x => new { x.OwnerId, x.OpportunityId, x.ProfileUrl }).IsUnique();
+        });
+
+        modelBuilder.Entity<Domain.Interviews.JobInterview>(e =>
+        {
+            e.ToTable("job_interviews");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.MeetingUrl).HasMaxLength(Domain.Interviews.JobInterview.MaxLinkLength);
+            e.Property(x => x.Notes).HasMaxLength(Domain.Interviews.JobInterview.MaxNotesLength);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            e.HasOne<Opportunity>().WithMany().HasForeignKey(x => x.OpportunityId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.OwnerId, x.OpportunityId, x.Round });
+            e.HasIndex(x => new { x.OwnerId, x.ScheduledAt });
         });
 
         modelBuilder.Entity<OpportunityEvidence>(e =>

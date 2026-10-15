@@ -12,7 +12,7 @@ using OpportunityPilot.Domain.Opportunities;
 
 namespace OpportunityPilot.Application.Drafts;
 
-public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvider clock, UserEventLog events)
+public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, TimeProvider clock, UserEventLog events) : IDraftService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -22,17 +22,17 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
             throw Invalid("channel", "Unknown draft channel.");
 
         var ownerId = user.OwnerId;
-        var opportunity = await db.Opportunities.FirstOrDefaultAsync(o => o.Id == opportunityId && o.OwnerId == ownerId, ct)
+        var opportunity = await drafts.FindOpportunityAsync(ownerId, opportunityId, ct)
             ?? throw new NotFoundException("Opportunity not found.");
         if (request.Channel == DraftChannel.CoverNote && opportunity.Mode != OpportunityMode.Job)
             throw Invalid("channel", "Cover notes can only be created for Job opportunities.");
-        if (await db.OutreachDrafts.AnyAsync(d => d.OwnerId == ownerId && d.OpportunityId == opportunityId && d.Channel == request.Channel, ct))
+        if (await drafts.ExistsForChannelAsync(ownerId, opportunityId, request.Channel, ct))
             throw new ConflictException($"This opportunity already has a {ChannelName(request.Channel)} draft. Edit the existing draft instead.");
         var recipient = NormalizeRecipient(request.Channel, request.Recipient);
         await EnsureNotSuppressedAsync(recipient, ct);
 
-        var campaign = await db.Campaigns.FirstAsync(c => c.Id == opportunity.CampaignId && c.OwnerId == ownerId, ct);
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == campaign.ProfileId && p.OwnerId == ownerId, ct)
+        var campaign = await drafts.GetCampaignAsync(ownerId, opportunity.CampaignId, ct);
+        var profile = await drafts.FindProfileAsync(ownerId, campaign.ProfileId, ct)
             ?? throw new NotFoundException("Campaign profile not found.");
         if (profile.ConfirmedAt is null)
             throw Invalid("profile", "Confirm the campaign profile before generating a cover note.");
@@ -46,11 +46,11 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         var recipientEvidence = RecipientEvidence(recipient, opportunity.FactsJson);
         var draft = new OutreachDraft(ownerId, opportunity.Id, request.Channel, recipient, recipientEvidence is not null, null,
             generated.Body, DraftSource.Template, JsonSerializer.Serialize(generated.Claims, Json), now);
-        db.OutreachDrafts.Add(draft);
+        drafts.Add(draft);
         events.Add(UserEventKinds.DraftCreated, $"Wrote {WithArticle(ChannelName(request.Channel))} draft", opportunity.Id, opportunity.Title);
         try
         {
-            await db.SaveChangesAsync(ct);
+            await drafts.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
         {
@@ -62,10 +62,8 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
     public async Task<IReadOnlyList<DraftDto>> ListForOpportunityAsync(Guid opportunityId, CancellationToken ct)
     {
         await EnsureOpportunityAsync(opportunityId, ct);
-        var rows = await Owned.Where(d => d.OpportunityId == opportunityId)
-            .OrderByDescending(d => d.UpdatedAt).ThenBy(d => d.Id).ToListAsync(ct);
-        var facts = await db.Opportunities.Where(o => o.Id == opportunityId && o.OwnerId == user.OwnerId)
-            .Select(o => o.FactsJson).SingleAsync(ct);
+        var rows = await drafts.ListForOpportunityAsync(user.OwnerId, opportunityId, ct);
+        var facts = await drafts.OpportunityFactsAsync(user.OwnerId, opportunityId, ct);
         return rows.Select(d => ToDto(d, facts)).ToList();
     }
 
@@ -73,23 +71,12 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
     {
         take = Math.Clamp(take, 1, 200);
         skip = Math.Max(0, skip);
-        var query = Owned;
-        if (state is { } value) query = query.Where(d => d.State == value);
-        if (channel is { } requestedChannel) query = query.Where(d => d.Channel == requestedChannel);
-        var joined = from draft in query
-                     join opportunity in db.Opportunities on draft.OpportunityId equals opportunity.Id
-                     join campaign in db.Campaigns on opportunity.CampaignId equals campaign.Id
-                     where opportunity.OwnerId == user.OwnerId && campaign.OwnerId == user.OwnerId
-                         && (campaignId == null || campaign.Id == campaignId)
-                     select new { draft, opportunity.Title, opportunity.Organization, opportunity.FactsJson, CampaignId = campaign.Id, CampaignName = campaign.Name };
-        var total = await joined.CountAsync(ct);
-        var rows = await joined.OrderByDescending(x => x.draft.UpdatedAt).ThenBy(x => x.draft.Id)
-            .Skip(skip).Take(take).ToListAsync(ct);
+        var (total, rows) = await drafts.PageAsync(user.OwnerId, state, channel, campaignId, take, skip, ct);
         return new DraftPageDto(total, rows.Select(x => new DraftListItemDto(
-            x.draft.Id, x.draft.OpportunityId, x.CampaignId, x.CampaignName, x.Title, x.Organization,
-            x.draft.Channel, x.draft.Recipient, x.draft.RecipientVerified,
-            x.draft.RecipientVerified ? "Evidence" : "UserEntered", RecipientEvidence(x.draft.Recipient, x.FactsJson),
-            x.draft.State == DraftState.Sent ? DraftState.Sent : x.draft.HasValidApproval() ? DraftState.Approved : DraftState.Draft, x.draft.Version, x.draft.UpdatedAt)).ToList());
+            x.Draft.Id, x.Draft.OpportunityId, x.CampaignId, x.CampaignName, x.Title, x.Organization,
+            x.Draft.Channel, x.Draft.Recipient, x.Draft.RecipientVerified,
+            x.Draft.RecipientVerified ? "Evidence" : "UserEntered", RecipientEvidence(x.Draft.Recipient, x.FactsJson),
+            x.Draft.State == DraftState.Sent ? DraftState.Sent : x.Draft.HasValidApproval() ? DraftState.Approved : DraftState.Draft, x.Draft.Version, x.Draft.UpdatedAt)).ToList());
     }
 
     public async Task<DraftDto> GetAsync(Guid id, CancellationToken ct)
@@ -119,7 +106,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
             var verified = RecipientEvidence(recipient, await OpportunityFactsAsync(draft.OpportunityId, ct)) is not null;
             draft.Update(recipient, verified, request.Subject, request.Body, clock.GetUtcNow().UtcDateTime);
             await LogDraftAsync(UserEventKinds.DraftEdited, $"Edited the {ChannelName(draft.Channel)} draft (version {draft.Version})", draft.OpportunityId, ct);
-            await db.SaveChangesAsync(ct);
+            await drafts.SaveChangesAsync(ct);
         }
         catch (ArgumentException ex) { throw Invalid("body", ex.Message); }
         catch (DbUpdateConcurrencyException) { throw new ConflictException("Draft was changed elsewhere. Reload before saving."); }
@@ -138,7 +125,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         {
             draft.Approve(request.Version, clock.GetUtcNow().UtcDateTime);
             await LogDraftAsync(UserEventKinds.DraftApproved, $"Approved the {ChannelName(draft.Channel)} draft (version {draft.Version})", draft.OpportunityId, ct);
-            await db.SaveChangesAsync(ct);
+            await drafts.SaveChangesAsync(ct);
         }
         catch (InvalidOperationException ex) { throw Invalid("draft", ex.Message); }
         catch (DbUpdateConcurrencyException) { throw new ConflictException("Draft was changed elsewhere. Reload before approving."); }
@@ -159,7 +146,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
             }
             catch (Exception ex) when (ex is NotFoundException or ConflictException or RequestValidationException)
             {
-                db.ChangeTracker.Clear();
+                drafts.ClearTracked();
                 results.Add(new(item.Id, false, ex.Message, null));
             }
         }
@@ -170,7 +157,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
 
     private async Task LogDraftAsync(string kind, string detail, Guid opportunityId, CancellationToken ct)
     {
-        var title = await db.Opportunities.AsNoTracking().Where(o => o.Id == opportunityId && o.OwnerId == user.OwnerId).Select(o => o.Title).FirstOrDefaultAsync(ct);
+        var title = await drafts.OpportunityTitleAsync(user.OwnerId, opportunityId, ct);
         events.Add(kind, detail, opportunityId, title);
     }
 
@@ -178,7 +165,7 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
     {
         var draft = await FindAsync(id, ct);
         draft.RevokeApproval(clock.GetUtcNow().UtcDateTime);
-        try { await db.SaveChangesAsync(ct); }
+        try { await drafts.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new ConflictException("Draft was changed elsewhere. Reload and try again."); }
         return ToDto(draft, await OpportunityFactsAsync(draft.OpportunityId, ct));
     }
@@ -190,34 +177,32 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
         var now = clock.GetUtcNow().UtcDateTime;
         try { draft.Reopen(now); }
         catch (InvalidOperationException ex) { throw new ConflictException(ex.Message); }
-        db.Activities.Add(new Activity(user.OwnerId, draft.OpportunityId, "Note", now,
+        drafts.AddActivity(new Activity(user.OwnerId, draft.OpportunityId, "Note", now,
             $"{draft.Channel} message reopened to edit and send again (new version {draft.Version}). The earlier send stays on record."));
-        try { await db.SaveChangesAsync(ct); }
+        try { await drafts.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new ConflictException("Draft was changed elsewhere. Reload and try again."); }
         return ToDto(draft, await OpportunityFactsAsync(draft.OpportunityId, ct));
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken ct)
     {
-        db.OutreachDrafts.Remove(await FindAsync(id, ct));
-        await db.SaveChangesAsync(ct);
+        drafts.Remove(await FindAsync(id, ct));
+        await drafts.SaveChangesAsync(ct);
     }
 
-    private IQueryable<OutreachDraft> Owned => db.OutreachDrafts.Where(d => d.OwnerId == user.OwnerId);
+    public Task<int> CountAwaitingReviewAsync(CancellationToken ct) => drafts.CountAsync(user.OwnerId, DraftState.Draft, ct);
 
-    public Task<int> CountAwaitingReviewAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Draft, ct);
-
-    public Task<int> CountApprovedAsync(CancellationToken ct) => Owned.CountAsync(d => d.State == DraftState.Approved, ct);
+    public Task<int> CountApprovedAsync(CancellationToken ct) => drafts.CountAsync(user.OwnerId, DraftState.Approved, ct);
 
     /// <summary>Drafts that have been sent at least once (a reopened draft keeps its last send time).</summary>
-    public Task<int> CountSentAsync(CancellationToken ct) => Owned.CountAsync(d => d.SentAt != null, ct);
+    public Task<int> CountSentAsync(CancellationToken ct) => drafts.CountSentAsync(user.OwnerId, ct);
 
     private async Task<OutreachDraft> FindAsync(Guid id, CancellationToken ct) =>
-        await Owned.FirstOrDefaultAsync(d => d.Id == id, ct) ?? throw new NotFoundException("Draft not found.");
+        await drafts.FindAsync(user.OwnerId, id, ct) ?? throw new NotFoundException("Draft not found.");
 
     private async Task EnsureOpportunityAsync(Guid id, CancellationToken ct)
     {
-        if (!await db.Opportunities.AnyAsync(o => o.Id == id && o.OwnerId == user.OwnerId, ct))
+        if (!await drafts.OpportunityExistsAsync(user.OwnerId, id, ct))
             throw new NotFoundException("Opportunity not found.");
     }
 
@@ -338,13 +323,12 @@ public sealed class DraftService(IAppDbContext db, ICurrentUser user, TimeProvid
     {
         if (string.IsNullOrWhiteSpace(recipient)) return;
         var normalized = Domain.Outreach.Suppression.Normalize(recipient);
-        if (await db.Suppressions.AnyAsync(x => x.OwnerId == user.OwnerId && x.NormalizedRecipient == normalized, ct))
+        if (await drafts.IsSuppressedAsync(user.OwnerId, normalized, ct))
             throw Invalid("recipient", "Recipient is on your suppression list.");
     }
 
     private async Task<string> OpportunityFactsAsync(Guid opportunityId, CancellationToken ct) =>
-        await db.Opportunities.Where(o => o.Id == opportunityId && o.OwnerId == user.OwnerId)
-            .Select(o => o.FactsJson).SingleAsync(ct);
+        await drafts.OpportunityFactsAsync(user.OwnerId, opportunityId, ct);
 
     private static Guid? RecipientEvidence(string? recipient, string? factsJson)
     {

@@ -5,7 +5,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1")]
-public sealed class DraftsController(DraftService drafts, DraftPreparer preparer, DraftRewriteService rewrites) : ControllerBase
+public sealed class DraftsController(IDraftService drafts, IDraftPreparer preparer, IDraftRewriteService rewrites) : ControllerBase
 {
     /// <summary>Sales hands-off, step one: write the email for every shortlisted lead that has a published address. Approving and sending stay separate, explicit steps.</summary>
     [HttpPost("campaigns/{campaignId:guid}/drafts/prepare")]
