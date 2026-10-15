@@ -93,7 +93,7 @@ public static class DependencyInjection
             services.AddScoped<AppDbContext>(sp => sp.GetRequiredService<InMemoryAppDbContext>());
             services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
             services.AddScoped<Application.Common.IDatabaseDiagnostics, Persistence.DatabaseDiagnosticsProbe>();
-            return services;
+            return services.AddRepositories();
         }
 
         switch (provider)
@@ -112,6 +112,13 @@ public static class DependencyInjection
 
         services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
         services.AddScoped<Application.Common.IDatabaseDiagnostics, Persistence.DatabaseDiagnosticsProbe>();
+        return services.AddRepositories();
+    }
+
+    /// <summary>EF repositories behind the Application's <c>I…Repository</c> interfaces; they share the scoped <see cref="AppDbContext"/>.</summary>
+    private static IServiceCollection AddRepositories(this IServiceCollection services)
+    {
+        services.AddScoped<Application.Campaigns.ICampaignRepository, Persistence.Repositories.CampaignRepository>();
         return services;
     }
 }

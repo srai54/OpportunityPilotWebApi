@@ -36,7 +36,7 @@ public static class DependencyInjection
         services.AddScoped<ApplicationService>();
         services.AddScoped<AgentKeyService>();
         services.AddScoped<GuestSessionService>();
-        services.AddScoped<CampaignService>();
+        services.AddScoped<ICampaignService, CampaignService>();
         services.AddScoped<SourceService>();
         services.AddScoped<ImportService>();
         services.AddScoped<ResearchService>();

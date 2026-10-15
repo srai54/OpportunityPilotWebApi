@@ -5,7 +5,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/campaigns")]
-public sealed class CampaignsController(CampaignService campaigns) : ControllerBase
+public sealed class CampaignsController(ICampaignService campaigns) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<CampaignSummaryDto>>> List(CancellationToken ct) =>

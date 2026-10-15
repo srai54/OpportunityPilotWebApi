@@ -5,23 +5,22 @@ using OpportunityPilot.Domain.Campaigns;
 
 namespace OpportunityPilot.Application.Campaigns;
 
-public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class CampaignService(ICampaignRepository campaigns, ICurrentUser user, TimeProvider clock) : ICampaignService
 {
-    private IQueryable<Campaign> Owned => db.Campaigns.Where(c => c.OwnerId == user.OwnerId);
 
     public async Task<IReadOnlyList<CampaignSummaryDto>> ListAsync(CancellationToken ct)
     {
-        var campaigns = await Owned.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id).ToListAsync(ct);
-        var stats = await StatsAsync(campaigns.Select(c => c.Id).ToList(), ct);
-        return campaigns.Select(c =>
+        var list = await campaigns.ListAsync(user.OwnerId, ct);
+        var stats = await campaigns.StatsAsync(user.OwnerId, list.Select(c => c.Id).ToList(), ct);
+        return list.Select(c =>
         {
-            var s = stats.For(c.Id);
+            var s = stats[c.Id];
             return new CampaignSummaryDto(c.Id, c.ProfileId, c.Mode, c.Name, c.Goal, c.ResultLimit, c.Version,
                 c.CreatedAt, c.UpdatedAt, s.Sources, s.Opportunities, s.LastJob, c.AutoSuggestMinScore, c.AutoApproveMinScore);
         }).ToList();
     }
 
-    public async Task<int> CountAsync(CancellationToken ct) => await Owned.CountAsync(ct);
+    public async Task<int> CountAsync(CancellationToken ct) => await campaigns.CountAsync(user.OwnerId, ct);
 
     public async Task<CampaignDto> GetAsync(Guid id, CancellationToken ct) =>
         await ToDtoAsync(await FindOwnedAsync(id, ct), ct);
@@ -33,7 +32,7 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
         if (!Enum.IsDefined(request.Mode)) errors["mode"] = ["Unknown mode."];
         else if (!CampaignCriteria.IsSupportedMode(request.Mode)) errors["mode"] = ["Unknown mode."];
 
-        if (request.ProfileId == Guid.Empty || !await db.Profiles.AnyAsync(p => p.Id == request.ProfileId && p.OwnerId == user.OwnerId, ct))
+        if (request.ProfileId == Guid.Empty || !await campaigns.ProfileExistsAsync(user.OwnerId, request.ProfileId, ct))
             errors["profileId"] = ["Profile not found."];
 
         var (criteria, weights, resultLimit) = ValidateFields(request.Mode, request.Name, request.Goal, request.Criteria,
@@ -45,8 +44,8 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
         var campaign = new Campaign(user.OwnerId, request.ProfileId, request.Mode, request.Name, request.Goal,
             criteria.ToJson(), CampaignWeights.ToJson(weights), resultLimit, clock.GetUtcNow().UtcDateTime, request.AutoSuggestMinScore);
         campaign.SetAutoApprove(request.AutoApproveMinScore);
-        db.Campaigns.Add(campaign);
-        await db.SaveChangesAsync(ct);
+        campaigns.Add(campaign);
+        await campaigns.SaveChangesAsync(ct);
         return await ToDtoAsync(campaign, ct);
     }
 
@@ -76,7 +75,7 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
             clock.GetUtcNow().UtcDateTime);
         try
         {
-            await db.SaveChangesAsync(ct);
+            await campaigns.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -86,7 +85,7 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
     }
 
     private async Task<Campaign> FindOwnedAsync(Guid id, CancellationToken ct) =>
-        await Owned.FirstOrDefaultAsync(c => c.Id == id, ct)
+        await campaigns.FindAsync(user.OwnerId, id, ct)
         ?? throw new NotFoundException("Campaign not found.");
 
     private static (CampaignCriteria Criteria, Dictionary<string, int> Weights, int ResultLimit) ValidateFields(
@@ -125,38 +124,9 @@ public sealed class CampaignService(IAppDbContext db, ICurrentUser user, TimePro
 
     private async Task<CampaignDto> ToDtoAsync(Campaign c, CancellationToken ct)
     {
-        var s = (await StatsAsync([c.Id], ct)).For(c.Id);
+        var s = (await campaigns.StatsAsync(user.OwnerId, [c.Id], ct))[c.Id];
         return new CampaignDto(c.Id, c.ProfileId, c.Mode, c.Name, c.Goal, c.ResultLimit, c.Version, c.CreatedAt, c.UpdatedAt,
             s.Sources, s.Opportunities, s.LastJob,
             CampaignCriteria.FromJson(c.CriteriaJson), CampaignWeights.FromJson(c.Mode, c.WeightsJson), c.AutoSuggestMinScore, c.AutoApproveMinScore);
-    }
-
-    private sealed record Stats(int Sources, int Opportunities, LastJobDto? LastJob);
-
-    private sealed class StatsLookup(Dictionary<Guid, int> sources, Dictionary<Guid, int> opportunities, Dictionary<Guid, LastJobDto> jobs)
-    {
-        public Stats For(Guid id) => new(sources.GetValueOrDefault(id), opportunities.GetValueOrDefault(id), jobs.GetValueOrDefault(id));
-    }
-
-    // Separate grouped queries rather than correlated subqueries: portable across Postgres, SQL Server and InMemory.
-    private async Task<StatsLookup> StatsAsync(List<Guid> ids, CancellationToken ct)
-    {
-        var ownerId = user.OwnerId;
-        var sources = await db.Sources.Where(s => s.OwnerId == ownerId && ids.Contains(s.CampaignId))
-            .GroupBy(s => s.CampaignId).Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-        var opportunities = await db.Opportunities.Where(o => o.OwnerId == ownerId && ids.Contains(o.CampaignId))
-            .GroupBy(o => o.CampaignId).Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-        var jobs = (await db.ResearchJobs.Where(j => j.OwnerId == ownerId && ids.Contains(j.CampaignId))
-                .Select(j => new { j.CampaignId, j.Id, j.State, j.Stage, j.FinishedAt, j.CreatedAt })
-                .ToListAsync(ct))
-            .GroupBy(j => j.CampaignId)
-            .ToDictionary(g => g.Key, g =>
-            {
-                var last = g.OrderByDescending(j => j.CreatedAt).First();
-                return new LastJobDto(last.Id, last.State, last.Stage, last.FinishedAt);
-            });
-        return new StatsLookup(sources, opportunities, jobs);
     }
 }
