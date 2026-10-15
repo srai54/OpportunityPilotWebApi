@@ -102,8 +102,8 @@ public sealed class OutreachDraft : IOwned
         if (State == DraftState.Sent) throw new InvalidOperationException("This message was already sent.");
         if (version != Version) throw new InvalidOperationException("The draft version is stale.");
         if (string.IsNullOrWhiteSpace(Body)) throw new InvalidOperationException("The draft body is required.");
-        if (Channel == DraftChannel.Email && string.IsNullOrWhiteSpace(Recipient))
-            throw new InvalidOperationException("Email drafts require a recipient.");
+        // An email may be approved without an address: the person sends it from their own mail app (Gmail, Outlook) and types the
+        // address there. Sending from the server mailbox still requires one (MailboxService).
 
         State = DraftState.Approved;
         ApprovedVersion = Version;

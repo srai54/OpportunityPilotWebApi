@@ -44,7 +44,9 @@ public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, Tim
         generated = (generated.Body, generated.Claims.Select(c => c.Basis == "Profile" ? c with { Basis = $"Profile v{profile.Version}" } : c).ToList());
         var now = clock.GetUtcNow().UtcDateTime;
         var recipientEvidence = RecipientEvidence(recipient, opportunity.FactsJson);
-        var draft = new OutreachDraft(ownerId, opportunity.Id, request.Channel, recipient, recipientEvidence is not null, null,
+        // An email starts with a subject, so it can be approved and sent without editing first.
+        var subject = request.Channel == DraftChannel.Email ? EmailSubject(opportunity) : null;
+        var draft = new OutreachDraft(ownerId, opportunity.Id, request.Channel, recipient, recipientEvidence is not null, subject,
             generated.Body, DraftSource.Template, JsonSerializer.Serialize(generated.Claims, Json), now);
         drafts.Add(draft);
         events.Add(UserEventKinds.DraftCreated, $"Wrote {WithArticle(ChannelName(request.Channel))} draft", opportunity.Id, opportunity.Title);
@@ -211,7 +213,7 @@ public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, Tim
         var validApproval = draft.HasValidApproval();
         var state = draft.State == DraftState.Sent ? DraftState.Sent : validApproval ? DraftState.Approved : DraftState.Draft;
         var blockers = new List<string> { "Sending requires a configured provider or manual copy." };
-        if (draft.Channel == DraftChannel.Email && string.IsNullOrWhiteSpace(draft.Recipient)) blockers.Add("Email drafts require a recipient.");
+        if (draft.Channel == DraftChannel.Email && string.IsNullOrWhiteSpace(draft.Recipient)) blockers.Add("No address yet: add it in your mail app when you send, or here to send from your mailbox.");
         if (!string.IsNullOrWhiteSpace(draft.Recipient) && !draft.RecipientVerified)
             blockers.Add("Recipient was entered manually and has not been verified against evidence.");
         if (ContainsUnresolvedPlaceholder(draft.Body) || ContainsUnresolvedPlaceholder(draft.Subject))
@@ -229,13 +231,47 @@ public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, Tim
     {
         var profile = Object(profileJson);
         var offer = String(profile, "offer", "summary", "professionalSummary") ?? "[Add your confirmed offer here.]";
-        var organization = string.IsNullOrWhiteSpace(opportunity.Organization) ? "[organization]" : opportunity.Organization;
+        var title = ShortTitle(opportunity.Title);
+        var company = CleanOrganization(opportunity.Organization, opportunity.Title);
+        var organization = company ?? "[organization]";
         // Sales profiles carry an outreach identity (name, role, company, signature); candidates their name.
         var name = String(profile, "outreachIdentity", "fullName", "candidateName", "name") ?? "[Your name]";
         var claims = offer.StartsWith('[') ? new List<DraftClaimDto>() : [new DraftClaimDto(offer, "Profile", null)];
-        var full = $"Hello {organization},\n\nI noticed {opportunity.Title}. {offer}\n\nWould a short conversation be useful?\n\nRegards,\n{name}";
+        // A company name that is missing or is really the posting text gets a plain greeting instead of a garbled one.
+        var greeting = company is null ? "Hello," : $"Hello {company} team,";
+        var seen = company is null ? $"I came across your opening for {title}." : $"I saw that {company} is hiring for {title}.";
+        var full = $"{greeting}\n\n{seen} {offer}\n\nWould a short call this week be useful?\n\nRegards,\n{name}";
         var body = channel == DraftChannel.LinkedInMessage ? LinkedInNote.Build(organization, opportunity.Title, offer, name) : full;
         return (body, claims);
+    }
+
+    /// <summary>A short subject for a new email: the role, kept under the subject limit.</summary>
+    public static string EmailSubject(Opportunity opportunity)
+    {
+        var subject = $"Quick question about {ShortTitle(opportunity.Title)}";
+        return subject.Length > OutreachDraft.MaxSubjectLength ? subject[..OutreachDraft.MaxSubjectLength] : subject;
+    }
+
+    /// <summary>The role in a few words: the first sentence of the title, at most about 80 characters, without a trailing full stop.</summary>
+    public static string ShortTitle(string title)
+    {
+        var t = (title ?? "").Trim();
+        // "Comviva is hiring a Senior Software Engineer…" → "Senior Software Engineer…"
+        var hiring = System.Text.RegularExpressions.Regex.Match(t, @"\bis hiring (?:an? )?(?<role>.+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (hiring.Success) t = hiring.Groups["role"].Value;
+        var dot = t.IndexOf(". ", StringComparison.Ordinal);
+        if (dot > 10) t = t[..dot];
+        if (t.Length > 80) { var cut = t.LastIndexOf(' ', 80); t = t[..(cut > 30 ? cut : 80)]; }
+        return t.TrimEnd('.', ' ', ',');
+    }
+
+    /// <summary>The company name, or null when it is missing, very long, or really the posting's text (then the greeting stays plain).</summary>
+    public static string? CleanOrganization(string? organization, string title)
+    {
+        var o = organization?.Trim().TrimEnd('.');
+        if (string.IsNullOrWhiteSpace(o) || o.Length > 60 || o.Contains(" is hiring", StringComparison.OrdinalIgnoreCase)) return null;
+        if (string.Equals(o, title?.Trim().TrimEnd('.'), StringComparison.OrdinalIgnoreCase)) return null;
+        return o;
     }
 
     private static (string Body, IReadOnlyList<DraftClaimDto> Claims) GenerateCoverNote(
