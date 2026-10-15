@@ -20,7 +20,12 @@ The agent never applies to anything you did not shortlist.
 
 ## Setup (once)
 
-Requires Node 20.19+ (22 or 24 recommended).
+**Windows, one click:** in the web app press **Connect the agent** on the Desktop agent card and copy the key, then
+double-click `setup.cmd` in this folder and paste the key. It installs the agent, saves the key in `config.json`, checks
+the connection and opens LinkedIn for you to sign in. On Windows the agent uses your installed Microsoft Edge, so no
+browser download is needed (`OP_BROWSER=chromium` switches to Playwright's Chromium).
+
+Manual setup (any system) — requires Node 20.19+ (22 or 24 recommended).
 
 ```bash
 cd OpportunityPilotWebApi/agent

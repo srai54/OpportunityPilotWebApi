@@ -11,6 +11,8 @@ export async function openBrowser(opts: { headless?: boolean; profileDir?: strin
   const profileDir = opts.profileDir ?? join(DATA_DIR, 'browser-profile')
   mkdirSync(profileDir, { recursive: true })
   const context = await chromium.launchPersistentContext(profileDir, {
+    // Microsoft Edge is on every Windows PC, so nothing else needs downloading there; OP_BROWSER=chromium switches back.
+    channel: browserChannel(),
     headless: opts.headless ?? false,
     viewport: { width: 1280, height: 900 },
   })
@@ -25,6 +27,14 @@ export async function openBrowser(opts: { headless?: boolean; profileDir?: strin
  * to page.evaluate run inside the page, where that helper does not exist, so define a no-op there.
  * (Given as a string so the transform cannot touch it.)
  */
+/** "msedge" on Windows unless OP_BROWSER says otherwise; Playwright's own Chromium elsewhere. */
+export function browserChannel(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string | undefined {
+  const chosen = env.OP_BROWSER?.trim().toLowerCase()
+  if (chosen === 'chromium') return undefined
+  if (chosen) return chosen
+  return platform === 'win32' ? 'msedge' : undefined
+}
+
 export async function prepareContext(context: BrowserContext) {
   await context.addInitScript('globalThis.__name = globalThis.__name || ((fn) => fn)')
 }
