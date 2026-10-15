@@ -8,6 +8,7 @@ public interface IStaffingService
     Task<IReadOnlyList<StaffingAccountDto>> ListAccountsAsync(int take, int skip, CancellationToken ct);
     Task<StaffingAccountDto> CreateAccountAsync(CreateStaffingAccountRequest request, CancellationToken ct);
     Task<StaffingContactDto> CreateContactAsync(Guid accountId, CreateStaffingContactRequest request, CancellationToken ct);
+    Task<StaffingContactDto> UpdateContactAsync(Guid accountId, Guid contactId, UpdateStaffingContactRequest request, CancellationToken ct);
     Task<IReadOnlyList<StaffingDealDto>> ListDealsAsync(int take, int skip, StaffingDealStage? stage, StaffingDealSource? source, CancellationToken ct);
     Task<StaffingDealDto> GetDealAsync(Guid id, CancellationToken ct);
     Task<StaffingDealDto> CreateDealAsync(Guid accountId, CreateStaffingDealRequest request, CancellationToken ct);

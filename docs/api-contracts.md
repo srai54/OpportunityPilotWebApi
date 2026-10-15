@@ -167,6 +167,7 @@ profile is confirmed. No message is sent; approval only makes the exact approved
 | GET/PATCH | `/api/v1/next-actions[/{id}]` | user | `state?`, `dueAt?` on PATCH | owner due-date list and state changes |
 | POST | `/api/v1/goal-previews` | user | `{ profileId, goal, mode? }` | Gemini when configured, validated deterministic fallback otherwise |
 | GET | `/api/v1/ai/status` | user | — | `{ active, provider, model, fallbackReason, callsToday, dailyLimit, maxCallsPerRun, lastFailure, rewriteAvailable }`; `rewriteAvailable` is false when AI is off, has no key or today's budget is spent |
+| POST | `/api/v1/assistant` | user | `{ text (≤500), workspace?, timeZone?, history?, context? }` | 200 `{ reply, action?, source, fallbackReason? }`. `action.kind` is one of `launch`, `open`, `review`, `outreach` (Sales), `apply` (Candidate), `schedule`. A `schedule` action carries `target, targetId, targetType ("deal" Sales / "opportunity" Candidate), round? (1–10, clamped), when (local `yyyy-MM-ddTHH:mm:ss` in `timeZone`, must parse and fall within now…now+365 days, else dropped), mode? (`Video`/`Phone`/`Onsite`, else null), minutes? (15–240, clamped)`. The target is matched case-insensitively against the person's own open deals (account or deal name) or non-dismissed jobs (organization or title); with no single match the reply asks which one and `action` is null. Nothing is saved: the web app calls the interview endpoints after a yes |
 | GET/DELETE | `/api/v1/account-data/export`, `/api/v1/account-data` | user | `{ confirm: true }` on DELETE | portable JSON export or permanent owned-data deletion |
 | DELETE | `/api/v1/drafts/{id}` | user | — | 204; 404 |
 
@@ -208,6 +209,7 @@ create a calendar event or claim that an external action occurred.
 | GET | `/api/v1/staffing/accounts` | user | query `take` (1–200), `skip` | 200 `StaffingAccountDto[]` with contacts |
 | POST | `/api/v1/staffing/accounts` | user | `CreateStaffingAccountRequest` | 201 `StaffingAccountDto`; 400; 409 duplicate owned domain |
 | POST | `/api/v1/staffing/accounts/{accountId}/contacts` | user | `CreateStaffingContactRequest` | 200 `StaffingContactDto`; 400; 404 |
+| PUT | `/api/v1/staffing/accounts/{accountId}/contacts/{contactId}` | user | `UpdateStaffingContactRequest` | 200 `StaffingContactDto`; 400; 404; 409 stale `expectedVersion` |
 | GET | `/api/v1/staffing/deals` | user | query `stage?`, `source?`, `take`, `skip` | 200 `StaffingDealDto[]`, newest updated first |
 | GET | `/api/v1/staffing/deals/{id}` | user | — | 200 `StaffingDealDto` with newest activities; 404 |
 | POST | `/api/v1/staffing/accounts/{accountId}/deals` | user | `CreateStaffingDealRequest` | 201 `StaffingDealDto`; 400; 404 |
@@ -225,6 +227,30 @@ All records are owner-scoped, use fictional `.example` identities, and carry the
 | DELETE | `/api/v1/demo/sales` | user | — | 204 after removing only the caller's demo records |
 | POST | `/api/v1/staffing/deals/{id}/stage` | user | `{ stage, expectedVersion }` | 200; 400 unknown stage; 404; 409 stale/invalid transition |
 | POST | `/api/v1/staffing/deals/{id}/notes` | user | `{ detail }` | 200 deal with immutable note activity; 400; 404 |
+
+### Sample data
+
+Fictional records for the caller's own account, so a new user can try every screen. Every name ends in ` (sample)`, people use
+`@example.com` emails and `+91 98…` phones. Records are made through the normal services (consent, stage and owner rules hold);
+nothing is sent and no network call is made. Each part is created once per owner: a repeat call skips it (its counts are 0).
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| POST | `/api/v1/sample-data` | user | query `workspace?` = `Sales`, `Candidate`, or empty for both | 200 `SampleDataResultDto`; 400 unknown workspace |
+
+- **Sales** (skipped when the account `Northwind Technologies (sample)` exists): 2 client accounts with 2 contacts each (title, email,
+  phone); 3 bench candidates (INR rates; one Immediate with consent, one on 30 days' notice without consent, one on 60 days with consent);
+  2 deals in different stages (one moved to RequirementConfirmed then to Interviewing by its submission and interviews, one at Contacted);
+  1 submission approved and marked sent by email; 2 scheduled interviews in the next days (Video with a meeting link, Phone with who
+  calls whom); a progress link for the submitted candidate showing Client, Role and Interviews (its token is not returned).
+- **Candidate** (skipped when the campaign `Software and data roles, Gurugram and Bengaluru (sample)` exists): a Candidate profile with
+  skills only when the owner has none (otherwise the newest one is used), a Job campaign with one Paste source of 3 short job posts
+  (Gurugram/Bengaluru, software engineer / data scientist), and its research **queued** (it runs in the background processor).
+  Two job interviews are added on the campaign's two best jobs once research has found them: the first call returns
+  `jobInterviewsPending: true`; call again after the run finishes to add them (added once).
+
+`SampleDataResultDto`: `salesCreated, accounts, contacts, candidates, deals, submissions, staffingInterviews, progressLinks,
+candidateCreated, profiles, campaigns, sources, researchJobId?, jobInterviews, jobInterviewsPending`.
 
 ### Wellfound shared workspace
 
@@ -266,7 +292,7 @@ Secrets are never returned, logged or exported. Outbound calls go through `IConn
 | POST | `/api/v1/integrations/{kind}/push` | user, `connectors` | `{ opportunityIds: [≤25] }` | per lead `{ opportunityId, outcome: Added|AlreadyThere|Failed, reason, link }`; HubSpot/Notion/Airtable only; duplicates are found by domain or name and not created again |
 | POST | `/api/v1/opportunities/{id}/people/find` | user, `connectors` | `{ source: "Hunter"|"Apollo", titles?: string[≤10, ≤80 chars], website? }` | 200 `{ source, domain, people: [{ source, name, title?, email?, emailConfidence?, linkedinUrl?, personId?, note }], creditsNote }` (≤10 people). Domain: `website` from the request, else the lead's website for Customer/Company leads (a Job lead's link is the board, so it needs `website`). 400 `source` (not Hunter/Apollo), `titles`, `website` "Add the company website first." / not a public domain; 404 lead not found or not yours; 409 "Connect Hunter in Connectors first." (or Apollo), or the service's refusal in words (key refused, limit used up, key may not call the endpoint), also stored as the connection's `lastError`. Hunter: `GET /v2/domain-search?domain=&limit=10&department=hr,executive,management,it` — emails with Hunter's confidence and page count, wanted titles first; uses one Hunter search when someone is found. Apollo: `POST /api/v1/mixed_people/api_search` with `q_organization_domains_list[]` and `person_titles[]` (default: recruiter, talent acquisition, HR, hiring manager, head of engineering, CTO, founder) — 0 credits, no emails, last name obfuscated, `personId` for reveal. Writes only a `Note` activity "Looked up N people at {domain} with {source} (third-party data, not verified)." |
 | POST | `/api/v1/opportunities/{id}/people/reveal` | user, `connectors` | `{ source: "Apollo", personId }` | 200 `{ source: "Apollo", person, creditsNote }`; **uses the person's Apollo credits** (Apollo `POST /api/v1/people/match?id=&reveal_personal_emails=false`: 1 credit when it returns data, none when it finds nothing). `person.email` is null when Apollo has no work email. 400 for Hunter or a malformed id; 404 lead not yours or Apollo has no such person; 409 not connected / refused. Writes a `Note` activity without the address |
-| GET | `/api/v1/calendar/{id}/{key}.ics` | anonymous, `public-progress` | — | iCalendar of open follow-ups (last 30 days onward) and scheduled interviews; 404 for a wrong key |
+| GET | `/api/v1/calendar/{id}/{key}.ics` | anonymous, `public-progress` | — | iCalendar of open follow-ups (last 30 days onward), Sales interviews with a time, and the candidate's own `Scheduled` job interviews with a time (`Interview R{n} · {organization}`, 60 min, meeting link as the description); 404 for a wrong key |
 | POST | `/api/v1/campaigns/{campaignId}/drafts/prepare` | user | — | INT1: writes an email draft (not approved) for up to 15 shortlisted leads without one, to an address the company published; `{ written, skipped, remaining, items[] }` |
 
 Events: `sent` after an email goes out from a connected mailbox, `leads` after a research run saves new leads, `digest` once a day after
@@ -345,10 +371,11 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 | UpworkOpportunityDto | visible job facts plus `connectsRequired?`, `availableConnectsAtReview?`, computed `connectsStatus (Unknown|Sufficient|Insufficient)`, decision state and linked `salesProjectId?` |
 | ImportUpworkOpportunityRequest | `providerJobId, title, url, summary?, location?, budgetType, budgetMin?, budgetMax?, currency?, experienceLevel?, connectsRequired?, availableConnectsAtReview?, paymentVerified?, postedAt?, observedAt?, evidenceJson?` |
 | StaffingAccountDto | `id, name, domain?, industry?, location?, source, sourceReference?, version, contacts[], createdAt, updatedAt` |
-| StaffingContactDto | `id, accountId, name, title?, email?, emailVerified, linkedInUrl?, evidence?, version, createdAt, updatedAt` |
+| StaffingContactDto | `id, accountId, name, title?, email?, emailVerified, linkedInUrl?, evidence?, version, createdAt, updatedAt, phone?` |
 | StaffingDealDto | `id, accountId, contactId?, title, source, externalReference?, estimatedValue?, currency?, stage, stageBeforeHold?, nextAction?, nextActionAt?, version, activities[], createdAt, updatedAt` |
 | CreateStaffingAccountRequest | `name, source, domain?, industry?, location?, sourceReference?` |
-| CreateStaffingContactRequest | `name, title?, email?, emailVerified, linkedInUrl?, evidence?` |
+| CreateStaffingContactRequest | `name, title?, email?, emailVerified, linkedInUrl?, evidence?, phone?` (phone ≤ 320 characters, optional) |
+| UpdateStaffingContactRequest | `name, title?, email?, emailVerified, linkedInUrl?, evidence?, phone?, expectedVersion` (replaces every editable field) |
 | CreateStaffingDealRequest | `contactId?, title, source, externalReference?, estimatedValue?, currency?, nextAction?, nextActionAt?` |
 | UpdateStaffingDealRequest | `title, externalReference?, estimatedValue?, currency?, nextAction?, nextActionAt?, expectedVersion` |
 

@@ -4,7 +4,7 @@ namespace OpportunityPilot.Application.Staffing;
 
 public sealed record StaffingContactDto(
     Guid Id, Guid AccountId, string Name, string? Title, string? Email, bool EmailVerified, string? LinkedInUrl,
-    string? Evidence, int Version, DateTime CreatedAt, DateTime UpdatedAt);
+    string? Evidence, int Version, DateTime CreatedAt, DateTime UpdatedAt, string? Phone = null);
 
 public sealed record StaffingAccountDto(
     Guid Id, string Name, string? Domain, string? Industry, string? Location, StaffingAccountSource Source,
@@ -23,7 +23,12 @@ public sealed record CreateStaffingAccountRequest(
     string Name, StaffingAccountSource Source, string? Domain, string? Industry, string? Location, string? SourceReference);
 
 public sealed record CreateStaffingContactRequest(
-    string Name, string? Title, string? Email, bool EmailVerified, string? LinkedInUrl, string? Evidence);
+    string Name, string? Title, string? Email, bool EmailVerified, string? LinkedInUrl, string? Evidence, string? Phone = null);
+
+/// <summary>Replaces a contact's editable fields; <c>ExpectedVersion</c> guards against overwriting a newer edit.</summary>
+public sealed record UpdateStaffingContactRequest(
+    string Name, string? Title, string? Email, bool EmailVerified, string? LinkedInUrl, string? Evidence, string? Phone,
+    int ExpectedVersion);
 
 public sealed record CreateStaffingDealRequest(
     Guid? ContactId, string Title, StaffingDealSource Source, string? ExternalReference, decimal? EstimatedValue,

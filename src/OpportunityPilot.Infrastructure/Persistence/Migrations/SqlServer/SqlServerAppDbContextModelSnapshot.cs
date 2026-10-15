@@ -1855,6 +1855,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Phone")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
                     b.Property<string>("Title")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");

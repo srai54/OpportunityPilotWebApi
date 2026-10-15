@@ -431,7 +431,7 @@ concurrency token. Indexes: `(OwnerId, UpdatedAt)` and `(OwnerId, Domain)`.
 
 ### staffing_contacts — `Domain/Staffing/StaffingContact.cs`
 
-Owner-scoped buyers/stakeholders linked to `staffing_accounts` (Cascade). Stores name, optional title/email/LinkedIn URL,
+Owner-scoped buyers/stakeholders linked to `staffing_accounts` (Cascade). Stores name, optional title/email/phone (≤ 320)/LinkedIn URL,
 an evidence/source note and explicit `EmailVerified`; no provider identity is invented. `Version` is a concurrency token.
 Index: `(OwnerId, AccountId, Name)`.
 
@@ -510,5 +510,6 @@ Both sets must contain the same logical migrations in the same order.
 | 11–21 | (see the migration folders) | | | staffing pipeline, schedules, security events and key scopes, AI usage, provider executions, mailboxes, user events, progress links, auto-approve, integrations |
 | 22 | AddJdCircle | `20261014055510_AddJdCircle` | `20261014055528_AddJdCircle` | circle_people; nullable `opportunities.CircleRequestedAt`/`CircleMappedAt`; `agent_keys.Scopes` default 7 → 15 and a data step moving stored 7 to 15 (Down strips the People bit and revokes People-only keys) |
 | 23 | AddJobInterviews | `20261015062624_AddJobInterviews` | `20261015062641_AddJobInterviews` | job_interviews |
+| 24 | AddStaffingContactPhone | `SqlServer\20261015165649_AddStaffingContactPhone` | `Postgres\20261015165756_AddStaffingContactPhone` | nullable `staffing_contacts.Phone` (320) |
 
 Persisted AI usage records from [M4_M5_CONTRACT.md](M4_M5_CONTRACT.md) remain unbuilt; suppressions and next actions are built.

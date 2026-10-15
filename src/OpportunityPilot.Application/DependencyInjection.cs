@@ -60,6 +60,7 @@ public static class DependencyInjection
         services.AddScoped<StaffingPipelineService>();
         services.AddScoped<ProgressLinkService>();
         services.AddScoped<ProgressViewService>();
+        services.AddScoped<SampleData.SampleDataService>();
         services.AddScoped<Auth.SecurityAudit>();
         services.AddSingleton<Common.OperationalMetrics>();
         services.AddScoped<Common.RetentionService>();

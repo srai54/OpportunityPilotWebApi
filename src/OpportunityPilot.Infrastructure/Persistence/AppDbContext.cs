@@ -558,6 +558,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.Title).HasMaxLength(StaffingContact.MaxTitleLength);
             e.Property(x => x.Email).HasMaxLength(StaffingContact.MaxEmailLength);
             e.Property(x => x.LinkedInUrl).HasMaxLength(StaffingContact.MaxLinkedInUrlLength);
+            e.Property(x => x.Phone).HasMaxLength(StaffingContact.MaxPhoneLength);
             e.Property(x => x.Evidence).HasMaxLength(StaffingContact.MaxEvidenceLength);
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne<StaffingAccount>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
