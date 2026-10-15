@@ -74,4 +74,15 @@ public sealed class AssistantTests
         Assert.Null(AssistantService.Parse("""{"reply":"Shall I?","action":{"kind":"outreach"}}""", sales: false)?.Action);
         Assert.Equal(3, AssistantService.Parse("""{"reply":"Shall I?","action":{"kind":"launch","query":"software engineer","location":"Gurugram","days":3}}""", false)?.Action?.Days);
     }
+
+    [Fact]
+    public void A_named_campaign_becomes_the_target_of_review()
+    {
+        var mern = new AssistantCampaign(Guid.NewGuid(), "MernStack developers in Gurugram — voice", 49, 1, 0, "Completed");
+        var ds = new AssistantCampaign(Guid.NewGuid(), "Data Scientist in Gurugram — voice", 12, 3, 1, "Running");
+        const string json = """{"reply":"It found 49 jobs. Shall I open them?","action":{"kind":"review","campaign":"mern stack"}}""";
+        var r = AssistantService.WithCampaign(AssistantService.Parse(json, false), json, [ds, mern]);
+        Assert.Equal(mern.Id, r?.Action?.CampaignId);
+        Assert.Equal($"/opportunities?campaign={mern.Id}", r?.Action?.Page);
+    }
 }
