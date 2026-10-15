@@ -5,7 +5,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/campaigns/{campaignId:guid}/sources")]
-public sealed class SourcesController(SourceService sources) : ControllerBase
+public sealed class SourcesController(ISourceService sources) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<SourceDto>>> List(Guid campaignId, CancellationToken ct) =>
