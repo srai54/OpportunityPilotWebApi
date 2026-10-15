@@ -54,7 +54,7 @@ public static class DependencyInjection
         services.AddScoped<SalesService>();
         services.AddScoped<UpworkOpportunityService>();
         services.AddScoped<ScheduleService>();
-        services.AddScoped<StaffingService>();
+        services.AddScoped<IStaffingService, StaffingService>();
         services.AddScoped<StaffingPipelineService>();
         services.AddScoped<ProgressLinkService>();
         services.AddScoped<ProgressViewService>();

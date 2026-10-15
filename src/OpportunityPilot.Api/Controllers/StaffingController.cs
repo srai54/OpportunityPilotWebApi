@@ -6,7 +6,7 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/staffing")]
-public sealed class StaffingController(StaffingService staffing) : ControllerBase
+public sealed class StaffingController(IStaffingService staffing) : ControllerBase
 {
     [HttpGet("accounts")]
     public async Task<ActionResult<IReadOnlyList<StaffingAccountDto>>> ListAccounts(

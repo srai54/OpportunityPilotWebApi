@@ -5,17 +5,15 @@ using OpportunityPilot.Domain.Staffing;
 
 namespace OpportunityPilot.Application.Staffing;
 
-public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
+public sealed class StaffingService(IStaffingRepository staffing, ICurrentUser user, TimeProvider clock) : IStaffingService
 {
     public async Task<IReadOnlyList<StaffingAccountDto>> ListAccountsAsync(int take, int skip, CancellationToken ct)
     {
         take = Math.Clamp(take, 1, 200);
         skip = Math.Max(0, skip);
-        var accounts = await OwnedAccounts.OrderByDescending(x => x.UpdatedAt).ThenBy(x => x.Id)
-            .Skip(skip).Take(take).ToListAsync(ct);
+        var accounts = await staffing.ListAccountsAsync(user.OwnerId, take, skip, ct);
         var ids = accounts.Select(x => x.Id).ToArray();
-        var contacts = await db.StaffingContacts.Where(x => x.OwnerId == user.OwnerId && ids.Contains(x.AccountId))
-            .OrderBy(x => x.Name).ToListAsync(ct);
+        var contacts = await staffing.ContactsForAccountsAsync(user.OwnerId, ids, ct);
         return accounts.Select(x => ToDto(x, contacts.Where(c => c.AccountId == x.Id))).ToList();
     }
 
@@ -25,7 +23,7 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         if (string.IsNullOrWhiteSpace(request.Name)) throw Invalid("name", "Account name is required.");
         if (!Enum.IsDefined(request.Source)) throw Invalid("source", "Unknown account source.");
         if (!string.IsNullOrWhiteSpace(request.Domain)
-            && await OwnedAccounts.AnyAsync(x => x.Domain == request.Domain.Trim().ToLowerInvariant(), ct))
+            && await staffing.AccountDomainExistsAsync(user.OwnerId, request.Domain.Trim().ToLowerInvariant(), ct))
             throw new ConflictException("An account with this domain already exists.");
 
         StaffingAccount account;
@@ -35,8 +33,8 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
             account.Update(request.Name, NormaliseDomain(request.Domain), request.Industry, request.Location, request.SourceReference, Now);
         }
         catch (ArgumentException ex) { throw Invalid("account", ex.Message); }
-        db.StaffingAccounts.Add(account);
-        await db.SaveChangesAsync(ct);
+        staffing.AddAccount(account);
+        await staffing.SaveChangesAsync(ct);
         return ToDto(account, []);
     }
 
@@ -52,8 +50,8 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
             contact.Update(request.Name, request.Title, request.Email, request.EmailVerified, request.LinkedInUrl, request.Evidence, Now);
         }
         catch (ArgumentException ex) { throw Invalid("contact", ex.Message); }
-        db.StaffingContacts.Add(contact);
-        await db.SaveChangesAsync(ct);
+        staffing.AddContact(contact);
+        await staffing.SaveChangesAsync(ct);
         return ToDto(contact);
     }
 
@@ -62,10 +60,7 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
     {
         take = Math.Clamp(take, 1, 200);
         skip = Math.Max(0, skip);
-        var query = OwnedDeals;
-        if (stage is { } requestedStage) query = query.Where(x => x.Stage == requestedStage);
-        if (source is { } requestedSource) query = query.Where(x => x.Source == requestedSource);
-        var deals = await query.OrderByDescending(x => x.UpdatedAt).ThenBy(x => x.Id).Skip(skip).Take(take).ToListAsync(ct);
+        var deals = await staffing.ListDealsAsync(user.OwnerId, stage, source, take, skip, ct);
         return await WithActivitiesAsync(deals, ct);
     }
 
@@ -83,8 +78,7 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         _ = await FindAccountAsync(accountId, ct);
         if (request.ContactId is { } contactId)
         {
-            var contact = await db.StaffingContacts.FirstOrDefaultAsync(
-                x => x.Id == contactId && x.AccountId == accountId && x.OwnerId == user.OwnerId, ct);
+            var contact = await staffing.FindContactAsync(user.OwnerId, accountId, contactId, ct);
             if (contact is null) throw new NotFoundException("Staffing contact not found.");
         }
 
@@ -96,9 +90,9 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
                 request.NextAction, request.NextActionAt, Now);
         }
         catch (ArgumentException ex) { throw Invalid("deal", ex.Message); }
-        db.StaffingDeals.Add(deal);
-        db.StaffingDealActivities.Add(new(user.OwnerId, deal.Id, StaffingDealActivityType.Created, "Deal created.", Now));
-        await db.SaveChangesAsync(ct);
+        staffing.AddDeal(deal);
+        staffing.AddActivity(new(user.OwnerId, deal.Id, StaffingDealActivityType.Created, "Deal created.", Now));
+        await staffing.SaveChangesAsync(ct);
         return await GetDealAsync(deal.Id, ct);
     }
 
@@ -113,7 +107,7 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
                 request.NextAction, request.NextActionAt, Now);
         }
         catch (ArgumentException ex) { throw Invalid("deal", ex.Message); }
-        db.StaffingDealActivities.Add(new(user.OwnerId, deal.Id, StaffingDealActivityType.DetailsChanged, "Deal details changed.", Now));
+        staffing.AddActivity(new(user.OwnerId, deal.Id, StaffingDealActivityType.DetailsChanged, "Deal details changed.", Now));
         await SaveConcurrentAsync(ct);
         return await GetDealAsync(id, ct);
     }
@@ -128,7 +122,7 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         try { deal.MoveTo(request.Stage, Now); }
         catch (InvalidOperationException ex) { throw new ConflictException(ex.Message); }
         if (previous != deal.Stage)
-            db.StaffingDealActivities.Add(new(user.OwnerId, deal.Id, StaffingDealActivityType.StageChanged,
+            staffing.AddActivity(new(user.OwnerId, deal.Id, StaffingDealActivityType.StageChanged,
                 $"{previous} → {deal.Stage}", Now));
         await SaveConcurrentAsync(ct);
         return await GetDealAsync(id, ct);
@@ -140,8 +134,8 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         if (request.Detail.Trim().Length > StaffingDealActivity.MaxDetailLength)
             throw Invalid("detail", $"Note must be {StaffingDealActivity.MaxDetailLength} characters or fewer.");
         var deal = await FindDealAsync(id, ct);
-        db.StaffingDealActivities.Add(new(user.OwnerId, deal.Id, StaffingDealActivityType.NoteAdded, request.Detail, Now));
-        await db.SaveChangesAsync(ct);
+        staffing.AddActivity(new(user.OwnerId, deal.Id, StaffingDealActivityType.NoteAdded, request.Detail, Now));
+        await staffing.SaveChangesAsync(ct);
         return await GetDealAsync(id, ct);
     }
 
@@ -154,12 +148,12 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
     /// </summary>
     public async Task<PromotedLeadDto> PromoteOpportunityAsync(Guid opportunityId, CancellationToken ct)
     {
-        var o = await db.Opportunities.FirstOrDefaultAsync(x => x.Id == opportunityId && x.OwnerId == user.OwnerId, ct)
+        var o = await staffing.FindOpportunityAsync(user.OwnerId, opportunityId, ct)
             ?? throw new NotFoundException("Opportunity not found.");
         if (o.Mode == Domain.Common.OpportunityMode.Job)
             throw Invalid("opportunity", "Only companies found by Sales campaigns become staffing leads; job postings stay in the Candidate workspace.");
         var reference = $"opportunity:{o.Id:N}";
-        var existingDeal = await OwnedDeals.FirstOrDefaultAsync(d => d.ExternalReference == reference, ct);
+        var existingDeal = await staffing.FindDealByReferenceAsync(user.OwnerId, reference, ct);
         if (existingDeal is not null)
             return new(await GetDealAsync(existingDeal.Id, ct), existingDeal.AccountId, true, true, IdentityConfidence.High, o.Url);
 
@@ -169,13 +163,13 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         var confidence = IdentityConfidence.Low;
         if (domain is not null)
         {
-            account = await OwnedAccounts.FirstOrDefaultAsync(a => a.Domain == domain, ct);
+            account = await staffing.FindAccountByDomainAsync(user.OwnerId, domain, ct);
             confidence = IdentityConfidence.High;
         }
         if (account is null)
         {
             var lower = name.Trim().ToLower();
-            account = await OwnedAccounts.FirstOrDefaultAsync(a => a.Name.ToLower() == lower, ct);
+            account = await staffing.FindAccountByNameAsync(user.OwnerId, lower, ct);
             if (account is not null && domain is null) confidence = IdentityConfidence.Medium;
         }
         var reused = account is not null;
@@ -183,14 +177,14 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         {
             account = new StaffingAccount(user.OwnerId, name, StaffingAccountSource.PublicWeb, Now);
             account.Update(name, domain, null, o.Location, o.Url, Now);
-            db.StaffingAccounts.Add(account);
+            staffing.AddAccount(account);
         }
         var deal = new StaffingDeal(user.OwnerId, account.Id, null, $"Staffing for {name}", StaffingDealSource.PublicWeb, Now);
         deal.UpdateCommercials(deal.Title, reference, null, null, "Qualify the requirement", null, Now);
-        db.StaffingDeals.Add(deal);
-        db.StaffingDealActivities.Add(new(user.OwnerId, deal.Id, StaffingDealActivityType.Created,
+        staffing.AddDeal(deal);
+        staffing.AddActivity(new(user.OwnerId, deal.Id, StaffingDealActivityType.Created,
             $"Created from {o.Mode} opportunity \"{o.Title}\" (fit {o.Score}){(o.Url is null ? "" : $" — evidence: {o.Url}")}. Account match: {confidence}.", Now));
-        await db.SaveChangesAsync(ct);
+        await staffing.SaveChangesAsync(ct);
         return new(await GetDealAsync(deal.Id, ct), account.Id, reused, false, confidence, o.Url);
     }
 
@@ -203,28 +197,24 @@ public sealed class StaffingService(IAppDbContext db, ICurrentUser user, TimePro
         return BoardHosts.Any(b => host == b || host.EndsWith("." + b, StringComparison.Ordinal)) ? null : host;
     }
 
-    private IQueryable<StaffingAccount> OwnedAccounts => db.StaffingAccounts.Where(x => x.OwnerId == user.OwnerId);
-    private IQueryable<StaffingDeal> OwnedDeals => db.StaffingDeals.Where(x => x.OwnerId == user.OwnerId);
-
     private async Task<StaffingAccount> FindAccountAsync(Guid id, CancellationToken ct) =>
-        await OwnedAccounts.FirstOrDefaultAsync(x => x.Id == id, ct)
+        await staffing.FindAccountAsync(user.OwnerId, id, ct)
         ?? throw new NotFoundException("Staffing account not found.");
 
     private async Task<StaffingDeal> FindDealAsync(Guid id, CancellationToken ct) =>
-        await OwnedDeals.FirstOrDefaultAsync(x => x.Id == id, ct)
+        await staffing.FindDealAsync(user.OwnerId, id, ct)
         ?? throw new NotFoundException("Staffing deal not found.");
 
     private async Task<IReadOnlyList<StaffingDealDto>> WithActivitiesAsync(IReadOnlyList<StaffingDeal> deals, CancellationToken ct)
     {
         var ids = deals.Select(x => x.Id).ToArray();
-        var activities = await db.StaffingDealActivities.Where(x => x.OwnerId == user.OwnerId && ids.Contains(x.DealId))
-            .OrderByDescending(x => x.OccurredAt).ThenBy(x => x.Id).ToListAsync(ct);
+        var activities = await staffing.ActivitiesForDealsAsync(user.OwnerId, ids, ct);
         return deals.Select(x => ToDto(x, activities.Where(a => a.DealId == x.Id))).ToList();
     }
 
     private async Task SaveConcurrentAsync(CancellationToken ct)
     {
-        try { await db.SaveChangesAsync(ct); }
+        try { await staffing.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { throw new ConflictException("The deal changed elsewhere. Reload before saving."); }
     }
 
