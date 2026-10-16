@@ -85,4 +85,13 @@ public sealed class AssistantTests
         Assert.Equal(mern.Id, r?.Action?.CampaignId);
         Assert.Equal($"/opportunities?campaign={mern.Id}", r?.Action?.Page);
     }
+
+    [Fact]
+    public void What_next_points_at_the_most_useful_step()
+    {
+        Assert.Equal("/approvals", AssistantService.Rules("what should I do next", Facts, false, null).Action?.Page);
+        var approvedOnly = new Dictionary<string, int>(Facts) { ["waitingForApproval"] = 0, ["approvedNotYetActedOn"] = 3 };
+        Assert.Equal("outreach", AssistantService.Rules("what next", approvedOnly, sales: true, null).Action?.Kind);
+        Assert.Equal("apply", AssistantService.Rules("what next", approvedOnly, sales: false, null).Action?.Kind);
+    }
 }

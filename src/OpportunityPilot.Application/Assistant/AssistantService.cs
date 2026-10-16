@@ -269,6 +269,8 @@ public sealed class AssistantService(IAppDbContext db, ICurrentUser user, TimePr
             action = new("launch", "Start this search", text, null, null, days);
             reply = "I can start that search and campaign for you. Check it, then confirm.";
         }
+        else if (Has("what next", "what should i do", "what now", "next step", "aage kya"))
+            (reply, action) = NextStep(facts, sales);
         else if (Has("send the outreach", "send outreach", "send the emails", "send emails", "send them") && sales)
         { action = new("outreach", "Write and send the emails", null, null, null); reply = "I'll write emails for your approved leads, then ask before sending."; }
         else if (Has("apply") && !sales)
@@ -280,6 +282,23 @@ public sealed class AssistantService(IAppDbContext db, ICurrentUser user, TimePr
         else if (Has("approve", "lead", "review", "match")) action = Open("leads", sales);
         else if (Has("insight", "report", "chart")) action = Open("insights", sales);
         return new(reply, action, "Rules", reason);
+    }
+
+    /// <summary>The most useful next step from the person's own numbers, as a reply and an action to confirm.</summary>
+    public static (string Reply, AssistantActionDto? Action) NextStep(IReadOnlyDictionary<string, int> facts, bool sales)
+    {
+        int F(string k) => facts.GetValueOrDefault(k);
+        if (F("waitingForApproval") > 0)
+            return ($"{F("waitingForApproval")} {(sales ? "companies are" : "jobs are")} waiting for your yes. Shall I open them?", Open("approvals", sales));
+        if (F("approvedNotYetActedOn") > 0)
+            return sales
+                ? ($"You approved {F("approvedNotYetActedOn")} compan{(F("approvedNotYetActedOn") == 1 ? "y" : "ies")} without an email yet. Shall I write the emails?", new AssistantActionDto("outreach", "Write the emails", null, null, null))
+                : ($"You approved {F("approvedNotYetActedOn")} job{(F("approvedNotYetActedOn") == 1 ? "" : "s")} not applied to yet. Shall I hand them to your desktop agent?", new AssistantActionDto("apply", "Approve for the agent", null, null, null));
+        if (F("messagesToCheck") > 0)
+            return ($"{F("messagesToCheck")} message{(F("messagesToCheck") == 1 ? " is" : "s are")} written and waiting. Shall I open Outreach so you can send them?", Open("outreach", sales));
+        if (F("followUpsDueToday") > 0)
+            return ($"{F("followUpsDueToday")} follow-up{(F("followUpsDueToday") == 1 ? " is" : "s are")} due today. Shall I open them?", Open("followups", sales));
+        return ($"Nothing is waiting on you. Shall I start a new search? Say what to find, for example {(sales ? "companies hiring React developers in Pune" : "Java developer jobs in Pune")}.", null);
     }
 
     /// <summary>"past 3 days", "last week", "today" → posting age in days; null when not said.</summary>

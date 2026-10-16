@@ -29,6 +29,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IProfileService, ProfileService>();
+        services.AddScoped<IProfileImproveService, ProfileImproveService>();
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
         services.AddScoped<AiService>();
