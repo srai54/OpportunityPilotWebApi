@@ -42,7 +42,7 @@ public sealed class CampaignService(ICampaignRepository campaigns, ICurrentUser 
         var (criteria, weights, resultLimit) = ValidateFields(request.Mode, request.Name, request.Goal, request.Criteria,
             request.Weights, request.ResultLimit ?? Campaign.DefaultResultLimit, errors);
         ValidateAutoSuggest(request.Mode, request.AutoSuggestMinScore, errors);
-        ValidateAutoApprove(request.Mode, request.AutoApproveMinScore, errors);
+        ValidateAutoApprove(request.AutoApproveMinScore, errors);
         if (errors.Count > 0) throw new RequestValidationException(errors);
 
         var campaign = new Campaign(user.OwnerId, request.ProfileId, request.Mode, request.Name, request.Goal,
@@ -68,7 +68,7 @@ public sealed class CampaignService(ICampaignRepository campaigns, ICurrentUser 
         var autoSuggest = request.AutoSuggestMinScoreSent ? request.AutoSuggestMinScore : campaign.AutoSuggestMinScore;
         ValidateAutoSuggest(campaign.Mode, autoSuggest, errors);
         var autoApprove = request.AutoApproveMinScoreSent ? request.AutoApproveMinScore : campaign.AutoApproveMinScore;
-        ValidateAutoApprove(campaign.Mode, autoApprove, errors);
+        ValidateAutoApprove(autoApprove, errors);
         if (errors.Count > 0) throw new RequestValidationException(errors);
 
         if (campaign.Version != request.ExpectedVersion)
@@ -117,12 +117,11 @@ public sealed class CampaignService(ICampaignRepository campaigns, ICurrentUser 
             errors["autoSuggestMinScore"] = [$"Auto-suggest score must be between {Campaign.MinAutoSuggestScore} and {Campaign.MaxAutoSuggestScore}, or null to turn it off."];
     }
 
-    private static void ValidateAutoApprove(Domain.Common.OpportunityMode mode, int? minScore, Dictionary<string, string[]> errors)
+    private static void ValidateAutoApprove(int? minScore, Dictionary<string, string[]> errors)
     {
+        // Job and Sales (Customer) campaigns alike (decided 2026-10-16, U17-13b): approving only marks a lead; sending still needs a tap.
         if (minScore is null) return;
-        if (mode != Domain.Common.OpportunityMode.Job)
-            errors["autoApproveMinScore"] = ["Automatic approval is available for Job campaigns only."];
-        else if (minScore is < Campaign.MinAutoSuggestScore or > Campaign.MaxAutoSuggestScore)
+        if (minScore is < Campaign.MinAutoSuggestScore or > Campaign.MaxAutoSuggestScore)
             errors["autoApproveMinScore"] = [$"Auto-approve score must be between {Campaign.MinAutoSuggestScore} and {Campaign.MaxAutoSuggestScore}, or null to turn it off."];
     }
 

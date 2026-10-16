@@ -41,12 +41,12 @@ public class AutoApproveApiTests(PostgresApiFactory factory) : IClassFixture<Pos
     }
 
     [Fact]
-    public async Task Only_job_campaigns_can_turn_it_on_and_the_score_is_checked()
+    public async Task Sales_campaigns_can_turn_it_on_too_and_the_score_is_checked()
     {
         var user = PostgresApiFactory.ClientFor(factory, "autoapprove-rules@example.test");
         var profileId = await ResearchApi.CreateProfileAsync(user, "Product");
         var customer = await user.PostAsJsonAsync("/api/v1/campaigns", new { profileId, mode = "Customer", name = "C", goal = "g", criteria = new { keywords = new[] { "x" } }, autoApproveMinScore = 50 });
-        Assert.Equal(HttpStatusCode.BadRequest, customer.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, customer.StatusCode); // decided 2026-10-16 (U17-13b)
         var jobProfile = await ResearchApi.CreateProfileAsync(user, "Candidate");
         var tooHigh = await user.PostAsJsonAsync("/api/v1/campaigns", new { profileId = jobProfile, mode = "Job", name = "J", goal = "g", criteria = new { keywords = new[] { "x" } }, autoApproveMinScore = 101 });
         Assert.Equal(HttpStatusCode.BadRequest, tooHigh.StatusCode);
