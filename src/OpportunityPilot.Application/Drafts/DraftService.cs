@@ -35,7 +35,7 @@ public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, Tim
         var profile = await drafts.FindProfileAsync(ownerId, campaign.ProfileId, ct)
             ?? throw new NotFoundException("Campaign profile not found.");
         if (profile.ConfirmedAt is null)
-            throw Invalid("profile", "Confirm the campaign profile before generating a cover note.");
+            throw Invalid("profile", "Confirm the campaign profile before writing messages: open it, check it and press Confirm.");
 
         var generated = request.Channel == DraftChannel.CoverNote
             ? GenerateCoverNote(opportunity, campaign.CriteriaJson, profile.StructuredDataJson)
