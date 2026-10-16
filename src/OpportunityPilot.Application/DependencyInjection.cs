@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IProfileImproveService, ProfileImproveService>();
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
+        services.AddSingleton<Common.ProviderBudget>();
         services.AddScoped<AiService>();
         services.AddScoped<Assistant.IAssistantService, Assistant.AssistantService>();
         services.AddScoped<IDraftRewriteService, DraftRewriteService>();

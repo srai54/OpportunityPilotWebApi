@@ -17,6 +17,9 @@ public static class RateLimits
     public const string PublicProgress = "public-progress";
     public const string Connectors = "connectors";
     public const string ReplyCheck = "reply-check";
+    public const string VoiceTranscribe = "voice-transcribe";
+    public const string VoiceSpeak = "voice-speak";
+    public const string Assistant = "assistant";
 
     /// <summary>(policy, permits, window). Kept in one place so tests and the runbook can name them.</summary>
     public static readonly (string Name, int Permits, TimeSpan Window)[] Policies =
@@ -28,6 +31,10 @@ public static class RateLimits
         (PublicProgress, 120, TimeSpan.FromHours(1)),
         (Connectors, 60, TimeSpan.FromHours(1)),
         (ReplyCheck, 20, TimeSpan.FromHours(1)),
+        // Each voice call spends Groq quota: 30 an hour per person each (S6, 2026-10-16). Over it, 429 and the app says "try later".
+        (VoiceTranscribe, 30, TimeSpan.FromHours(1)),
+        (VoiceSpeak, 30, TimeSpan.FromHours(1)),
+        (Assistant, 30, TimeSpan.FromHours(1)),
     ];
 
     public static void Add(RateLimiterOptions options)

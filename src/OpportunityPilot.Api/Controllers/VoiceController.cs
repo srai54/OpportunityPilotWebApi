@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -12,7 +13,7 @@ namespace OpportunityPilot.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/voice")]
-public sealed class VoiceController(IHttpClientFactory http, IConfiguration config) : ControllerBase
+public sealed class VoiceController(IHttpClientFactory http, IConfiguration config, OpportunityPilot.Application.Common.ProviderBudget budget) : ControllerBase
 {
     private const long MaxBytes = 5 * 1024 * 1024;
     private string? GroqKey => config["Groq:ApiKey"] ?? config["Ai:GroqApiKey"];
@@ -27,6 +28,8 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
     /// A natural (human-sounding) English voice for the assistant's reply: Groq's Orpheus text-to-speech, returned as WAV. 503 without
     /// a Groq key, 502 when Groq refuses (for example the model terms were not accepted yet); the browser then uses its own voice.
     /// </summary>
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.VoiceSpeak)]
     [HttpPost("speak")]
     public async Task<IActionResult> Speak(SpeakRequest request, CancellationToken ct)
     {
@@ -37,6 +40,8 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         if (text.Length == 0) return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Nothing to say");
         // Orpheus takes at most 200 characters; the browser sends one sentence at a time.
         if (text.Length > 200) text = text[..200];
+        if (!budget.TryUse(OpportunityPilot.Application.Common.ProviderBudget.Groq))
+            return Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Voice budget used up today", detail: OpportunityPilot.Application.Common.ProviderBudget.ExhaustedMessage);
         using var message = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/audio/speech")
         {
             Content = JsonContent.Create(new
@@ -64,6 +69,8 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         return File(audio, response.Content.Headers.ContentType?.MediaType ?? "audio/wav");
     }
 
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.VoiceTranscribe)]
     [HttpPost("transcribe")]
     [RequestSizeLimit(MaxBytes + 64 * 1024)]
     public async Task<ActionResult<VoiceTranscriptDto>> Transcribe(IFormFile? audio, [FromForm] string? language, CancellationToken ct)
@@ -77,6 +84,8 @@ public sealed class VoiceController(IHttpClientFactory http, IConfiguration conf
         if (audio.Length > MaxBytes)
             return Problem(statusCode: StatusCodes.Status413PayloadTooLarge, title: "Recording too long", detail: "Keep a voice command under about a minute.");
 
+        if (!string.IsNullOrWhiteSpace(GroqKey) && !budget.TryUse(OpportunityPilot.Application.Common.ProviderBudget.Groq))
+            return Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Voice budget used up today", detail: OpportunityPilot.Application.Common.ProviderBudget.ExhaustedMessage);
         using var form = new MultipartFormDataContent();
         await using var stream = audio.OpenReadStream();
         var file = new StreamContent(stream);

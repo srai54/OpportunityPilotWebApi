@@ -21,6 +21,7 @@ builder.Services.Configure<FeatureOptions>(builder.Configuration.GetSection(Feat
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.Section));
 builder.Services.Configure<AdzunaOptions>(builder.Configuration.GetSection(AdzunaOptions.Section));
 builder.Services.Configure<JsearchOptions>(builder.Configuration.GetSection(JsearchOptions.Section));
+builder.Services.Configure<OpportunityPilot.Application.Common.BudgetOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Common.BudgetOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.JobBoards.ApifyOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.JobBoards.ApifyOptions.Section));
 // The owner set the token as Apify_Token_Value on Render; Apify__Token works too.
 builder.Services.PostConfigure<OpportunityPilot.Application.JobBoards.ApifyOptions>(o => o.Token ??= builder.Configuration["Apify_Token_Value"]);

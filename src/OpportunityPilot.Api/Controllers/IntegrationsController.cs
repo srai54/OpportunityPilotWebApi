@@ -26,6 +26,7 @@ public sealed class IntegrationsController(
 
     /// <summary>Checks the address or token against the real service (a webhook gets one "connected" message) before storing it encrypted.</summary>
     [EnableRateLimiting(RateLimits.Connectors)]
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPut("integrations/{kind}")]
     public async Task<ActionResult<IntegrationDto>> Connect(IntegrationKind kind, ConnectIntegrationRequest request, CancellationToken ct) =>
         await integrations.ConnectAsync(kind, request, FeedBase, ct);
@@ -40,6 +41,7 @@ public sealed class IntegrationsController(
 
     /// <summary>"Connect with Notion / HubSpot / Slack / Airtable": the address of the service's own consent screen. 409 when the server has no app for it.</summary>
     [EnableRateLimiting(RateLimits.Connectors)]
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("integrations/{kind}/oauth")]
     public ActionResult<OauthStartResponse> StartOauth(IntegrationKind kind) => oauth.Begin(kind, ApiBase);
 
@@ -52,6 +54,7 @@ public sealed class IntegrationsController(
 
     /// <summary>One-click "Connect" (Notion, Gmail, HubSpot, Slack, Airtable): the managed-connection platform's sign-in address. 409 without Plugins__ApiKey.</summary>
     [EnableRateLimiting(RateLimits.Connectors)]
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("integrations/{kind}/plugin")]
     public async Task<ActionResult<OauthStartResponse>> StartPlugin(IntegrationKind kind, CancellationToken ct) => await plugins.BeginAsync(kind, ApiBase, ct);
 
@@ -77,6 +80,7 @@ public sealed class IntegrationsController(
     public async Task<IActionResult> Disconnect(IntegrationKind kind, CancellationToken ct) { await integrations.DisconnectAsync(kind, ct); return NoContent(); }
 
     [EnableRateLimiting(RateLimits.Connectors)]
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("integrations/{kind}/push")]
     public async Task<ActionResult<IReadOnlyList<PushLeadResult>>> Push(IntegrationKind kind, PushLeadsRequest request, CancellationToken ct) =>
         Ok(await integrations.PushAsync(kind, request, ct));

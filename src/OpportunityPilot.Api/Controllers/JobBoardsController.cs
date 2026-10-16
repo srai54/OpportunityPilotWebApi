@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpportunityPilot.Application.Analytics;
 using OpportunityPilot.Application.Common;
@@ -44,6 +45,7 @@ public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchServic
         feeds = feeds.DefaultSites.Select(s => s.ToString()).ToArray(), adzunaConfigured = feeds.AdzunaConfigured
     });
 
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpGet("jobs")]
     public async Task<ActionResult<JobBoardSearchResult>> Jobs(
         [FromQuery] string query, [FromQuery] JobBoard board = JobBoard.Indeed, [FromQuery] string? location = null,
@@ -79,6 +81,7 @@ public sealed class JobBoardsController(IJobBoardSearch search, FeedSearchServic
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
 public sealed class IndeedController(IJobBoardSearch search, FeedSearchService feeds, UserEventLog events) : ControllerBase
 {
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpGet("jobs")]
     public Task<ActionResult<JobBoardSearchResult>> Jobs(
         [FromQuery] string query, [FromQuery] string? location = null, [FromQuery] bool remoteOnly = false,

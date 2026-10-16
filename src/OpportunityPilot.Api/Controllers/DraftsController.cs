@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpportunityPilot.Application.Drafts;
 
@@ -44,6 +45,7 @@ public sealed class DraftsController(IDraftService drafts, IDraftPreparer prepar
         Ok(await drafts.BatchApproveAsync(request, ct));
 
     /// <summary>AI rewrite suggestion (not saved); apply it with PUT so the normal draft checks run.</summary>
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("drafts/{id:guid}/rewrite")]
     public async Task<ActionResult<DraftRewriteDto>> Rewrite(Guid id, RewriteDraftRequest request, CancellationToken ct) =>
         await rewrites.RewriteAsync(id, request, ct);

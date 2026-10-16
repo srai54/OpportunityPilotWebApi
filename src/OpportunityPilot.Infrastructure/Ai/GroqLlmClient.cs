@@ -13,7 +13,7 @@ namespace OpportunityPilot.Infrastructure.Ai;
 /// Groq chat completions (OpenAI-compatible) asking for a JSON object, with the same timeout, single retry on 429/5xx and
 /// safe reasons as <see cref="GeminiLlmClient"/>. The key travels in the Authorization header only.
 /// </summary>
-public sealed class GroqLlmClient(HttpClient http, IOptions<AiOptions> options)
+public sealed class GroqLlmClient(HttpClient http, IOptions<AiOptions> options, Application.Common.ProviderBudget? budget = null)
 {
     public const int MaxAttempts = 2;
     private readonly AiOptions _options = options.Value;
@@ -21,6 +21,8 @@ public sealed class GroqLlmClient(HttpClient http, IOptions<AiOptions> options)
     public async Task<LlmResult> GenerateJsonAsync(string operation, string system, string input, CancellationToken ct)
     {
         var watch = Stopwatch.StartNew();
+        if (budget?.TryUse(Application.Common.ProviderBudget.Groq) == false)
+            return new(null, AiOutcome.ProviderError, "Today's AI budget is used up", 0, watch.Elapsed);
         string? reason = null;
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
         {
