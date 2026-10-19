@@ -38,8 +38,9 @@ public sealed class LeadSearchOptions
     public string SizeParam { get; set; } = "";
     public string TitleParam { get; set; } = "person_titles";
 
-    /// <summary>When Apollo fails or has no credits, run this Apify actor with the same filters (needs <c>Apify__Token</c>). Empty = no fallback.</summary>
-    public string ApifyActor { get; set; } = "lead_king~leads-finder";
+    /// <summary>When Apollo fails or has no credits, run this Apify actor with the same filters (needs <c>Apify__Token</c>). Empty = no fallback.
+    /// Off by default: lead_king~leads-finder returned 0 leads and charged $0.40 a run four times on 2026-10-19.</summary>
+    public string ApifyActor { get; set; } = "";
     /// <summary>Leads per fallback run; the actor charges per lead (about $0.035 each on 2026-10-19), so keep it small.</summary>
     public int ApifyMaxLeads { get; set; } = 10;
 }
@@ -95,6 +96,9 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
         var (status, body) = await http.RunActorAsync(o.ApifyActor, token, ApifyInput(request, o), ct);
         var leads = status is >= 200 and < 300 && body is not null ? MapApify(body) : null;
         if (leads is null) return apollo with { Message = (apollo.Message ?? "Apollo found nothing.") + " The backup source (Apify) did not answer either." };
+        if (leads.Count == 0)
+            return new("Failed", [], 0, (apollo.Status == "Ready" ? "Apollo found nothing" : "Apollo is out of credits or did not answer")
+                + ", and the backup source (Apify Leads Finder) returned no one. Its run may have failed or timed out; see Apify → Runs.");
         var why = apollo.Status == "Ready" ? "Apollo found nothing" : "Apollo is out of credits or did not answer";
         return new("Ready", leads, 0, $"{why}, so these come from the backup source (Apify Leads Finder).");
     }

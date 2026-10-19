@@ -122,7 +122,7 @@ public sealed class LeadSearchTests
         Assert.Equal("account-key", http.Key);
     }
 
-    private static LeadSearchService WithApify(FakeHttp http, string? apifyToken = "apify-token") => new(http, Options.Create(new LeadSearchOptions()),
+    private static LeadSearchService WithApify(FakeHttp http, string? apifyToken = "apify-token") => new(http, Options.Create(new LeadSearchOptions { ApifyActor = "lead_king~leads-finder" }),
         Options.Create(new RapidApiBoardsOptions { Key = "k" }), new ProviderBudget(TimeProvider.System, Options.Create(new BudgetOptions())), null,
         Options.Create(new ApifyOptions { Token = apifyToken }));
 
@@ -145,6 +145,15 @@ public sealed class LeadSearchTests
         Assert.Equal(["11 to 25", "51 to 100"], input.GetProperty("employeeCounts").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(10, input.GetProperty("maxLeads").GetInt32());
         Assert.Equal("apify-token", http.ActorToken);
+    }
+
+    [Fact]
+    public async Task An_empty_backup_answer_is_reported_as_a_failure_not_as_no_matches()
+    {
+        var http = new FakeHttp(429, "{}") { Actor = (201, "[]") };
+        var r = await WithApify(http).SearchAsync(new("saas", null, null, "people", "cto"), default);
+        Assert.Equal("Failed", r.Status);
+        Assert.Contains("returned no one", r.Message);
     }
 
     [Fact]

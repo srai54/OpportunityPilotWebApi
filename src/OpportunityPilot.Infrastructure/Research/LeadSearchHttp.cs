@@ -13,7 +13,7 @@ public sealed class LeadSearchHttp(HttpClient http, ILogger<LeadSearchHttp> logg
     public async Task<(int Status, string? Body)> RunActorAsync(string actor, string token, string inputJson, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            $"https://api.apify.com/v2/acts/{Uri.EscapeDataString(actor)}/run-sync-get-dataset-items?timeout=110&clean=true")
+            $"https://api.apify.com/v2/acts/{Uri.EscapeDataString(actor)}/run-sync-get-dataset-items?timeout=140&clean=true")
         {
             Content = new StringContent(inputJson, Encoding.UTF8, "application/json"),
         };
