@@ -37,6 +37,11 @@ public sealed class LeadSearchOptions
     /// and people answers carry no head count.</summary>
     public string SizeParam { get; set; } = "";
     public string TitleParam { get; set; } = "person_titles";
+
+    /// <summary>When Apollo fails or has no credits, run this Apify actor with the same filters (needs <c>Apify__Token</c>). Empty = no fallback.</summary>
+    public string ApifyActor { get; set; } = "lead_king~leads-finder";
+    /// <summary>Leads per fallback run; the actor charges per lead (about $0.035 each on 2026-10-19), so keep it small.</summary>
+    public int ApifyMaxLeads { get; set; } = 10;
 }
 
 /// <summary>Company-size bands the sales team works with.</summary>
@@ -65,18 +70,37 @@ public sealed record LeadSearchResultDto(string Status, IReadOnlyList<LeadDto> L
 /// <summary>Sends one JSON request to a RapidAPI host and returns the status code and body (null body when the call failed).</summary>
 public interface ILeadSearchHttp
 {
+    /// <summary>Runs an Apify actor synchronously and returns its dataset items (JSON array); the token goes only in a header.</summary>
+    Task<(int Status, string? Body)> RunActorAsync(string actor, string token, string inputJson, CancellationToken ct);
+
     /// <param name="pathAndQuery">Path with its query string; <paramref name="json"/> is the body for POST, null for GET.</param>
     Task<(int Status, string? Body)> SendAsync(string method, string host, string pathAndQuery, string key, string? json, CancellationToken ct);
 }
 
-public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchOptions> options, IOptions<RapidApiBoardsOptions> rapid, ProviderBudget budget, IOptions<JsearchOptions>? jsearch = null)
+public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchOptions> options, IOptions<RapidApiBoardsOptions> rapid, ProviderBudget budget, IOptions<JsearchOptions>? jsearch = null, IOptions<JobBoards.ApifyOptions>? apify = null)
 {
     public const int MaxText = 200;
 
+    /// <summary>Apollo first; when it fails, has no credits or finds nothing, the Apify actor with the same filters (if set up).</summary>
     public async Task<LeadSearchResultDto> SearchAsync(LeadSearchRequest request, CancellationToken ct)
     {
         var errors = Validate(request);
         if (errors.Count > 0) throw new RequestValidationException(errors);
+        var apollo = await ApolloAsync(request, ct);
+        if (apollo.Status == "Ready" && apollo.Leads.Count > 0) return apollo;
+        var o = options.Value;
+        var token = apify?.Value.Token;
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(o.ApifyActor)) return apollo;
+        if (!budget.TryUse(ProviderBudget.Apify)) return apollo;
+        var (status, body) = await http.RunActorAsync(o.ApifyActor, token, ApifyInput(request, o), ct);
+        var leads = status is >= 200 and < 300 && body is not null ? MapApify(body) : null;
+        if (leads is null) return apollo with { Message = (apollo.Message ?? "Apollo found nothing.") + " The backup source (Apify) did not answer either." };
+        var why = apollo.Status == "Ready" ? "Apollo found nothing" : "Apollo is out of credits or did not answer";
+        return new("Ready", leads, 0, $"{why}, so these come from the backup source (Apify Leads Finder).");
+    }
+
+    private async Task<LeadSearchResultDto> ApolloAsync(LeadSearchRequest request, CancellationToken ct)
+    {
         var key = string.IsNullOrWhiteSpace(rapid.Value.Key) ? jsearch?.Value.Key : rapid.Value.Key;
         if (string.IsNullOrWhiteSpace(key))
             return new("NotConfigured", [], 0, "Apollo search is not set up on this server yet: no RapidAPI key is set (RapidApi__Key or Jsearch__Key).");
@@ -130,6 +154,53 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
         if (sizes.Count > 0 && !string.IsNullOrWhiteSpace(o.SizeParam)) body[o.SizeParam] = Arr(sizes);
         if (!string.IsNullOrWhiteSpace(r.Titles)) body[o.TitleParam] = Arr(Split(r.Titles));
         return body.ToJsonString();
+    }
+
+    /// <summary>Country names the page offers → the 2-letter codes the Apify actor expects.</summary>
+    public static readonly IReadOnlyDictionary<string, string> CountryCodes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["United States"] = "US", ["Sweden"] = "SE", ["Germany"] = "DE", ["United Kingdom"] = "GB", ["Netherlands"] = "NL", ["France"] = "FR",
+        ["Denmark"] = "DK", ["Norway"] = "NO", ["Finland"] = "FI", ["Ireland"] = "IE", ["Spain"] = "ES", ["Poland"] = "PL", ["Switzerland"] = "CH",
+        ["India"] = "IN", ["Australia"] = "AU", ["Canada"] = "CA",
+    };
+
+    /// <summary>The sales team's sizes → the actor's employee bands (it has 11–25, 26–50, 51–100; 10–20 maps to 11–25).</summary>
+    public static readonly IReadOnlyDictionary<string, string[]> ApifySizes = new Dictionary<string, string[]>
+    {
+        ["10-20"] = ["11 to 25"], ["20-50"] = ["11 to 25", "26 to 50"], ["50-100"] = ["51 to 100"],
+    };
+
+    /// <summary>The Apify actor input for the same filters: countries as codes, titles and keywords as lists, sizes as its bands.</summary>
+    public static string ApifyInput(LeadSearchRequest r, LeadSearchOptions o)
+    {
+        var input = new JsonObject { ["maxLeads"] = Math.Clamp(o.ApifyMaxLeads, 1, 25), ["requireEmail"] = false };
+        static JsonArray Arr(IEnumerable<string> v) => new(v.Select(x => (JsonNode)JsonValue.Create(x)!).ToArray());
+        var codes = (r.Countries ?? []).Select(c => CountryCodes.TryGetValue(c.Trim(), out var code) ? code : null).OfType<string>().Distinct().ToList();
+        if (codes.Count > 0) input["countries"] = Arr(codes);
+        if (!string.IsNullOrWhiteSpace(r.Titles)) input["jobTitles"] = Arr(Split(r.Titles));
+        if (!string.IsNullOrWhiteSpace(r.Keywords)) input["companyDescriptions"] = Arr(Split(r.Keywords));
+        var bands = (r.Sizes ?? []).Where(ApifySizes.ContainsKey).SelectMany(s => ApifySizes[s]).Distinct().ToList();
+        if (bands.Count > 0) input["employeeCounts"] = Arr(bands);
+        return input.ToJsonString();
+    }
+
+    /// <summary>Reads the actor's lead records (fullName, jobTitle, company, companyDomain, linkedinUrl, city, state, country). Null when unreadable.</summary>
+    public static IReadOnlyList<LeadDto>? MapApify(string json)
+    {
+        JsonElement root;
+        try { root = JsonDocument.Parse(json).RootElement; } catch (JsonException) { return null; }
+        if (root.ValueKind != JsonValueKind.Array) return null;
+        var leads = new List<LeadDto>();
+        foreach (var x in root.EnumerateArray())
+        {
+            var name = Str(x, "fullName") ?? Str(x, "name");
+            if (name is null) continue;
+            var location = string.Join(", ", new[] { Str(x, "city"), Str(x, "state"), Str(x, "country") }.Where(s => s is not null));
+            var domain = Str(x, "companyDomain");
+            leads.Add(new(name, Str(x, "company"), Str(x, "jobTitle"), null, null, location.Length > 0 ? location : null,
+                Https(domain), Https(Str(x, "linkedinUrl")), "Apify Leads Finder"));
+        }
+        return leads;
     }
 
     /// <summary>The same filters as a query string: lists repeat the name with <see cref="LeadSearchOptions.ArraySuffix"/>.</summary>

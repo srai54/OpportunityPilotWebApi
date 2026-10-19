@@ -18,6 +18,13 @@ public sealed class LeadSearchTests
             return Task.FromResult((status, body));
         }
         public string Query = "";
+        public (int Status, string? Body) Actor = (0, null);
+        public string? ActorInput, ActorToken;
+        public Task<(int Status, string? Body)> RunActorAsync(string actor, string token, string inputJson, CancellationToken ct)
+        {
+            ActorInput = inputJson; ActorToken = token;
+            return Task.FromResult(Actor);
+        }
     }
 
     private static LeadSearchService Service(FakeHttp http, string? key = "k", int perDay = 20, LeadSearchOptions? o = null) => new(http, Options.Create(o ?? new LeadSearchOptions()),
@@ -113,6 +120,49 @@ public sealed class LeadSearchTests
             new ProviderBudget(TimeProvider.System, Options.Create(new BudgetOptions())), Options.Create(new JsearchOptions { Key = "account-key" }));
         Assert.Equal("Ready", (await service.SearchAsync(new("x", null, null), default)).Status);
         Assert.Equal("account-key", http.Key);
+    }
+
+    private static LeadSearchService WithApify(FakeHttp http, string? apifyToken = "apify-token") => new(http, Options.Create(new LeadSearchOptions()),
+        Options.Create(new RapidApiBoardsOptions { Key = "k" }), new ProviderBudget(TimeProvider.System, Options.Create(new BudgetOptions())), null,
+        Options.Create(new ApifyOptions { Token = apifyToken }));
+
+    [Fact]
+    public async Task When_apollo_is_out_of_credits_the_apify_backup_answers_with_the_same_filters()
+    {
+        var http = new FakeHttp(429, "{}")
+        {
+            Actor = (201, """[{"fullName":"Jane Doe","jobTitle":"CTO","company":"Acme AB","companyDomain":"acme.se","linkedinUrl":"https://www.linkedin.com/in/janedoe","city":"Stockholm","country":"SE"}]"""),
+        };
+        var r = await WithApify(http).SearchAsync(new("SaaS", ["Sweden"], ["10-20", "50-100"], "people", "CTO"), default);
+        Assert.Equal("Ready", r.Status);
+        var lead = Assert.Single(r.Leads);
+        Assert.Equal(("Jane Doe", "Acme AB", "CTO", "Stockholm, SE", "Apify Leads Finder"), (lead.Name, lead.Company, lead.Title, lead.Location, lead.Source));
+        Assert.Equal("https://acme.se/", lead.Website);
+        Assert.Contains("backup source", r.Message);
+        var input = JsonDocument.Parse(http.ActorInput!).RootElement;
+        Assert.Equal(["SE"], input.GetProperty("countries").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(["CTO"], input.GetProperty("jobTitles").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(["11 to 25", "51 to 100"], input.GetProperty("employeeCounts").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(10, input.GetProperty("maxLeads").GetInt32());
+        Assert.Equal("apify-token", http.ActorToken);
+    }
+
+    [Fact]
+    public async Task Apollo_results_are_used_first_and_no_backup_runs()
+    {
+        var http = new FakeHttp(200, """{"data":{"people":[{"name":"Ana Berg","title":"CTO","organization":{"name":"Acme AB"}}]}}""") { Actor = (201, "[]") };
+        var r = await WithApify(http).SearchAsync(new(null, ["Sweden"], null, "people", "CTO"), default);
+        Assert.Equal("Apollo", Assert.Single(r.Leads).Source);
+        Assert.Null(http.ActorInput);
+    }
+
+    [Fact]
+    public async Task Without_an_apify_token_the_apollo_answer_stands()
+    {
+        var http = new FakeHttp(429, "{}");
+        var r = await WithApify(http, apifyToken: null).SearchAsync(new(null, ["Sweden"], null, "people", "CTO"), default);
+        Assert.Equal("Failed", r.Status);
+        Assert.Null(http.ActorInput);
     }
 
     [Fact]
