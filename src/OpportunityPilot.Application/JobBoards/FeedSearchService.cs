@@ -12,7 +12,7 @@ namespace OpportunityPilot.Application.JobBoards;
 /// The job sites "Search all" can read live. All are free public feeds without a key, except Adzuna, which needs the server's
 /// <c>Adzuna__AppId</c>/<c>Adzuna__AppKey</c> and reports NotConfigured (without calling out) when they are missing.
 /// </summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads, HackerNews }
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads, HackerNews, Jooble, Careerjet, Findwork, UsaJobs, Freelancer }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -27,7 +27,7 @@ public sealed record FeedJobDto(string Site, string SiteName, JobBoardJobDto Job
 /// place. Read-only.
 /// </summary>
 public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser, IOptions<ResearchOptions> research, TimeProvider clock,
-    IRapidApiBoardSearch? regional = null, IOptions<AdzunaOptions>? adzuna = null)
+    IRapidApiBoardSearch? regional = null, IOptions<AdzunaOptions>? adzuna = null, KeyedFeeds? keyed = null)
 {
     public static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(30);
     public const int MaxTake = 100;
@@ -44,7 +44,8 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
     public bool AdzunaConfigured => adzuna?.Value.Configured == true;
 
     /// <summary>What "all sites" means on this server: every feed, and Adzuna only when its keys are set.</summary>
-    public IReadOnlyList<FeedSite> DefaultSites => Enum.GetValues<FeedSite>().Where(s => s != FeedSite.Adzuna || AdzunaConfigured).ToList();
+    public IReadOnlyList<FeedSite> DefaultSites => Enum.GetValues<FeedSite>()
+        .Where(s => (s != FeedSite.Adzuna || AdzunaConfigured) && (!KeyedFeeds.Sites.Contains(s) || keyed?.Configured(s) == true)).ToList();
 
     public static string Name(FeedSite site) => site switch
     {
@@ -58,6 +59,11 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.Adzuna => "Adzuna",
         FeedSite.WorkingNomads => "Working Nomads",
         FeedSite.HackerNews => "HN Who is hiring",
+        FeedSite.Jooble => "Jooble",
+        FeedSite.Careerjet => "Careerjet",
+        FeedSite.Findwork => "Findwork",
+        FeedSite.UsaJobs => "USAJOBS",
+        FeedSite.Freelancer => "Freelancer.com",
         _ => "Remote OK"
     };
 
@@ -79,7 +85,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         foreach (var (site, jobsOfSite, status) in reads)
         {
             // Adzuna was searched with the words and the place, over full descriptions it sends only a snippet of, so only "remote only" is applied again.
-            var matched = jobsOfSite.Where(j => site == FeedSite.Adzuna ? !remoteOnly || j.Job.IsRemote : Matches(j.Job, query, location, remoteOnly)).ToList();
+            var matched = jobsOfSite.Where(j => site == FeedSite.Adzuna || KeyedFeeds.Sites.Contains(site) ? !remoteOnly || j.Job.IsRemote : Matches(j.Job, query, location, remoteOnly)).ToList();
             statuses.Add(status with { Matched = matched.Count });
             jobs.AddRange(matched);
         }
@@ -95,6 +101,12 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var name = Name(site);
         if (site == FeedSite.Adzuna) return await ReadAdzunaAsync(now, query, location, ct);
         if (site == FeedSite.HackerNews) return await ReadHackerNewsAsync(now, query, ct);
+        if (KeyedFeeds.Sites.Contains(site))
+        {
+            if (keyed is null) return (site, [], new(name, "NotConfigured", 0, 0, $"{name} is not configured on the server.", false));
+            var (found, status, message, cached) = await keyed.SearchAsync(site, query, location, ct);
+            return (site, found.Select(j => new FeedJobDto(site.ToString(), name, j)).ToList(), new(name, status, found.Count, 0, message, cached));
+        }
         var fromCache = false;
         IReadOnlyList<string> pages;
         // Himalayas is searched by the person's words, so its answer depends on them and is not shared between searches.
