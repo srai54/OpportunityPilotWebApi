@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using OpportunityPilot.Application.Common;
+using OpportunityPilot.Application.Configuration;
 using OpportunityPilot.Application.JobBoards;
 using OpportunityPilot.Application.Sales;
 
@@ -73,6 +74,16 @@ public sealed class LeadSearchTests
         Assert.Null(http.Path);
         var capped = Service(http, perDay: 0);
         Assert.Equal("DailyLimit", (await capped.SearchAsync(new("x", null, null), default)).Status);
+    }
+
+    [Fact]
+    public async Task Uses_the_jsearch_key_when_no_rapidapi_key_is_set()
+    {
+        var http = new FakeHttp(200, "{\"organizations\":[]}");
+        var service = new LeadSearchService(http, Options.Create(new LeadSearchOptions()), Options.Create(new RapidApiBoardsOptions()),
+            new ProviderBudget(TimeProvider.System, Options.Create(new BudgetOptions())), Options.Create(new JsearchOptions { Key = "account-key" }));
+        Assert.Equal("Ready", (await service.SearchAsync(new("x", null, null), default)).Status);
+        Assert.Equal("account-key", http.Key);
     }
 
     [Fact]

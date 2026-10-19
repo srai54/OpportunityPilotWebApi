@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using OpportunityPilot.Application.Common;
+using OpportunityPilot.Application.Configuration;
 using OpportunityPilot.Application.JobBoards;
 
 namespace OpportunityPilot.Application.Sales;
@@ -9,7 +10,7 @@ namespace OpportunityPilot.Application.Sales;
 /// <summary>
 /// Sales lead search through the "Apollo.io (no cookies required)" RapidAPI listing: companies (or people at companies) by keyword,
 /// country and company size. The key is the server's <c>RapidApi__Key</c>; the host, paths and parameter names are settings
-/// (<c>LeadSearch__…</c>) so a change on the listing needs no code change. The listing bills per returned result, so a page is
+/// (<c>LeadSearch__…</c>). Without <c>RapidApi__Key</c> it uses <c>Jsearch__Key</c>: one RapidAPI account key works for every listing it subscribes to so a change on the listing needs no code change. The listing bills per returned result, so a page is
 /// small and calls are capped per day (<c>Budgets__ApolloPerDay</c>).
 /// </summary>
 public sealed class LeadSearchOptions
@@ -55,7 +56,7 @@ public interface ILeadSearchHttp
     Task<(int Status, string? Body)> PostAsync(string host, string path, string key, string json, CancellationToken ct);
 }
 
-public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchOptions> options, IOptions<RapidApiBoardsOptions> rapid, ProviderBudget budget)
+public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchOptions> options, IOptions<RapidApiBoardsOptions> rapid, ProviderBudget budget, IOptions<JsearchOptions>? jsearch = null)
 {
     public const int MaxText = 200;
 
@@ -63,9 +64,9 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
     {
         var errors = Validate(request);
         if (errors.Count > 0) throw new RequestValidationException(errors);
-        var key = rapid.Value.Key;
+        var key = string.IsNullOrWhiteSpace(rapid.Value.Key) ? jsearch?.Value.Key : rapid.Value.Key;
         if (string.IsNullOrWhiteSpace(key))
-            return new("NotConfigured", [], 0, "Apollo search is not set up on this server yet: the RapidAPI key (RapidApi__Key) is missing.");
+            return new("NotConfigured", [], 0, "Apollo search is not set up on this server yet: no RapidAPI key is set (RapidApi__Key or Jsearch__Key).");
         if (!budget.TryUse(ProviderBudget.Apollo)) return new("DailyLimit", [], 0, ProviderBudget.ExhaustedMessage);
 
         var o = options.Value;
