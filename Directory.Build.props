@@ -1,0 +1,8 @@
+<Project>
+  <!-- The repo rule is a 0-warning build (CLAUDE.md); this makes the compiler enforce it everywhere, CI included. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- NuGet audit stays a warning, so an offline restore or a new advisory does not break a local build; CI checks it separately. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900;NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+  </PropertyGroup>
+</Project>
