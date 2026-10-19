@@ -22,6 +22,13 @@ public sealed class AiOptions
     public string Mode { get; set; } = "Rules";
     public string? GeminiApiKey { get; set; }
     public string GeminiModel { get; set; } = "gemini-3.8-flash";
+    /// <summary>Groq (OpenAI-compatible, free tier). When set it is used instead of Gemini. Render: <c>Groq__ApiKey</c> or <c>Ai__GroqApiKey</c>.</summary>
+    public string? GroqApiKey { get; set; }
+    public string GroqModel { get; set; } = "openai/gpt-oss-120b";
+    public bool UsesGroq => !string.IsNullOrWhiteSpace(GroqApiKey);
+    public bool HasKey => UsesGroq || !string.IsNullOrWhiteSpace(GeminiApiKey);
+    public string ProviderName => UsesGroq ? "Groq" : "Gemini";
+    public string ActiveModel => UsesGroq ? GroqModel : GeminiModel;
     public bool AllowPaidUsage { get; set; }
     public int MaxCallsPerRun { get; set; } = 12;
     public int MaxOutputTokens { get; set; } = 1500;

@@ -16,10 +16,12 @@ public sealed class MailboxesController(MailboxService mailboxes, ReplyCheckServ
     [HttpGet("mailboxes")]
     public async Task<ActionResult<IReadOnlyList<MailboxDto>>> List(CancellationToken ct) => Ok(await mailboxes.ListAsync(ct));
 
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("mailboxes/{provider}/connect")]
     public ActionResult<ConnectMailboxResponse> Connect(MailProvider provider) => mailboxes.BeginConnect(provider);
 
     /// <summary>Connect the person's own email with an app password (no sign-in screen). The password is verified with one test message to themselves and stored encrypted.</summary>
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("mailboxes/smtp")]
     public async Task<ActionResult<MailboxDto>> ConnectSmtp(ConnectSmtpRequest request, CancellationToken ct) => await mailboxes.ConnectSmtpAsync(request, ct);
 
@@ -37,9 +39,11 @@ public sealed class MailboxesController(MailboxService mailboxes, ReplyCheckServ
     public async Task<IActionResult> Callback(MailProvider provider, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct) =>
         Redirect(await mailboxes.CompleteAsync(provider, code, state, error, ct));
 
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("drafts/send-via-mailbox-batch")]
     public async Task<ActionResult<IReadOnlyList<BatchSendResultItem>>> SendBatch(BatchSendRequest request, CancellationToken ct) => Ok(await mailboxes.SendBatchAsync(request, ct));
 
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("drafts/{id:guid}/send-via-mailbox")]
     public async Task<ActionResult<ProviderExecutionDto>> Send(Guid id, SendViaMailboxRequest request, CancellationToken ct) => await mailboxes.SendDraftAsync(id, request, ct);
 }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpportunityPilot.Application.Common;
 using OpportunityPilot.Application.JobBoards;
@@ -11,6 +12,7 @@ namespace OpportunityPilot.Api.Controllers;
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.JobBoardSearch)]
 public sealed class TrendsController(TrendService trends) : ControllerBase
 {
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpGet]
     public async Task<ActionResult<TrendReport>> Get(
         [FromQuery] string query, [FromQuery] string? location = null, [FromQuery] string datePosted = "month",

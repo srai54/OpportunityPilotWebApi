@@ -5,7 +5,7 @@ import { mapCircles } from './circle.ts'
 import { OutreachLog, sendOutreach, submitRefusal } from './outreach.ts'
 import { collectPostings } from './collect.ts'
 import { openBrowser } from './browser.ts'
-import { AGENT_DIR, CONFIG_PATH, DATA_DIR, loadConfig, writeExampleConfig } from './config.ts'
+import { AGENT_DIR, CONFIG_PATH, DATA_DIR, loadConfig, setApiKey, writeExampleConfig } from './config.ts'
 import { linkedIn } from './platforms/linkedin.ts'
 import { naukri } from './platforms/naukri.ts'
 import { instahyre } from './platforms/instahyre.ts'
@@ -244,6 +244,8 @@ async function main(argv: string[]) {
   switch (command) {
     case 'init': {
       const created = writeExampleConfig()
+      const key = option('--key')
+      if (key) { setApiKey(key); console.log('Saved your agent key in config.json.') }
       console.log(
         created
           ? `Created ${CONFIG_PATH}\nEdit it: your search, your answers (salary, notice period, years per skill…) and api.key from the web app's Applications page.`

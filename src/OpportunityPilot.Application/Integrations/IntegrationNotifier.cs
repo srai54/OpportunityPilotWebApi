@@ -7,6 +7,7 @@ using OpportunityPilot.Application.Abstractions;
 using OpportunityPilot.Application.Mail;
 using OpportunityPilot.Domain.Drafts;
 using OpportunityPilot.Domain.Integrations;
+using OpportunityPilot.Domain.Interviews;
 using OpportunityPilot.Domain.Opportunities;
 using OpportunityPilot.Domain.Outreach;
 
@@ -112,6 +113,13 @@ public sealed class IntegrationNotifier(
         var interviews = await db.StaffingInterviews.AsNoTracking()
             .Where(i => i.OwnerId == owner && i.ScheduledAt != null && i.ScheduledAt >= since)
             .OrderBy(i => i.ScheduledAt).Select(i => new { i.Id, i.ScheduledAt, i.DurationMinutes, i.Round, i.Location }).Take(200).ToListAsync(ct);
+        // The candidate's own interview rounds: only the ones still planned and with an agreed time.
+        var jobInterviews = await (from i in db.JobInterviews.AsNoTracking()
+                                   join o in db.Opportunities.AsNoTracking() on i.OpportunityId equals o.Id
+                                   where i.OwnerId == owner && o.OwnerId == owner && i.Status == JobInterviewStatus.Scheduled
+                                         && i.ScheduledAt != null && i.ScheduledAt >= since
+                                   orderby i.ScheduledAt
+                                   select new { i.Id, i.ScheduledAt, i.Round, i.MeetingUrl, o.Title, o.Organization }).Take(200).ToListAsync(ct);
 
         var ics = new StringBuilder();
         ics.Append("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OpportunityPilot//Follow-ups//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n");
@@ -124,6 +132,12 @@ public sealed class IntegrationNotifier(
         }
         foreach (var i in interviews)
             Event(ics, $"interview-{i.Id:N}", stamp, i.ScheduledAt!.Value, i.ScheduledAt.Value.AddMinutes(i.DurationMinutes ?? 60), $"Interview, round {i.Round}", "", i.Location);
+        foreach (var i in jobInterviews)
+        {
+            var where = string.IsNullOrWhiteSpace(i.Organization) ? i.Title : i.Organization;
+            Event(ics, $"job-interview-{i.Id:N}", stamp, i.ScheduledAt!.Value, i.ScheduledAt.Value.AddMinutes(60),
+                $"Interview R{i.Round} · {where}", i.MeetingUrl ?? "", null);
+        }
         ics.Append("END:VCALENDAR\r\n");
         return ics.ToString();
     }

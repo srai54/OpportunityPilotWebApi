@@ -26,6 +26,7 @@ public sealed class AccountDataService(IAppDbContext db, ICurrentUser user, Time
             nextActions = await db.NextActions.Where(x => x.OwnerId == owner).ToListAsync(ct),
             suppressions = await db.Suppressions.Where(x => x.OwnerId == owner).ToListAsync(ct),
             applications = await db.JobApplications.Where(x => x.OwnerId == owner).ToListAsync(ct),
+            jobInterviews = await db.JobInterviews.Where(x => x.OwnerId == owner).ToListAsync(ct),
             salesProjects = await db.SalesProjects.Where(x => x.OwnerId == owner).ToListAsync(ct),
             salesBids = await db.SalesBids.Where(x => x.OwnerId == owner).ToListAsync(ct),
             upworkOpportunities = await db.UpworkOpportunities.Where(x => x.OwnerId == owner).ToListAsync(ct),
@@ -86,6 +87,7 @@ public sealed class AccountDataService(IAppDbContext db, ICurrentUser user, Time
         db.UpworkOpportunities.RemoveRange(await db.UpworkOpportunities.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.SalesProjects.RemoveRange(await db.SalesProjects.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.JobApplications.RemoveRange(await db.JobApplications.Where(x => x.OwnerId == owner).ToListAsync(ct));
+        db.JobInterviews.RemoveRange(await db.JobInterviews.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.AgentKeys.RemoveRange(await db.AgentKeys.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.Suppressions.RemoveRange(await db.Suppressions.Where(x => x.OwnerId == owner).ToListAsync(ct));
         // Opportunities first: their evidence links restrict deleting evidence, which campaigns cascade to.

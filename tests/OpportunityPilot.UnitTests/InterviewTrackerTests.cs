@@ -1,0 +1,203 @@
+using Microsoft.EntityFrameworkCore;
+using OpportunityPilot.Application.Abstractions;
+using OpportunityPilot.Application.Common;
+using OpportunityPilot.Application.Interviews;
+using OpportunityPilot.Application.Staffing;
+using OpportunityPilot.Domain.Common;
+using OpportunityPilot.Domain.Interviews;
+using OpportunityPilot.Domain.Opportunities;
+using OpportunityPilot.Domain.Staffing;
+using OpportunityPilot.Infrastructure.Persistence;
+
+namespace OpportunityPilot.UnitTests;
+
+/// <summary>Interview tracking: the candidate's own job interviews, the sales tracker across deals, and the candidate's progress link.</summary>
+public class InterviewTrackerTests
+{
+    private static readonly DateTime T0 = new(2026, 10, 15, 9, 0, 0, DateTimeKind.Utc);
+
+    private sealed class Owner(Guid id) : ICurrentUser { public Guid OwnerId => id; }
+
+    private sealed class Clock(DateTime now) : TimeProvider
+    {
+        public DateTime Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => new(Now);
+    }
+
+    private static InMemoryAppDbContext NewDb() =>
+        new(new DbContextOptionsBuilder<InMemoryAppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+
+    private static Opportunity Lead(Guid owner, OpportunityMode mode, string key)
+    {
+        var o = new Opportunity(owner, Guid.NewGuid(), mode, key, T0);
+        o.ApplyResearch("Senior .NET Engineer", "Northwind", "Pune", null, null, JobPlatform.LinkedIn, "1", null, 80, 80, FilterOutcome.Qualified,
+            null, "[]", "[]", "[]", 0, Guid.NewGuid(), T0);
+        return o;
+    }
+
+    // ---------- Candidate: job interviews ----------
+
+    [Fact]
+    public void A_job_interview_needs_a_round_in_range_and_an_http_link()
+    {
+        var owner = Guid.NewGuid();
+        Assert.Throws<ArgumentOutOfRangeException>(() => new JobInterview(owner, Guid.NewGuid(), 0, null, null, null, T0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new JobInterview(owner, Guid.NewGuid(), 21, null, null, null, T0));
+        Assert.Throws<ArgumentException>(() => new JobInterview(owner, Guid.NewGuid(), 1, null, "javascript:alert(1)", null, T0));
+        var i = new JobInterview(owner, Guid.NewGuid(), 2, T0.AddDays(1), " https://meet.example.com/abc ", "  ", T0);
+        Assert.Equal((2, "https://meet.example.com/abc", (string?)null, JobInterviewStatus.Scheduled, 1), (i.Round, i.MeetingUrl, i.Notes, i.Status, i.Version));
+    }
+
+    [Fact]
+    public void An_interview_without_a_time_cannot_be_done_or_missed_but_can_be_cancelled()
+    {
+        var i = new JobInterview(Guid.NewGuid(), Guid.NewGuid(), 1, null, null, null, T0);
+        Assert.Throws<InvalidOperationException>(() => i.SetStatus(JobInterviewStatus.Completed, T0));
+        Assert.Throws<InvalidOperationException>(() => i.SetStatus(JobInterviewStatus.NoShow, T0));
+        i.SetStatus(JobInterviewStatus.Cancelled, T0);
+        Assert.Equal((JobInterviewStatus.Cancelled, 2), (i.Status, i.Version));
+        i.SetStatus(JobInterviewStatus.Cancelled, T0);
+        Assert.Equal(2, i.Version);
+    }
+
+    [Fact]
+    public async Task Rounds_count_up_per_job_and_the_list_shows_the_job_soonest_first()
+    {
+        var db = NewDb();
+        var owner = Guid.NewGuid();
+        var job = Lead(owner, OpportunityMode.Job, "job:1");
+        db.Add(job);
+        await db.SaveChangesAsync();
+        var svc = new JobInterviewService(db, new Owner(owner), new Clock(T0));
+
+        var first = await svc.CreateAsync(job.Id, new SaveJobInterviewRequest(null, T0.AddDays(3), "https://meet.example.com/a", null), default);
+        var second = await svc.CreateAsync(job.Id, new SaveJobInterviewRequest(null, T0.AddDays(1), null, "Bring the portfolio"), default);
+        var undated = await svc.CreateAsync(job.Id, new SaveJobInterviewRequest(null, null, null, null), default);
+
+        Assert.Equal((1, 2, 3), (first.Round, second.Round, undated.Round));
+        var list = await svc.ListAsync(null, default);
+        Assert.Equal(new[] { second.Id, first.Id, undated.Id }, list.Select(x => x.Id));
+        Assert.All(list, x => Assert.Equal(("Senior .NET Engineer", "Northwind"), (x.Title, x.Organization)));
+        Assert.Equal(3, (await svc.ListAsync(job.Id, default)).Count);
+    }
+
+    [Fact]
+    public async Task Status_and_edits_need_the_loaded_version()
+    {
+        var db = NewDb();
+        var owner = Guid.NewGuid();
+        var job = Lead(owner, OpportunityMode.Job, "job:1");
+        db.Add(job);
+        await db.SaveChangesAsync();
+        var svc = new JobInterviewService(db, new Owner(owner), new Clock(T0));
+        var i = await svc.CreateAsync(job.Id, new SaveJobInterviewRequest(1, T0.AddDays(1), null, null), default);
+
+        var done = await svc.SetStatusAsync(i.Id, new JobInterviewStatusRequest(JobInterviewStatus.Completed, i.Version), default);
+        Assert.Equal(JobInterviewStatus.Completed, done.Status);
+        await Assert.ThrowsAsync<ConflictException>(() => svc.SetStatusAsync(i.Id, new JobInterviewStatusRequest(JobInterviewStatus.NoShow, i.Version), default));
+        await Assert.ThrowsAsync<RequestValidationException>(() => svc.UpdateAsync(i.Id, new SaveJobInterviewRequest(2, null, null, null), default));
+        var edited = await svc.UpdateAsync(i.Id, new SaveJobInterviewRequest(2, T0.AddDays(2), "https://meet.example.com/x", null, done.Version), default);
+        Assert.Equal((2, "https://meet.example.com/x"), (edited.Round, edited.MeetingUrl));
+    }
+
+    [Fact]
+    public async Task Bad_input_company_leads_and_other_owners_are_refused()
+    {
+        var db = NewDb();
+        var owner = Guid.NewGuid();
+        var job = Lead(owner, OpportunityMode.Job, "job:1");
+        var company = Lead(owner, OpportunityMode.Customer, "co:1");
+        var foreign = Lead(Guid.NewGuid(), OpportunityMode.Job, "job:2");
+        db.AddRange(job, company, foreign);
+        await db.SaveChangesAsync();
+        var svc = new JobInterviewService(db, new Owner(owner), new Clock(T0));
+
+        var bad = await Assert.ThrowsAsync<RequestValidationException>(() => svc.CreateAsync(job.Id,
+            new SaveJobInterviewRequest(0, DateTime.SpecifyKind(T0, DateTimeKind.Unspecified), "ftp://x", null), default));
+        Assert.Contains("round", bad.Errors.Keys);
+        Assert.Contains("scheduledAt", bad.Errors.Keys);
+        Assert.Contains("meetingUrl", bad.Errors.Keys);
+        await Assert.ThrowsAsync<RequestValidationException>(() => svc.CreateAsync(company.Id, new SaveJobInterviewRequest(null, null, null, null), default));
+        await Assert.ThrowsAsync<NotFoundException>(() => svc.CreateAsync(foreign.Id, new SaveJobInterviewRequest(null, null, null, null), default));
+
+        var mine = await svc.CreateAsync(job.Id, new SaveJobInterviewRequest(null, null, null, null), default);
+        var other = new JobInterviewService(db, new Owner(Guid.NewGuid()), new Clock(T0));
+        Assert.Empty(await other.ListAsync(null, default));
+        await Assert.ThrowsAsync<NotFoundException>(() => other.DeleteAsync(mine.Id, default));
+        await svc.DeleteAsync(mine.Id, default);
+        Assert.Empty(await svc.ListAsync(null, default));
+    }
+
+    // ---------- Sales: the tracker and the candidate's progress link ----------
+
+    private sealed record Staffing(InMemoryAppDbContext Db, Clock Clock, Guid Owner, StaffingDeal Deal, StaffingCandidate Candidate, StaffingSubmission Submission)
+    {
+        public StaffingPipelineService Pipeline => new(Db, new Owner(Owner), Clock);
+    }
+
+    private static async Task<Staffing> StaffingSetup()
+    {
+        var db = NewDb();
+        var owner = Guid.NewGuid();
+        var account = new StaffingAccount(owner, "Contoso", StaffingAccountSource.Manual, T0);
+        var deal = new StaffingDeal(owner, account.Id, null, "Two .NET developers", StaffingDealSource.Manual, T0);
+        var candidate = new StaffingCandidate(owner, "Asha Rao", T0);
+        var submission = new StaffingSubmission(owner, deal.Id, candidate.Id, CandidateField.Name, "{}", candidate.Version, 0, null, T0);
+        submission.Approve(submission.Version, T0);
+        submission.MarkSent(submission.Version, HandoffChannel.Email, "msg-1", T0);
+        db.AddRange(account, deal, candidate, submission);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        return new Staffing(db, new Clock(T0), owner, deal, candidate, submission);
+    }
+
+    [Fact]
+    public async Task The_tracker_lists_every_interview_with_candidate_client_and_role_upcoming_first()
+    {
+        var s = await StaffingSetup();
+        var past = new StaffingInterview(s.Owner, s.Deal.Id, s.Submission.Id, 1, T0);
+        past.Schedule(T0.AddDays(-2), "Asia/Kolkata", 45, InterviewMode.Video, null, null, null, T0);
+        past.Finish(InterviewState.Completed, T0);
+        var next = new StaffingInterview(s.Owner, s.Deal.Id, s.Submission.Id, 2, T0);
+        next.Schedule(T0.AddDays(1), "Asia/Kolkata", 45, InterviewMode.Video, "https://meet.example.com/r2", null, "internal", T0);
+        var foreign = new StaffingInterview(Guid.NewGuid(), s.Deal.Id, s.Submission.Id, 1, T0);
+        s.Db.AddRange(past, next, foreign);
+        await s.Db.SaveChangesAsync();
+
+        var rows = await s.Pipeline.InterviewBoardAsync(200, default);
+
+        Assert.Equal(new[] { next.Id, past.Id }, rows.Select(r => r.Interview.Id));
+        var top = rows[0];
+        Assert.Equal(("Asha Rao", "Contoso", "Two .NET developers", s.Candidate.Id), (top.CandidateName, top.Client, top.DealTitle, top.CandidateId));
+        Assert.Equal(NotificationStatus.NotNotified, top.Interview.CandidateNotification);
+        Assert.False(top.ProgressLinkActive);
+    }
+
+    [Fact]
+    public async Task A_status_change_by_sales_shows_on_the_candidates_progress_link()
+    {
+        var s = await StaffingSetup();
+        var interview = new StaffingInterview(s.Owner, s.Deal.Id, s.Submission.Id, 1, T0);
+        interview.Schedule(T0.AddHours(2), "Asia/Kolkata", 45, InterviewMode.Video, "https://meet.example.com/r1", null, null, T0);
+        s.Db.Add(interview);
+        await s.Db.SaveChangesAsync();
+        var link = await new ProgressLinkService(s.Db, new Owner(s.Owner), s.Clock).CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Interviews"]), default);
+        var view = new ProgressViewService(s.Db, s.Clock);
+
+        var before = (await view.ViewAsync(link.Token!, default)).Items.Single();
+        Assert.Equal("Interview scheduled", before.Stage);
+        Assert.Equal(1, before.Interview!.Round);
+        var row = (await s.Pipeline.InterviewBoardAsync(200, default)).Single();
+        Assert.True(row.ProgressLinkActive && row.ProgressShowsInterviews);
+
+        s.Clock.Now = T0.AddHours(3);
+        await s.Pipeline.FinishInterviewAsync(s.Deal.Id, interview.Id, new FinishInterviewRequest(InterviewState.Completed, row.Interview.Version), default);
+
+        var after = (await view.ViewAsync(link.Token!, default)).Items.Single();
+        Assert.Equal("Interview done, waiting for the client's answer", after.Stage);
+        Assert.Null(after.Interview);
+
+        await s.Pipeline.RequestInterviewAsync(s.Deal.Id, new RequestInterviewRequest(s.Submission.Id), default);
+        Assert.Equal("The client asked for an interview", (await view.ViewAsync(link.Token!, default)).Items.Single().Stage);
+    }
+}

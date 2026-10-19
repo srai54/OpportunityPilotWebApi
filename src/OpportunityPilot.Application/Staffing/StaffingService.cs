@@ -47,11 +47,32 @@ public sealed class StaffingService(IStaffingRepository staffing, ICurrentUser u
         try
         {
             contact = new(user.OwnerId, accountId, request.Name, Now);
-            contact.Update(request.Name, request.Title, request.Email, request.EmailVerified, request.LinkedInUrl, request.Evidence, Now);
+            contact.Update(
+                request.Name, request.Title, request.Email, request.EmailVerified, request.LinkedInUrl, request.Evidence, request.Phone, Now);
         }
         catch (ArgumentException ex) { throw Invalid("contact", ex.Message); }
         staffing.AddContact(contact);
         await staffing.SaveChangesAsync(ct);
+        return ToDto(contact);
+    }
+
+    public async Task<StaffingContactDto> UpdateContactAsync(
+        Guid accountId, Guid contactId, UpdateStaffingContactRequest request, CancellationToken ct)
+    {
+        if (request is null) throw Invalid("body", "Request body is required.");
+        if (string.IsNullOrWhiteSpace(request.Name)) throw Invalid("name", "Contact name is required.");
+        var contact = await staffing.FindContactAsync(user.OwnerId, accountId, contactId, ct)
+            ?? throw new NotFoundException("Contact not found.");
+        if (contact.Version != request.ExpectedVersion)
+            throw new ConflictException($"The contact changed elsewhere (now version {contact.Version}). Reload before saving.");
+        try
+        {
+            contact.Update(
+                request.Name, request.Title, request.Email, request.EmailVerified, request.LinkedInUrl, request.Evidence, request.Phone, Now);
+        }
+        catch (ArgumentException ex) { throw Invalid("contact", ex.Message); }
+        try { await staffing.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new ConflictException("The contact changed elsewhere. Reload before saving."); }
         return ToDto(contact);
     }
 
@@ -233,7 +254,7 @@ public sealed class StaffingService(IStaffingRepository staffing, ICurrentUser u
 
     private static StaffingContactDto ToDto(StaffingContact contact) =>
         new(contact.Id, contact.AccountId, contact.Name, contact.Title, contact.Email, contact.EmailVerified,
-            contact.LinkedInUrl, contact.Evidence, contact.Version, contact.CreatedAt, contact.UpdatedAt);
+            contact.LinkedInUrl, contact.Evidence, contact.Version, contact.CreatedAt, contact.UpdatedAt, contact.Phone);
 
     private static StaffingDealDto ToDto(StaffingDeal deal, IEnumerable<StaffingDealActivity> activities) =>
         new(deal.Id, deal.AccountId, deal.ContactId, deal.Title, deal.Source, deal.ExternalReference, deal.EstimatedValue,

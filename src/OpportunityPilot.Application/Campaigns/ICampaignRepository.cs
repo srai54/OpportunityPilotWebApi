@@ -15,6 +15,8 @@ public interface ICampaignRepository
     Task<bool> ProfileExistsAsync(Guid ownerId, Guid profileId, CancellationToken ct);
     Task<IReadOnlyDictionary<Guid, CampaignStats>> StatsAsync(Guid ownerId, IReadOnlyCollection<Guid> ids, CancellationToken ct);
     void Add(Campaign campaign);
+    /// <summary>Deletes the campaign with its leads, their interviews and its schedules (children first; evidence and drafts cascade).</summary>
+    Task DeleteAsync(Guid ownerId, Campaign campaign, CancellationToken ct);
     /// <summary>Saves the shared unit of work; throws <c>DbUpdateConcurrencyException</c> on a version clash.</summary>
     Task SaveChangesAsync(CancellationToken ct);
 }

@@ -24,7 +24,7 @@ public sealed class AiService(IAppDbContext db, ICurrentUser user, ILlmClient ll
             throw Invalid("profileId", "Profile not found.");
 
         if (!_features.GeminiEnabled) return Rules(request.Goal, request.Mode, "Disabled");
-        if (string.IsNullOrWhiteSpace(_options.GeminiApiKey)) return Rules(request.Goal, request.Mode, "NoKey");
+        if (!_options.HasKey) return Rules(request.Goal, request.Mode, "NoKey");
 
         // The daily budget is counted from stored usage, so it holds across restarts and instances.
         if (await CallsTodayAsync(ct) >= DailyLimit)
@@ -55,9 +55,9 @@ public sealed class AiService(IAppDbContext db, ICurrentUser user, ILlmClient ll
         var calls = await CallsTodayAsync(ct);
         var lastFailure = await db.AiUsages.Where(u => u.OwnerId == user.OwnerId && u.Outcome != AiOutcome.Succeeded)
             .OrderByDescending(u => u.OccurredAt).Select(u => new { u.Outcome, u.Reason, u.OccurredAt }).FirstOrDefaultAsync(ct);
-        var active = _features.GeminiEnabled && !string.IsNullOrWhiteSpace(_options.GeminiApiKey);
-        return new(active, "Gemini", _options.GeminiModel,
-            !_features.GeminiEnabled ? "Disabled" : string.IsNullOrWhiteSpace(_options.GeminiApiKey) ? "NoKey" : calls >= DailyLimit ? "DailyLimit" : null,
+        var active = _features.GeminiEnabled && !!_options.HasKey;
+        return new(active, _options.ProviderName, _options.ActiveModel,
+            !_features.GeminiEnabled ? "Disabled" : !_options.HasKey ? "NoKey" : calls >= DailyLimit ? "DailyLimit" : null,
             calls, DailyLimit, Math.Clamp(_options.MaxCallsPerRun, 1, 100), lastFailure, active && calls < DailyLimit);
     }
 
@@ -68,7 +68,7 @@ public sealed class AiService(IAppDbContext db, ICurrentUser user, ILlmClient ll
     public async Task<string?> UnavailableReasonAsync(CancellationToken ct)
     {
         if (!_features.GeminiEnabled) return "Disabled";
-        if (string.IsNullOrWhiteSpace(_options.GeminiApiKey)) return "NoKey";
+        if (!_options.HasKey) return "NoKey";
         return await CallsTodayAsync(ct) >= DailyLimit ? "DailyLimit" : null;
     }
 

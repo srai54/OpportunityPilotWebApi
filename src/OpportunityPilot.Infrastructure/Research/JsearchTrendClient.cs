@@ -12,7 +12,7 @@ namespace OpportunityPilot.Infrastructure.Research;
 /// site come back. Identical searches are served from memory for the configured cache time to protect the monthly quota.
 /// </summary>
 public sealed class JsearchTrendClient(HttpClient http, IOptions<JsearchOptions> options, TimeProvider clock,
-    ILogger<JsearchTrendClient> logger, Application.Common.OperationalMetrics metrics) : ITrendSource
+    ILogger<JsearchTrendClient> logger, Application.Common.OperationalMetrics metrics, Application.Common.ProviderBudget? budget = null) : ITrendSource
 {
     private static readonly ConcurrentDictionary<string, TrendPage> Cache = new();
 
@@ -31,6 +31,8 @@ public sealed class JsearchTrendClient(HttpClient http, IOptions<JsearchOptions>
 
         var now = clock.GetUtcNow().UtcDateTime;
         if (Cache.TryGetValue(qs, out var cached) && cached.ObservedAt > now.AddMinutes(-o.CacheMinutes)) return cached with { FromCache = true };
+        if (budget?.TryUse(Application.Common.ProviderBudget.Jsearch) == false)
+            return new TrendPage("Failed", Application.Common.ProviderBudget.ExhaustedMessage, [], null, null, false, now);
 
         var started = clock.GetTimestamp();
         try

@@ -13,6 +13,19 @@ public sealed class CampaignRepository(AppDbContext db) : ICampaignRepository
 
     public Task<int> CountAsync(Guid ownerId, CancellationToken ct) => Owned(ownerId).CountAsync(ct);
 
+    public async Task DeleteAsync(Guid ownerId, Campaign campaign, CancellationToken ct)
+    {
+        var leads = await db.Opportunities.Where(o => o.OwnerId == ownerId && o.CampaignId == campaign.Id).ToListAsync(ct);
+        var leadIds = leads.Select(o => o.Id).ToList();
+        db.JobInterviews.RemoveRange(await db.JobInterviews.Where(x => x.OwnerId == ownerId && leadIds.Contains(x.OpportunityId)).ToListAsync(ct));
+        db.CampaignSchedules.RemoveRange(await db.CampaignSchedules.Where(x => x.OwnerId == ownerId && x.CampaignId == campaign.Id).ToListAsync(ct));
+        // Leads first: their evidence links restrict deleting evidence, which the campaign cascades to (same order as account deletion).
+        db.Opportunities.RemoveRange(leads);
+        await db.SaveChangesAsync(ct);
+        db.Campaigns.Remove(campaign);
+        await db.SaveChangesAsync(ct);
+    }
+
     public Task<Campaign?> FindAsync(Guid ownerId, Guid id, CancellationToken ct) =>
         Owned(ownerId).FirstOrDefaultAsync(c => c.Id == id, ct);
 

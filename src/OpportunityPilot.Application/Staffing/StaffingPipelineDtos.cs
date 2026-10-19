@@ -78,6 +78,13 @@ public sealed record CreateProposalRequest(Guid RateCardId, string Title, IReadO
 public sealed record EditProposalRequest(string Title, IReadOnlyList<RateCardLine> Lines, string? Terms, string? Body, DateOnly? ValidUntil, int ExpectedVersion);
 public sealed record ClientAnswerRequest(bool Accepted, int ExpectedVersion);
 
+/// <summary>One row of the sales interview tracker: the interview plus who, for which client and role, and what the candidate can see.</summary>
+/// <param name="ProgressLinkActive">The candidate has a live progress link.</param>
+/// <param name="ProgressShowsInterviews">That link shows interview details, so a status change here appears on it.</param>
+public sealed record StaffingInterviewBoardRowDto(
+    StaffingInterviewDto Interview, Guid CandidateId, string CandidateName, string? CandidateEmail, string DealTitle, string? Client,
+    bool ProgressLinkActive, bool ProgressShowsInterviews);
+
 public sealed record StaffingDealWorkDto(
     IReadOnlyList<StaffingSubmissionDto> Submissions, IReadOnlyList<StaffingInterviewDto> Interviews,
     IReadOnlyList<StaffingFeedbackDto> Feedback, IReadOnlyList<StaffingOfferDto> Offers, IReadOnlyList<StaffingProposalDto> Proposals);

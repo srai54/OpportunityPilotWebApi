@@ -12,7 +12,8 @@ namespace OpportunityPilot.Infrastructure.Research;
 /// logged. Identical searches are served from memory for <see cref="JsearchOptions.CacheMinutes"/> so the free quota lasts.
 /// </summary>
 public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions> options, TimeProvider clock,
-    ILogger<JsearchBoardClient> logger, Application.Common.OperationalMetrics metrics, IOptions<ApifyOptions>? apify = null) : IJobBoardSearch
+    ILogger<JsearchBoardClient> logger, Application.Common.OperationalMetrics metrics, IOptions<ApifyOptions>? apify = null,
+    Application.Common.ProviderBudget? budget = null) : IJobBoardSearch
 {
     private static readonly ConcurrentDictionary<string, JobBoardSearchResult> Cache = new();
     private static int? LastRemaining;
@@ -56,6 +57,8 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
         var cacheKey = $"{request.Board}|{qs}";
         if (Cache.TryGetValue(cacheKey, out var cached) && cached.ObservedAt > now.AddMinutes(-o.CacheMinutes))
             return cached with { FromCache = true, QuotaRemaining = LastRemaining ?? cached.QuotaRemaining };
+        if (budget?.TryUse(Application.Common.ProviderBudget.Jsearch) == false)
+            return new(request.Board, "Failed", [], 0, Application.Common.ProviderBudget.ExhaustedMessage, now, false, source);
 
         var started = clock.GetTimestamp();
         try
@@ -124,6 +127,8 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
         var searchUrl = NaukriApify.SearchUrl(request.Query, request.Location);
         var cacheKey = "naukri|" + searchUrl;
         if (Cache.TryGetValue(cacheKey, out var cached) && cached.ObservedAt > now.AddMinutes(-a.CacheMinutes)) return cached with { FromCache = true };
+        if (budget?.TryUse(Application.Common.ProviderBudget.Apify) == false)
+            return new(request.Board, "Failed", [], 0, Application.Common.ProviderBudget.ExhaustedMessage, now, false, source);
         try
         {
             using var message = new HttpRequestMessage(HttpMethod.Post,

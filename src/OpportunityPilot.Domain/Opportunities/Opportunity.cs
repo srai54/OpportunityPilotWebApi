@@ -157,7 +157,7 @@ public class Opportunity : IOwned
     /// </summary>
     public Activity? ApproveAutomatically(int? minScore, DateTime utcNow)
     {
-        if (minScore is not { } threshold || Mode != OpportunityMode.Job || Outcome != FilterOutcome.Qualified || Score < threshold ||
+        if (minScore is not { } threshold || Outcome != FilterOutcome.Qualified || Score < threshold ||
             Status is not (OpportunityStatus.New or OpportunityStatus.Suggested))
             return null;
         Status = OpportunityStatus.Shortlisted;

@@ -61,6 +61,11 @@ public sealed class StaffingPipelineController(StaffingPipelineService pipeline,
     public async Task<ActionResult<StaffingSubmissionDto>> WithdrawSubmission(Guid dealId, Guid id, CancellationToken ct) =>
         Ok(await pipeline.WithdrawSubmissionAsync(dealId, id, ct));
 
+    /// <summary>The sales interview tracker: every interview across deals and candidates.</summary>
+    [HttpGet("interviews")]
+    public async Task<ActionResult<IReadOnlyList<StaffingInterviewBoardRowDto>>> InterviewBoard([FromQuery] int take = 200, CancellationToken ct = default) =>
+        Ok(await pipeline.InterviewBoardAsync(take, ct));
+
     [HttpPost("deals/{dealId:guid}/interviews")]
     public async Task<ActionResult<StaffingInterviewDto>> RequestInterview(Guid dealId, RequestInterviewRequest request, CancellationToken ct) =>
         Ok(await pipeline.RequestInterviewAsync(dealId, request, ct));

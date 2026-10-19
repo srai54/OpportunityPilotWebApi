@@ -25,6 +25,11 @@ public sealed class StaffingController(IStaffingService staffing) : ControllerBa
         Guid accountId, CreateStaffingContactRequest request, CancellationToken ct) =>
         Ok(await staffing.CreateContactAsync(accountId, request, ct));
 
+    [HttpPut("accounts/{accountId:guid}/contacts/{contactId:guid}")]
+    public async Task<ActionResult<StaffingContactDto>> UpdateContact(
+        Guid accountId, Guid contactId, UpdateStaffingContactRequest request, CancellationToken ct) =>
+        Ok(await staffing.UpdateContactAsync(accountId, contactId, request, ct));
+
     [HttpGet("deals")]
     public async Task<ActionResult<IReadOnlyList<StaffingDealDto>>> ListDeals(
         [FromQuery] int take = 50, [FromQuery] int skip = 0, [FromQuery] StaffingDealStage? stage = null,

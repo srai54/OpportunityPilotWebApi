@@ -75,6 +75,13 @@ research quota (OQ-BE-021), live LinkedIn/Naukri selectors (OQ-BE-001) and deplo
 - **Agent as research source and applier** (2026-10-01): `/api/v1/agent/campaigns`, `/agent/campaigns/{id}/postings`,
   `/agent/shortlist`, and `opportunityId` on reports. Only jobs the user shortlists are offered to the agent.
 
+- **Call and schedule, API part** (2026-10-15, branch `feature/call-and-schedule`, unit-tested only, not deployed): optional
+  `Phone` on staffing contacts (+ `PUT /api/v1/staffing/accounts/{accountId}/contacts/{contactId}`, migration
+  `AddStaffingContactPhone` for both providers); the calendar feed also lists the candidate's `Scheduled` job interviews; the voice
+  assistant can propose a `schedule` action matched to the person's own deal or job (nothing saved by the assistant); and
+  `POST /api/v1/sample-data` creates marked demo records once per owner. Web side (Call button, schedule form, voice confirm) is
+  separate.
+
 ## Exact next task
 
 Wire the React app's campaign, source, import, research-progress and opportunity screens to these endpoints

@@ -107,7 +107,11 @@ public static class AuthSetup
                         OnTokenValidated = context =>
                         {
                             var subject = context.Principal?.FindFirst("sub")?.Value;
-                            if (!Guid.TryParse(subject, out _)) context.Fail("The token subject is invalid.");
+                            if (!Guid.TryParse(subject, out _)) { context.Fail("The token subject is invalid."); return Task.CompletedTask; }
+                            // Two-factor is enforced on the server, not only in the browser: a Supabase session that has not passed its second
+                            // factor (aal1) is refused. Hanko tokens are validated by their own scheme below.
+                            if (!SupabaseAal.IsTwoFactor(context.Principal?.FindFirst("aal")?.Value))
+                                context.Fail("Two-factor sign-in is required.");
                             return Task.CompletedTask;
                         }
                     };
@@ -168,6 +172,11 @@ public static class AuthSetup
 
         var authz = builder.Services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder(schemes.ToArray()).RequireAuthenticatedUser().Build());
+        // Paid features (AI, voice, live job boards, sending, connectors) need a signed-in account; a guest session can browse and use
+        // the free parts. D1, 2026-10-16.
+        authz.AddPolicy(Policies.NotGuest, p => p.AddAuthenticationSchemes(schemes.ToArray()).RequireAuthenticatedUser()
+            .RequireAssertion(c => !c.User.HasClaim("guest", "true")));
+        builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler, SignInRequiredResultHandler>();
         foreach (var scope in new[] { "Research", "Shortlist", "Applications", "People" })
             authz.AddPolicy($"agent:{scope}", p => p.AddAuthenticationSchemes(AgentKeyAuthenticationHandler.SchemeName)
                 .RequireAuthenticatedUser().RequireClaim(AgentKeyAuthenticationHandler.ScopeClaim, scope));
@@ -175,5 +184,41 @@ public static class AuthSetup
         builder.Services.AddHttpClient(nameof(SupabaseJwks), c => c.Timeout = TimeSpan.FromSeconds(10));
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+    }
+}
+
+/// <summary>Supabase's authenticator assurance level: only "aal2" (password or link plus a second factor) is accepted.</summary>
+public static class SupabaseAal
+{
+    public static bool IsTwoFactor(string? aal) => string.Equals(aal, "aal2", StringComparison.Ordinal);
+}
+
+public static class Policies
+{
+    /// <summary>Signed-in users only: guests are refused with "Sign in to use this".</summary>
+    public const string NotGuest = "not-guest";
+}
+
+/// <summary>A guest refused by <see cref="Policies.NotGuest"/> gets a plain 403 problem the app shows as "Sign in to use this".</summary>
+public sealed class SignInRequiredResultHandler : Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler
+{
+    private readonly Microsoft.AspNetCore.Authorization.Policy.AuthorizationMiddlewareResultHandler fallback = new();
+
+    public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, Microsoft.AspNetCore.Authorization.Policy.PolicyAuthorizationResult result)
+    {
+        if (result.Forbidden && context.User.HasClaim("guest", "true"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                type = "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+                title = "Sign in to use this",
+                status = 403,
+                detail = "Voice, AI, live job boards and sending need a signed-in account. Guest mode covers everything else.",
+                code = "sign-in-required",
+            }, context.RequestAborted);
+            return;
+        }
+        await fallback.HandleAsync(next, context, policy, result);
     }
 }

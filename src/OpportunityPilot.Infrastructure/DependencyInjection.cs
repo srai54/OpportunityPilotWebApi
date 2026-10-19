@@ -19,11 +19,17 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, SetupState setup)
     {
         services.AddResearchInfrastructure(configuration);
-        services.AddHttpClient<ILlmClient, GeminiLlmClient>(c =>
+        services.AddHttpClient<GeminiLlmClient>(c =>
         {
             c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
             c.Timeout = Timeout.InfiniteTimeSpan;
         });
+        services.AddHttpClient<GroqLlmClient>(c =>
+        {
+            c.BaseAddress = new Uri("https://api.groq.com/");
+            c.Timeout = Timeout.InfiniteTimeSpan;
+        });
+        services.AddTransient<ILlmClient, RoutingLlmClient>();
         services.AddHttpClient<Integrations.ConnectorHttp>(Integrations.ConnectorHttp.ClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(Integrations.ConnectorHttp.Handler);
         // Requests made with a plugin connection go through the managed-connection platform's proxy; the rest go out directly.

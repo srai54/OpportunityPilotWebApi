@@ -79,6 +79,15 @@ export function writeExampleConfig(): boolean {
   return true
 }
 
+/** Puts the key from the web app's "Connect the agent" into config.json (api.key), keeping everything else. */
+export function setApiKey(key: string, path = CONFIG_PATH): void {
+  const trimmed = key.trim()
+  if (!/^[A-Za-z0-9_.-]{16,200}$/.test(trimmed)) throw new Error('That does not look like an agent key. Copy it again from the Desktop agent card.')
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as { api?: { url?: string; key?: string } }
+  raw.api = { url: raw.api?.url ?? EXAMPLE_CONFIG.api.url, key: trimmed }
+  writeFileSync(path, JSON.stringify(raw, null, 2) + '\n')
+}
+
 /** Reads config.json and reports every problem at once, in words a non-developer can act on. */
 export function loadConfig(path = CONFIG_PATH): Config {
   if (!existsSync(path)) throw new Error(`No config found at ${path}. Run: npm run agent -- init`)

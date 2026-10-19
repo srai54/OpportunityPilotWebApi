@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpportunityPilot.Application.Profiles;
 
@@ -5,8 +6,13 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/profiles")]
-public sealed class ProfilesController(IProfileService profiles) : ControllerBase
+public sealed class ProfilesController(IProfileService profiles, IProfileImproveService improve) : ControllerBase
 {
+    /// <summary>"Improve with AI": suggestions for the person's own fields (no new facts); nothing is saved.</summary>
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [HttpPost("improve")]
+    public async Task<ActionResult<ImproveProfileDto>> Improve(ImproveProfileRequest request, CancellationToken ct) => await improve.ImproveAsync(request, ct);
+
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ProfileSummaryDto>>> List(CancellationToken ct) =>
         Ok(await profiles.ListAsync(ct));

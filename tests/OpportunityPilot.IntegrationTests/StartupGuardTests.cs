@@ -98,12 +98,12 @@ public class StartupGuardTests
         return client;
     }
 
-    private static string LegacySupabaseToken(string secret, string subject = "11111111-1111-1111-1111-111111111111") =>
+    private static string LegacySupabaseToken(string secret, string subject = "11111111-1111-1111-1111-111111111111", string aal = "aal2") =>
         new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
             Issuer = "https://example.supabase.co/auth/v1",
             Audience = "authenticated",
-            Subject = new ClaimsIdentity([new Claim("sub", subject)]),
+            Subject = new ClaimsIdentity([new Claim("sub", subject), new Claim("aal", aal)]),
             Expires = DateTime.UtcNow.AddMinutes(5),
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
@@ -295,6 +295,12 @@ public class StartupGuardTests
         badSubject.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer", LegacySupabaseToken(secret, "not-a-guid"));
         Assert.Equal(HttpStatusCode.Unauthorized, (await badSubject.GetAsync("/api/v1/overview")).StatusCode);
+
+        // S2: a session that has not passed its second factor (aal1) is refused on the server.
+        var oneFactor = withLegacy.CreateClient();
+        oneFactor.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", LegacySupabaseToken(secret, aal: "aal1"));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await oneFactor.GetAsync("/api/v1/overview")).StatusCode);
     }
 
     [Fact]
@@ -364,5 +370,16 @@ public class StartupGuardTests
         Assert.Equal(HttpStatusCode.NotFound, (await anonymous.PostAsync("/api/v1/auth/guest", null)).StatusCode);
 
         Assert.Equal(HttpStatusCode.OK, (await Bearer(factory, HankoToken(key, HankoAlice)).GetAsync("/api/v1/overview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_guest_is_asked_to_sign_in_for_paid_features_but_keeps_the_free_ones()
+    {
+        await using var factory = DemoMode();
+        var guest = await GuestClient(factory);
+        var assistant = await guest.PostAsJsonAsync("/api/v1/assistant", new { text = "what is my status", workspace = "Candidate" });
+        Assert.Equal(HttpStatusCode.Forbidden, assistant.StatusCode);
+        Assert.Contains("sign-in-required", await assistant.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, (await guest.GetAsync("/api/v1/profiles")).StatusCode);
     }
 }

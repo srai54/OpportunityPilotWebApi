@@ -543,6 +543,57 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.ToTable("integration_connections", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Interviews.JobInterview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MeetingUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("OpportunityId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ScheduledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OpportunityId");
+
+                    b.HasIndex("OwnerId", "ScheduledAt");
+
+                    b.HasIndex("OwnerId", "OpportunityId", "Round");
+
+                    b.ToTable("job_interviews", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Mail.MailboxConnection", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1804,6 +1855,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Phone")
+                        .HasMaxLength(320)
+                        .HasColumnType("nvarchar(320)");
+
                     b.Property<string>("Title")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -2775,6 +2830,15 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                 });
 
             modelBuilder.Entity("OpportunityPilot.Domain.Drafts.OutreachDraft", b =>
+                {
+                    b.HasOne("OpportunityPilot.Domain.Opportunities.Opportunity", null)
+                        .WithMany()
+                        .HasForeignKey("OpportunityId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("OpportunityPilot.Domain.Interviews.JobInterview", b =>
                 {
                     b.HasOne("OpportunityPilot.Domain.Opportunities.Opportunity", null)
                         .WithMany()

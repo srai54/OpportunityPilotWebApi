@@ -29,9 +29,12 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IProfileService, ProfileService>();
+        services.AddScoped<IProfileImproveService, ProfileImproveService>();
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
+        services.AddSingleton<Common.ProviderBudget>();
         services.AddScoped<AiService>();
+        services.AddScoped<Assistant.IAssistantService, Assistant.AssistantService>();
         services.AddScoped<IDraftRewriteService, DraftRewriteService>();
         services.AddScoped<IApplicationService, ApplicationService>();
         services.AddScoped<AgentKeyService>();
@@ -45,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<PeopleFinder>();
         services.AddScoped<AgentResearchService>();
         services.AddScoped<Circle.CircleService>();
+        services.AddScoped<Interviews.JobInterviewService>();
         services.AddScoped<LinkedInOutboxService>();
         services.AddScoped<IApprovalService, ApprovalService>();
         services.AddScoped<AnalyticsService>();
@@ -58,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<StaffingPipelineService>();
         services.AddScoped<ProgressLinkService>();
         services.AddScoped<ProgressViewService>();
+        services.AddScoped<SampleData.SampleDataService>();
         services.AddScoped<Auth.SecurityAudit>();
         services.AddSingleton<Common.OperationalMetrics>();
         services.AddScoped<Common.RetentionService>();
