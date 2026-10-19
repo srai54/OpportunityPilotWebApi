@@ -20,4 +20,13 @@ public sealed class OutreachTemplateTests
         Assert.True(DraftService.ShortTitle(new string('a', 30) + " " + new string('b', 90)).Length <= 80);
         Assert.Equal("Senior .NET Developer", DraftService.ShortTitle("Senior .NET Developer."));
     }
+
+    [Fact]
+    public void A_company_lead_is_told_apart_from_a_posting_sentence()
+    {
+        Assert.True(DraftService.IsCompanyLead("Conscia Sverige", "Conscia Sverige"));
+        Assert.False(DraftService.IsCompanyLead("Comviva is hiring a Senior Software Engineer in Gurugram. Java and Kafka.", "Comviva is hiring a Senior Software Engineer in Gurugram. Java and Kafka."));
+        Assert.False(DraftService.IsCompanyLead("Senior .NET Developer", "Acme"));
+        Assert.False(DraftService.IsCompanyLead("Acme", null));
+    }
 }

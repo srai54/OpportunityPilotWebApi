@@ -226,6 +226,17 @@ public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, Tim
             false, blockers, draft.CreatedAt, draft.UpdatedAt);
     }
 
+    /// <summary>
+    /// True when the lead is a company rather than a posting: its title is just the company name (Apollo leads, pasted company lists).
+    /// A posting sentence copied into both fields ("Comviva is hiring a…") is not a company name.
+    /// </summary>
+    public static bool IsCompanyLead(string title, string? organization)
+    {
+        var t = title.Trim();
+        return !string.IsNullOrWhiteSpace(organization) && string.Equals(t, organization.Trim(), StringComparison.OrdinalIgnoreCase)
+            && t.Length <= 60 && !t.Contains(" hiring", StringComparison.OrdinalIgnoreCase) && !t.TrimEnd('.').Contains(". ", StringComparison.Ordinal);
+    }
+
     private static (string Body, IReadOnlyList<DraftClaimDto> Claims) GenerateOutreach(
         Opportunity opportunity, string profileJson, DraftChannel channel)
     {
@@ -238,9 +249,14 @@ public sealed class DraftService(IDraftRepository drafts, ICurrentUser user, Tim
         var name = String(profile, "outreachIdentity", "fullName", "candidateName", "name") ?? "[Your name]";
         var claims = offer.StartsWith('[') ? new List<DraftClaimDto>() : [new DraftClaimDto(offer, "Profile", null)];
         // A company name that is missing or is really the posting text gets a plain greeting instead of a garbled one.
+        // A lead that is a company, not a posting (Apollo or a pasted list: the title is the company name), is greeted as a company.
+        var isCompany = IsCompanyLead(opportunity.Title, opportunity.Organization);
+        if (isCompany) company = opportunity.Organization!.Trim();
         var greeting = company is null ? "Hello," : $"Hello {company} team,";
-        var seen = company is null ? $"I came across your opening for {title}." : $"I saw that {company} is hiring for {title}.";
-        var full = $"{greeting}\n\n{seen} {offer}\n\nWould a short call this week be useful?\n\nRegards,\n{name}";
+        var seen = isCompany ? $"I came across {company} and wanted to reach out."
+            : company is null ? $"I came across your opening for {title}." : $"I saw that {company} is hiring for {title}.";
+        var sentence = offer.StartsWith('[') || offer.TrimEnd().EndsWith('.') || offer.TrimEnd().EndsWith('!') || offer.TrimEnd().EndsWith('?') ? offer : offer.TrimEnd() + ".";
+        var full = $"{greeting}\n\n{seen} {sentence}\n\nWould a short call this week be useful?\n\nRegards,\n{name}";
         var body = channel == DraftChannel.LinkedInMessage ? LinkedInNote.Build(organization, opportunity.Title, offer, name) : full;
         return (body, claims);
     }

@@ -70,7 +70,7 @@ public sealed class AssistantService(IAppDbContext db, ICurrentUser user, TimePr
         ["campaigns"] = "/campaigns", ["find"] = "/wellfound", ["inbox"] = "/inbox", ["interviews"] = "/interviews",
         ["approvals"] = "/approvals", ["followups"] = "/follow-ups", ["autopilot"] = "/autopilot", ["trends"] = "/trends",
         ["profiles"] = "/profiles", ["connectors"] = "/connectors", ["settings"] = "/settings", ["help"] = "/how-it-works",
-        ["deals"] = "/staffing", ["candidates"] = "/staffing/candidates", ["newcampaign"] = "/campaigns/new",
+        ["deals"] = "/staffing", ["candidates"] = "/staffing/candidates", ["newcampaign"] = "/campaigns/new", ["apollo"] = "/wellfound?tab=apollo",
     };
 
     public async Task<AssistantReplyDto> AskAsync(AssistantRequest request, CancellationToken ct)
@@ -320,7 +320,7 @@ public sealed class AssistantService(IAppDbContext db, ICurrentUser user, TimePr
         "newcampaign: start a campaign; campaigns: all campaigns, run, repeat, delete; leads: found jobs or companies with match scores, approve or skip; approvals: everything waiting for a yes; " +
         "outreach: messages to check and send (email, LinkedIn note, contact form), send all from your mailbox; inbox: replies that came in (not for connecting anything); followups: follow-ups due; interviews: interview tracker; " +
         "autopilot: automatic runs and thresholds; insights: charts and activity; trends: market trends for a role; profiles: your profile and skills; connectors: Gmail, HubSpot, Notion, Slack; " +
-        "settings: connect Gmail or Outlook to send email (Send from your own mailbox), account, two-factor; help: how it works; deals and candidates: staffing CRM (Sales). " +
+        "settings: connect Gmail or Outlook to send email (Send from your own mailbox), account, two-factor; help: how it works; deals and candidates: staffing CRM (Sales). apollo: Apollo people and company search (Sales) by title, country and company size, with saved results for demos and one tap to add them as leads and write their emails. " +
         "Interviews can be scheduled by voice (round, day and time, Video/Phone/Onsite, length); the app shows the form and saves only after a yes, and they appear in the calendar feed. The desktop agent on the person's PC applies to approved LinkedIn/Naukri/Instahyre jobs. ";
 
     private static string Instructions(bool sales) =>
