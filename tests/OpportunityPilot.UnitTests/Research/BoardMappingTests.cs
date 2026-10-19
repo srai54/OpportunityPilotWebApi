@@ -370,6 +370,18 @@ public class BoardMappingTests
     }
 
     [Fact]
+    public void Hacker_news_who_is_hiring_maps_company_role_place_and_remote()
+    {
+        Assert.Equal("4567", BoardMapping.HackerNewsThreadId("""{"hits":[{"objectID":"4567","title":"Ask HN: Who is hiring? (October 2026)"}]}"""));
+        Assert.Null(BoardMapping.HackerNewsThreadId("""{"hits":[]}"""));
+        var json = """{"hits":[{"objectID":"9001","parent_id":"4567","created_at":"2026-10-01T15:00:00Z","comment_text":"Acme Robotics | Senior React Engineer | Berlin or REMOTE (EU) | Contract<p>We build robots.</p>"},{"objectID":"9002","parent_id":"9001","comment_text":"a | reply | here"},{"objectID":"9003","parent_id":"4567","comment_text":"Not a posting"}]}""";
+        var c = BoardMapping.HackerNewsCandidates(json, "4567", SourceOf(SourceKind.RemoteOk, null, "HN"), Parser)!.Single();
+        Assert.Equal(("Acme Robotics", "Senior React Engineer", "Berlin or REMOTE (EU)", "remote"), (c.Organization, c.Title, c.Location, c.WorkplaceType));
+        Assert.Equal("https://news.ycombinator.com/item?id=9001", c.Url);
+        Assert.Contains("We build robots.", c.Text);
+    }
+
+    [Fact]
     public void Jobicy_maps_pay_and_remote()
     {
         var c = BoardMapping.JobicyCandidates("""{"apiVersion":"2.2.19","jobCount":1,"jobs":[{"id":155094,"url":"https://jobicy.com/jobs/155094-enterprise-account-executive-iberia-2","jobSlug":"x","jobTitle":"Enterprise Account Executive, Iberia","companyName":"Cresta","jobIndustry":["Sales"],"jobType":["Full-Time"],"jobGeo":"Spain","jobLevel":"Director","jobExcerpt":"Sell.","jobDescription":"<p>Own the Iberia market.</p>","pubDate":"2026-10-12T07:02:38+00:00","salaryMin":80000,"salaryMax":100000,"salaryCurrency":"EUR","salaryPeriod":"yearly"}]}""",

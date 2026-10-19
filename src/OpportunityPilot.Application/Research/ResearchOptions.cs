@@ -41,6 +41,7 @@ public sealed class ResearchOptions
     public string WorkdayApiBase { get; set; } = "";
     public string RemoteOkApiBase { get; set; } = DefaultRemoteOkApiBase;
     public string WorkingNomadsApiBase { get; set; } = DefaultWorkingNomadsApiBase;
+    public string HackerNewsApiBase { get; set; } = DefaultHackerNewsApiBase;
     public string ArbeitnowApiBase { get; set; } = DefaultArbeitnowApiBase;
     public string JobicyApiBase { get; set; } = DefaultJobicyApiBase;
     public string HimalayasApiBase { get; set; } = DefaultHimalayasApiBase;
@@ -58,6 +59,7 @@ public sealed class ResearchOptions
     public const string DefaultRemotiveApiBase = "https://remotive.com";
     public const string DefaultRemoteOkApiBase = "https://remoteok.com";
     public const string DefaultWorkingNomadsApiBase = "https://www.workingnomads.com";
+    public const string DefaultHackerNewsApiBase = "https://hn.algolia.com";
     public const string DefaultArbeitnowApiBase = "https://www.arbeitnow.com";
     public const string DefaultJobicyApiBase = "https://jobicy.com";
     public const string DefaultHimalayasApiBase = "https://himalayas.app";

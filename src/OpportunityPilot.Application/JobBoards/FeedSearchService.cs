@@ -12,7 +12,7 @@ namespace OpportunityPilot.Application.JobBoards;
 /// The job sites "Search all" can read live. All are free public feeds without a key, except Adzuna, which needs the server's
 /// <c>Adzuna__AppId</c>/<c>Adzuna__AppKey</c> and reports NotConfigured (without calling out) when they are missing.
 /// </summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads }
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads, HackerNews }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -57,6 +57,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.Instahyre => "Instahyre",
         FeedSite.Adzuna => "Adzuna",
         FeedSite.WorkingNomads => "Working Nomads",
+        FeedSite.HackerNews => "HN Who is hiring",
         _ => "Remote OK"
     };
 
@@ -93,6 +94,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
     {
         var name = Name(site);
         if (site == FeedSite.Adzuna) return await ReadAdzunaAsync(now, query, location, ct);
+        if (site == FeedSite.HackerNews) return await ReadHackerNewsAsync(now, query, ct);
         var fromCache = false;
         IReadOnlyList<string> pages;
         // Himalayas is searched by the person's words, so its answer depends on them and is not shared between searches.
@@ -194,6 +196,27 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
             return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", fromCache));
         var jobs = candidates.Select(c => ToDto(site, name, c)).Where(j => j is not null).Select(j => j!).ToList();
         return (site, jobs, new(name, "Ready", jobs.Count, 0, null, fromCache));
+    }
+
+    /// <summary>
+    /// Hacker News "Ask HN: Who is hiring?" (monthly, many remote and contract roles from foreign companies), through the free public
+    /// Algolia HN API: the newest thread by the whoishiring account, then its top-level comments matching the words. Read only.
+    /// </summary>
+    private async Task<(FeedSite Site, List<FeedJobDto> Jobs, FeedSiteStatus Status)> ReadHackerNewsAsync(DateTime now, string query, CancellationToken ct)
+    {
+        const FeedSite site = FeedSite.HackerNews;
+        var name = Name(site);
+        var root = Base(_limits.HackerNewsApiBase, ResearchOptions.DefaultHackerNewsApiBase);
+        var thread = await fetcher.FetchJsonAsync($"{root}/api/v1/search_by_date?tags=story,author_whoishiring&query=who%20is%20hiring&hitsPerPage=1", ct);
+        if (!thread.Ok || BoardMapping.HackerNewsThreadId(thread.Content) is not { } storyId)
+            return (site, [], new(name, "Failed", 0, 0, thread.FailureReason ?? $"{name} could not be read.", false));
+        var comments = await fetcher.FetchJsonAsync($"{root}/api/v1/search?tags=comment,story_{storyId}&query={Uri.EscapeDataString(query)}&hitsPerPage=100", ct, ResearchOptions.LargeFeedBytes);
+        if (!comments.Ok || comments.Content is null) return (site, [], new(name, "Failed", 0, 0, comments.FailureReason ?? $"{name} could not be read.", false));
+        var source = new Source(Guid.NewGuid(), Guid.NewGuid(), SourceKind.RemoteOk, name, null, null, null, null, now);
+        if (BoardMapping.HackerNewsCandidates(comments.Content, storyId, source, parser) is not { } candidates)
+            return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", false));
+        var jobs = candidates.Select(c => ToDto(site, name, c)).Where(j => j is not null).Select(j => j!).ToList();
+        return (site, jobs, new(name, "Ready", jobs.Count, 0, null, false));
     }
 
     private static FeedJobDto? ToDto(FeedSite site, string name, Candidate c)
