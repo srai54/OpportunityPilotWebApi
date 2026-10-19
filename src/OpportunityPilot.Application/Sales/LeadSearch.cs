@@ -21,8 +21,17 @@ public sealed class LeadSearchOptions
     public string PeoplePath { get; set; } = "/search_people";
     /// <summary>Results per call (each one is a paid credit on the listing).</summary>
     public int PerPage { get; set; } = 10;
+    /// <summary>GET with query parameters (the listing's playground, 2026-10-19) or POST with a JSON body.</summary>
+    public string Method { get; set; } = "GET";
+    /// <summary>Appended to a list parameter's name in a query string (Apollo style: <c>person_titles[]=CTO</c>).</summary>
+    public string ArraySuffix { get; set; } = "[]";
+    public string PageParam { get; set; } = "page";
+    public string PerPageParam { get; set; } = "per_page";
     public string KeywordParam { get; set; } = "q_organization_keyword_tags";
+    /// <summary>Company location (companies search, and the company of people).</summary>
     public string LocationParam { get; set; } = "organization_locations";
+    /// <summary>Where the person is (people search); empty to filter people by their company's location instead.</summary>
+    public string PeopleLocationParam { get; set; } = "person_locations";
     public string SizeParam { get; set; } = "organization_num_employees_ranges";
     public string TitleParam { get; set; } = "person_titles";
 }
@@ -53,7 +62,8 @@ public sealed record LeadSearchResultDto(string Status, IReadOnlyList<LeadDto> L
 /// <summary>Sends one JSON request to a RapidAPI host and returns the status code and body (null body when the call failed).</summary>
 public interface ILeadSearchHttp
 {
-    Task<(int Status, string? Body)> PostAsync(string host, string path, string key, string json, CancellationToken ct);
+    /// <param name="pathAndQuery">Path with its query string; <paramref name="json"/> is the body for POST, null for GET.</param>
+    Task<(int Status, string? Body)> SendAsync(string method, string host, string pathAndQuery, string key, string? json, CancellationToken ct);
 }
 
 public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchOptions> options, IOptions<RapidApiBoardsOptions> rapid, ProviderBudget budget, IOptions<JsearchOptions>? jsearch = null)
@@ -71,7 +81,11 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
 
         var o = options.Value;
         var people = string.Equals(request.Kind, "people", StringComparison.OrdinalIgnoreCase);
-        var (status, body) = await http.PostAsync(o.Host, people ? o.PeoplePath : o.OrganizationsPath, key, BuildBody(request, o), ct);
+        var path = people ? o.PeoplePath : o.OrganizationsPath;
+        var get = !string.Equals(o.Method, "POST", StringComparison.OrdinalIgnoreCase);
+        var (status, body) = get
+            ? await http.SendAsync("GET", o.Host, $"{path}?{BuildQuery(request, o, people)}", key, null, ct)
+            : await http.SendAsync("POST", o.Host, path, key, BuildBody(request, o), ct);
         if (status is < 200 or >= 300 || body is null)
             return new("Failed", [], 0, status switch
             {
@@ -113,6 +127,23 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
         if (sizes.Count > 0) body[o.SizeParam] = Arr(sizes);
         if (!string.IsNullOrWhiteSpace(r.Titles)) body[o.TitleParam] = Arr(Split(r.Titles));
         return body.ToJsonString();
+    }
+
+    /// <summary>The same filters as a query string: lists repeat the name with <see cref="LeadSearchOptions.ArraySuffix"/>.</summary>
+    public static string BuildQuery(LeadSearchRequest r, LeadSearchOptions o, bool people)
+    {
+        var parts = new List<string> { $"{o.PageParam}={r.Page}", $"{o.PerPageParam}={Math.Clamp(o.PerPage, 1, 25)}" };
+        void Add(string name, IEnumerable<string> values)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return;
+            foreach (var v in values) parts.Add($"{Uri.EscapeDataString(name + o.ArraySuffix)}={Uri.EscapeDataString(v)}");
+        }
+        if (!string.IsNullOrWhiteSpace(r.Keywords)) Add(o.KeywordParam, Split(r.Keywords));
+        var countries = r.Countries?.Select(c => c.Trim()).Where(c => c.Length > 0).Distinct().Take(20).ToList() ?? [];
+        Add(people && !string.IsNullOrWhiteSpace(o.PeopleLocationParam) ? o.PeopleLocationParam : o.LocationParam, countries);
+        Add(o.SizeParam, r.Sizes?.Where(CompanySizes.Bands.ContainsKey).Distinct().Select(s => $"{CompanySizes.Bands[s].Min},{CompanySizes.Bands[s].Max}") ?? []);
+        if (people && !string.IsNullOrWhiteSpace(r.Titles)) Add(o.TitleParam, Split(r.Titles));
+        return string.Join("&", parts);
     }
 
     private static IEnumerable<string> Split(string text) =>

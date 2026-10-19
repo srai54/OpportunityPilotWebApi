@@ -11,12 +11,13 @@ public sealed class LeadSearchTests
 {
     private sealed class FakeHttp(int status, string? body) : ILeadSearchHttp
     {
-        public string? Path, Json, Key;
-        public Task<(int Status, string? Body)> PostAsync(string host, string path, string key, string json, CancellationToken ct)
+        public string? Path, Json, Key, Method;
+        public Task<(int Status, string? Body)> SendAsync(string method, string host, string pathAndQuery, string key, string? json, CancellationToken ct)
         {
-            Path = path; Json = json; Key = key;
+            Method = method; Path = pathAndQuery.Split('?')[0]; Query = pathAndQuery.Contains('?') ? pathAndQuery.Split('?')[1] : ""; Json = json; Key = key;
             return Task.FromResult((status, body));
         }
+        public string Query = "";
     }
 
     private static LeadSearchService Service(FakeHttp http, string? key = "k", int perDay = 20) => new(http, Options.Create(new LeadSearchOptions()),
@@ -55,6 +56,34 @@ public sealed class LeadSearchTests
         Assert.Equal("20-50", acme.SizeBand);
         Assert.Equal("Stockholm, Sweden", acme.Location);
         Assert.Equal("https://acme.se/", acme.Website);
+    }
+
+    [Fact]
+    public async Task Sends_a_get_with_apollo_query_parameters()
+    {
+        var http = new FakeHttp(200, "{\"data\":{\"people\":[]}}");
+        await Service(http).SearchAsync(new(null, ["Sweden", "Germany"], ["10-20", "50-100"], "people", "CTO, Head of Engineering"), default);
+        Assert.Equal("GET", http.Method);
+        Assert.Equal("/search_people", http.Path);
+        Assert.Null(http.Json);
+        Assert.Equal("page=1&per_page=10&person_locations%5B%5D=Sweden&person_locations%5B%5D=Germany&organization_num_employees_ranges%5B%5D=10%2C20"
+            + "&organization_num_employees_ranges%5B%5D=51%2C100&person_titles%5B%5D=CTO&person_titles%5B%5D=Head%20of%20Engineering", http.Query);
+    }
+
+    /// <summary>Trimmed from the listing's real Search People answer (2026-10-19): data.people[], organization without a head count.</summary>
+    [Fact]
+    public async Task Reads_the_real_search_people_answer()
+    {
+        var body = """{"data":{"people":[{"id":"557147df7369645875b82900","first_name":"Ali","last_name":"Ali","name":"Ali Ali","linkedin_url":"http://www.linkedin.com/in/ali-al-ali-81221292","title":"Vice President/ Senior Corporate Banker","city":"Al Khobar","state":"Eastern Province","country":"Saudi Arabia","email":"email_not_unlocked@domain.com","organization":{"id":"606e9acf53d20100fe309fca","name":"The Saudi National Bank - SNB","website_url":"http://www.alahli.com","linkedin_url":"http://www.linkedin.com/company/snbalahli","founded_year":1953}},{"id":"54c285377468691639b72ba2","name":"Ali Ali","title":"Senior Vice President, Strategic Partnerships","linkedin_url":"http://www.linkedin.com/in/ali-al-ali-b149417b","city":null,"country":"United Arab Emirates","organization":{"name":"Emirates Development Bank (EDB)","website_url":"http://www.edb.gov.ae"}}]}}""";
+        var r = await Service(new FakeHttp(200, body)).SearchAsync(new(null, ["Sweden"], ["10-20"], "people", "CTO"), default);
+        Assert.Equal("Ready", r.Status);
+        Assert.Equal(2, r.Leads.Count);
+        Assert.Equal(0, r.Hidden); // no head count in this answer: nothing is hidden by size
+        var first = r.Leads[0];
+        Assert.Equal(("Ali Ali", "The Saudi National Bank - SNB", "Vice President/ Senior Corporate Banker", "Al Khobar, Saudi Arabia"), (first.Name, first.Company, first.Title, first.Location));
+        Assert.Equal("http://www.alahli.com/", first.Website);
+        Assert.Equal("http://www.linkedin.com/in/ali-al-ali-81221292", first.LinkedIn);
+        Assert.Null(first.Employees);
     }
 
     [Fact]

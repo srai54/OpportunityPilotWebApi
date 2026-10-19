@@ -10,8 +10,8 @@ public sealed class BudgetOptions
     public int GroqPerDay { get; set; } = 1500;
     public int JsearchPerDay { get; set; } = 40;
     public int ApifyPerDay { get; set; } = 15;
-    /// <summary>Apollo lead-search calls (the RapidAPI listing bills per returned result; a call returns up to LeadSearch__PerPage).</summary>
-    public int ApolloPerDay { get; set; } = 20;
+    /// <summary>Apollo lead-search calls. The plan seen on 2026-10-19 allows 50 requests a period, so the default is 3 a day.</summary>
+    public int ApolloPerDay { get; set; } = 3;
 }
 
 /// <summary>

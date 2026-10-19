@@ -10,20 +10,19 @@ namespace OpportunityPilot.Infrastructure.Research;
 /// </summary>
 public sealed class LeadSearchHttp(HttpClient http, ILogger<LeadSearchHttp> logger) : ILeadSearchHttp
 {
-    public async Task<(int Status, string? Body)> PostAsync(string host, string path, string key, string json, CancellationToken ct)
+    public async Task<(int Status, string? Body)> SendAsync(string method, string host, string pathAndQuery, string key, string? json, CancellationToken ct)
     {
         if (!host.EndsWith(".p.rapidapi.com", StringComparison.OrdinalIgnoreCase) || host.Contains('/')) return (0, null);
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"https://{host}/{path.Trim('/')}")
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
-        };
+        var post = string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase);
+        using var request = new HttpRequestMessage(post ? HttpMethod.Post : HttpMethod.Get, $"https://{host}/{pathAndQuery.TrimStart('/')}");
+        if (post) request.Content = new StringContent(json ?? "{}", Encoding.UTF8, "application/json");
         request.Headers.Add("x-rapidapi-host", host);
         request.Headers.Add("x-rapidapi-key", key);
         try
         {
             using var response = await http.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
-            if (!response.IsSuccessStatusCode) logger.LogWarning("Lead search on {Host}{Path} answered {Status}", host, path, (int)response.StatusCode);
+            if (!response.IsSuccessStatusCode) logger.LogWarning("Lead search on {Host} answered {Status}", host, (int)response.StatusCode);
             return ((int)response.StatusCode, body);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
