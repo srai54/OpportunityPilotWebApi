@@ -359,6 +359,17 @@ public class BoardMappingTests
     }
 
     [Fact]
+    public void Working_nomads_maps_remote_jobs_and_keeps_tags_for_the_contract_rule()
+    {
+        var c = BoardMapping.WorkingNomadsCandidates("""[{"url":"https://www.workingnomads.com/jobs/react-dev-acme","title":"React Developer","description":"<p>Ship UI.</p>","company_name":"Acme","category_name":"Development","tags":"react, contract","location":"Europe","pub_date":"2026-10-18T10:00:00Z"},{"title":"No link"}]""",
+            SourceOf(SourceKind.Remotive, null, "Working Nomads"), Parser)!.Single();
+        Assert.Equal(("Acme", "Remote — Europe", "https://www.workingnomads.com/jobs/react-dev-acme"), (c.Organization, c.Location, c.Url));
+        Assert.Contains("Tags: react, contract", c.Text);
+        Assert.Contains("Ship UI.", c.Text);
+        Assert.Null(BoardMapping.WorkingNomadsCandidates("""{"oops":1}""", SourceOf(SourceKind.Remotive, null, "W"), Parser));
+    }
+
+    [Fact]
     public void Jobicy_maps_pay_and_remote()
     {
         var c = BoardMapping.JobicyCandidates("""{"apiVersion":"2.2.19","jobCount":1,"jobs":[{"id":155094,"url":"https://jobicy.com/jobs/155094-enterprise-account-executive-iberia-2","jobSlug":"x","jobTitle":"Enterprise Account Executive, Iberia","companyName":"Cresta","jobIndustry":["Sales"],"jobType":["Full-Time"],"jobGeo":"Spain","jobLevel":"Director","jobExcerpt":"Sell.","jobDescription":"<p>Own the Iberia market.</p>","pubDate":"2026-10-12T07:02:38+00:00","salaryMin":80000,"salaryMax":100000,"salaryCurrency":"EUR","salaryPeriod":"yearly"}]}""",

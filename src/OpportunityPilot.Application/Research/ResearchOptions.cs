@@ -40,6 +40,7 @@ public sealed class ResearchOptions
     /// <summary>Empty in real use (each source names its own <c>*.myworkdayjobs.com</c> host); tests point it at a loopback server.</summary>
     public string WorkdayApiBase { get; set; } = "";
     public string RemoteOkApiBase { get; set; } = DefaultRemoteOkApiBase;
+    public string WorkingNomadsApiBase { get; set; } = DefaultWorkingNomadsApiBase;
     public string ArbeitnowApiBase { get; set; } = DefaultArbeitnowApiBase;
     public string JobicyApiBase { get; set; } = DefaultJobicyApiBase;
     public string HimalayasApiBase { get; set; } = DefaultHimalayasApiBase;
@@ -56,6 +57,7 @@ public sealed class ResearchOptions
     public const string DefaultWorkableApiBase = "https://apply.workable.com";
     public const string DefaultRemotiveApiBase = "https://remotive.com";
     public const string DefaultRemoteOkApiBase = "https://remoteok.com";
+    public const string DefaultWorkingNomadsApiBase = "https://www.workingnomads.com";
     public const string DefaultArbeitnowApiBase = "https://www.arbeitnow.com";
     public const string DefaultJobicyApiBase = "https://jobicy.com";
     public const string DefaultHimalayasApiBase = "https://himalayas.app";

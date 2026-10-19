@@ -12,7 +12,7 @@ namespace OpportunityPilot.Application.JobBoards;
 /// The job sites "Search all" can read live. All are free public feeds without a key, except Adzuna, which needs the server's
 /// <c>Adzuna__AppId</c>/<c>Adzuna__AppKey</c> and reports NotConfigured (without calling out) when they are missing.
 /// </summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre }
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -56,6 +56,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.TheMuse => "The Muse",
         FeedSite.Instahyre => "Instahyre",
         FeedSite.Adzuna => "Adzuna",
+        FeedSite.WorkingNomads => "Working Nomads",
         _ => "Remote OK"
     };
 
@@ -119,6 +120,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
                     FeedSite.WeWorkRemotely => await fetcher.FetchAsync($"{Base(_limits.WeWorkRemotelyBase, ResearchOptions.DefaultWeWorkRemotelyBase)}/remote-jobs.rss", ct, ResearchOptions.LargeFeedBytes),
                     FeedSite.Himalayas => await fetcher.FetchJsonAsync($"{Base(_limits.HimalayasApiBase, ResearchOptions.DefaultHimalayasApiBase)}/jobs/api/search?q={Uri.EscapeDataString(query)}&limit=60", ct, ResearchOptions.LargeFeedBytes),
                     FeedSite.Remotive => await fetcher.FetchJsonAsync($"{Base(_limits.RemotiveApiBase, ResearchOptions.DefaultRemotiveApiBase)}/api/remote-jobs", ct, ResearchOptions.LargeFeedBytes),
+                    FeedSite.WorkingNomads => await fetcher.FetchJsonAsync($"{Base(_limits.WorkingNomadsApiBase, ResearchOptions.DefaultWorkingNomadsApiBase)}/api/exposed_jobs/", ct, ResearchOptions.LargeFeedBytes),
                     _ => await fetcher.FetchJsonAsync($"{Base(_limits.RemoteOkApiBase, ResearchOptions.DefaultRemoteOkApiBase)}/api", ct, ResearchOptions.LargeFeedBytes)
                 };
                 if (!result.Ok || result.Content is null)
@@ -130,7 +132,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         var kind = site switch
         {
             FeedSite.Arbeitnow => SourceKind.Arbeitnow, FeedSite.Jobicy => SourceKind.Jobicy, FeedSite.WeWorkRemotely => SourceKind.WeWorkRemotely,
-            FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, FeedSite.TheMuse => SourceKind.TheMuse, FeedSite.Instahyre => SourceKind.Instahyre, _ => SourceKind.RemoteOk
+            FeedSite.Remotive => SourceKind.Remotive, FeedSite.Himalayas => SourceKind.Remotive, FeedSite.TheMuse => SourceKind.TheMuse, FeedSite.Instahyre => SourceKind.Instahyre, FeedSite.WorkingNomads => SourceKind.Remotive, _ => SourceKind.RemoteOk
         };
         var source = new Source(Guid.NewGuid(), Guid.NewGuid(), kind, name, null, null, null, null, now);
         var candidates = new List<Candidate>();
@@ -146,6 +148,7 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
                 FeedSite.Remotive => BoardMapping.RemotiveCandidates(text, source, parser),
                 FeedSite.TheMuse => BoardMapping.TheMuseCandidates(text, source, parser),
                 FeedSite.Instahyre => BoardMapping.InstahyreCandidates(text, source),
+                FeedSite.WorkingNomads => BoardMapping.WorkingNomadsCandidates(text, source, parser),
                 _ => BoardMapping.RemoteOkCandidates(text, source, parser)
             };
             if (read is null && page == 0) return (site, [], new(name, "Failed", 0, 0, $"{name} sent a response that could not be read.", fromCache));

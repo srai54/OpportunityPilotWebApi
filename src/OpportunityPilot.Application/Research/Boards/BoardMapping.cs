@@ -293,6 +293,31 @@ public static class BoardMapping
         return result;
     }
 
+    /// <summary>
+    /// Working Nomads' free remote-jobs feed: <c>[ { url, title, description, company_name, category_name, tags, location, pub_date } ]</c>.
+    /// Every posting is remote; the tags (e.g. "contract", "freelance") are kept in the text so the contract rule can read them.
+    /// </summary>
+    public static IReadOnlyList<Candidate>? WorkingNomadsCandidates(string? json, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object) continue;
+            var url = HttpUrl(Text(row, "url"));
+            var title = Text(row, "title");
+            if (url is null || title is null) continue;
+            var description = Text(row, "description") is { } html ? HtmlToText(html, parser) : string.Empty;
+            var tags = Text(row, "tags");
+            var text = string.IsNullOrWhiteSpace(tags) ? description : $"Tags: {tags}\n{description}";
+            var place = Text(row, "location");
+            result.Add(Build(source, JobPlatform.Other, url, title, Text(row, "company_name") ?? string.Empty,
+                string.IsNullOrWhiteSpace(place) ? "Remote" : $"Remote — {place}", "remote", url, url, null, text, Date(Text(row, "pub_date"))));
+        }
+        return result;
+    }
+
     public static IReadOnlyList<Candidate>? RemotiveCandidates(string? json, Source source, IContentParser parser)
     {
         using var document = Parse(json);
