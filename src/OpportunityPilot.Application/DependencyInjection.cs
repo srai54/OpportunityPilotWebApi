@@ -86,6 +86,7 @@ public static class DependencyInjection
         services.AddScoped<Capabilities.ProviderReadinessService>();
         services.AddScoped<WellfoundService>();
         services.AddScoped<JobBoardGatherer>();
+        services.AddScoped<JobBoards.KeyedFeeds>();
         services.AddScoped<JobBoards.FeedSearchService>();
         services.AddScoped<IResearchRunner, ResearchRunner>();
         services.AddSingleton<CapabilityService>();

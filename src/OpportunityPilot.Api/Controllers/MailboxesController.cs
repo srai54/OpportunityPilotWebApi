@@ -36,8 +36,15 @@ public sealed class MailboxesController(MailboxService mailboxes, ReplyCheckServ
     /// <summary>The provider sends the browser here, so there is no bearer token; the sealed, expiring state identifies the person.</summary>
     [AllowAnonymous]
     [HttpGet("mailboxes/callback/{provider}")]
-    public async Task<IActionResult> Callback(MailProvider provider, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct) =>
-        Redirect(await mailboxes.CompleteAsync(provider, code, state, error, ct));
+    public IActionResult Callback(MailProvider provider, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error) =>
+        Redirect(mailboxes.HandOff(provider, code, state, error));
+
+    /// <summary>The signed-in web app finishes the connection; only the person who started it can (the state is checked against them).</summary>
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [EnableRateLimiting(RateLimits.Connectors)]
+    [HttpPost("mailboxes/{provider}/complete")]
+    public async Task<ActionResult<OauthFinishResponse>> Finish(MailProvider provider, OauthFinishRequest request, CancellationToken ct) =>
+        new OauthFinishResponse(await mailboxes.FinishAsync(provider, request, ct));
 
     [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
     [HttpPost("drafts/send-via-mailbox-batch")]

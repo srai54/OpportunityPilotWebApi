@@ -45,7 +45,7 @@ internal static class Reply
 }
 
 /// <summary>HubSpot with a private-app token: the company (matched by its web domain, else its name), the contact when an address is known, and a note.</summary>
-public sealed class HubSpotTarget(IConnectorHttp http) : ILeadTarget
+public sealed class HubSpotTarget(IConnectorHttp http, TimeProvider? clock = null) : ILeadTarget
 {
     private const string Api = "https://api.hubapi.com";
     private const string Scopes = "crm.objects.companies.read, crm.objects.companies.write, crm.objects.contacts.read, crm.objects.contacts.write";
@@ -94,7 +94,7 @@ public sealed class HubSpotTarget(IConnectorHttp http) : ILeadTarget
         // A note on the company says where the lead came from; HubSpot's own type 190 links a note to a company.
         await http.SendAsync(new(HttpMethod.Post, $"{Api}/crm/v3/objects/notes", ConnectorJson.Write(new
         {
-            properties = new { hs_timestamp = DateTime.UtcNow.ToString("O"), hs_note_body = Cut($"From OpportunityPilot: {lead.Title}. Score {lead.Score}. {lead.Link}", 1000) },
+            properties = new { hs_timestamp = (clock ?? TimeProvider.System).GetUtcNow().UtcDateTime.ToString("O"), hs_note_body = Cut($"From OpportunityPilot: {lead.Title}. Score {lead.Score}. {lead.Link}", 1000) },
             associations = new[] { new { to = new { id = companyId }, types = new[] { new { associationCategory = "HUBSPOT_DEFINED", associationTypeId = 190 } } } }
         }), token), ct);
         return new(lead.Id, "Added", null, link(companyId));

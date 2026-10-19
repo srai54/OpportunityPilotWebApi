@@ -3,14 +3,12 @@
 Product flow, implementation status and the larger plans, merged on 2026-10-19. The live task list is `TASKS.md` in the workspace.
 
 Contents:
-- [PRODUCT_EXECUTION_FLOW.md](#product-execution-flow-md)
-- [IMPLEMENTATION_STATUS.md](#implementation-status-md)
-- [STAFFING_SALES_INTEGRATION_PLAN.md](#staffing-sales-integration-plan-md)
-- [VECTOR_SEARCH_PLAN.md](#vector-search-plan-md)
+- [OpportunityPilot product execution flow](#opportunitypilot-product-execution-flow)
+- [Implementation status](#implementation-status)
+- [Staffing-sales integration plan](#staffing-sales-integration-plan)
+- [Vector search plan](#vector-search-plan)
 
 ---
-
-## PRODUCT_EXECUTION_FLOW.md
 
 <!-- merged from docs/PRODUCT_EXECUTION_FLOW.md on 2026-10-19 -->
 
@@ -169,8 +167,6 @@ order, and [VECTOR_SEARCH_PLAN.md](VECTOR_SEARCH_PLAN.md) for the bounded semant
 
 ---
 
-## IMPLEMENTATION_STATUS.md
-
 <!-- merged from docs/IMPLEMENTATION_STATUS.md on 2026-10-19 -->
 
 ## Implementation status
@@ -268,8 +264,6 @@ research → shortlist → agent report. Then start M4 (Gemini request parsing a
 > has not been re-verified since 2026-10-01 (OQ-BE-013).
 
 ---
-
-## STAFFING_SALES_INTEGRATION_PLAN.md
 
 <!-- merged from docs/STAFFING_SALES_INTEGRATION_PLAN.md on 2026-10-19 -->
 
@@ -436,8 +430,6 @@ therefore an architecture and implementation contract, not proof of provider ava
 credit-consuming search, export, enrichment, or personal-contact access without the user's prior explicit approval.
 
 ---
-
-## VECTOR_SEARCH_PLAN.md
 
 <!-- merged from docs/VECTOR_SEARCH_PLAN.md on 2026-10-19 -->
 

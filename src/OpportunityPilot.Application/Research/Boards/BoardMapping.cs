@@ -293,6 +293,74 @@ public static class BoardMapping
         return result;
     }
 
+    /// <summary>
+    /// Working Nomads' free remote-jobs feed: <c>[ { url, title, description, company_name, category_name, tags, location, pub_date } ]</c>.
+    /// Every posting is remote; the tags (e.g. "contract", "freelance") are kept in the text so the contract rule can read them.
+    /// </summary>
+    public static IReadOnlyList<Candidate>? WorkingNomadsCandidates(string? json, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Array } rows) return null;
+        var result = new List<Candidate>();
+        foreach (var row in rows.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object) continue;
+            var url = HttpUrl(Text(row, "url"));
+            var title = Text(row, "title");
+            if (url is null || title is null) continue;
+            var description = Text(row, "description") is { } html ? HtmlToText(html, parser) : string.Empty;
+            var tags = Text(row, "tags");
+            var text = string.IsNullOrWhiteSpace(tags) ? description : $"Tags: {tags}\n{description}";
+            var place = Text(row, "location");
+            result.Add(Build(source, JobPlatform.Other, url, title, Text(row, "company_name") ?? string.Empty,
+                string.IsNullOrWhiteSpace(place) ? "Remote" : $"Remote — {place}", "remote", url, url, null, text, Date(Text(row, "pub_date"))));
+        }
+        return result;
+    }
+
+    /// <summary>The newest "Who is hiring?" story id from the Algolia HN search, or null.</summary>
+    public static string? HackerNewsThreadId(string? json)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root || Child(root, "hits") is not { ValueKind: JsonValueKind.Array } hits) return null;
+        foreach (var hit in hits.EnumerateArray())
+            if (Text(hit, "title") is { } title && title.Contains("who is hiring", StringComparison.OrdinalIgnoreCase) && Text(hit, "objectID") is { } id && id.All(char.IsAsciiDigit))
+                return id;
+        return null;
+    }
+
+    private static readonly string[] RoleWords = ["engineer", "developer", "designer", "manager", "scientist", "lead", "architect", "devops", "sre", "analyst", "consultant", "programmer", "cto", "head of"];
+
+    /// <summary>
+    /// Top-level comments of a "Who is hiring?" thread: by convention the first line is "Company | Role | Place | REMOTE | …".
+    /// The company is the first part, the role the first part that names a job, the place a part that is not the role; the full text is kept
+    /// so the remote and contract rules can read it. Each comment links to itself on news.ycombinator.com.
+    /// </summary>
+    public static IReadOnlyList<Candidate>? HackerNewsCandidates(string? json, string storyId, Source source, IContentParser parser)
+    {
+        using var document = Parse(json);
+        if (document?.RootElement is not { ValueKind: JsonValueKind.Object } root || Child(root, "hits") is not { ValueKind: JsonValueKind.Array } hits) return null;
+        var result = new List<Candidate>();
+        foreach (var hit in hits.EnumerateArray())
+        {
+            if (Text(hit, "objectID") is not { } id || !id.All(char.IsAsciiDigit)) continue;
+            if (Text(hit, "parent_id") is { } parent && parent != storyId) continue; // replies, not postings
+            if (Text(hit, "comment_text") is not { } html) continue;
+            var text = HtmlToText(html, parser);
+            var first = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? string.Empty;
+            var parts = first.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length < 2) continue;
+            var company = parts[0].Length <= 120 ? parts[0] : parts[0][..120];
+            var role = parts.Skip(1).FirstOrDefault(p => RoleWords.Any(w => p.Contains(w, StringComparison.OrdinalIgnoreCase))) ?? parts[1];
+            var place = parts.Skip(1).FirstOrDefault(p => p != role && !RoleWords.Any(w => p.Contains(w, StringComparison.OrdinalIgnoreCase)));
+            var remote = first.Contains("remote", StringComparison.OrdinalIgnoreCase) && !first.Contains("no remote", StringComparison.OrdinalIgnoreCase);
+            var url = $"https://news.ycombinator.com/item?id={id}";
+            result.Add(Build(source, JobPlatform.Other, id, role.Length <= 200 ? role : role[..200], company, place, remote ? "remote" : null, url, url, null, text,
+                Date(Text(hit, "created_at"))));
+        }
+        return result;
+    }
+
     public static IReadOnlyList<Candidate>? RemotiveCandidates(string? json, Source source, IContentParser parser)
     {
         using var document = Parse(json);

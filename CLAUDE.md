@@ -20,7 +20,7 @@
 | Docker / hosting | multi-stage `Dockerfile` (sdk:10.0 → aspnet:10.0, non-root, runs `--migrate` first when `MIGRATE_ON_START=true`); `render.yaml` Blueprint (Render free plan, Singapore). Deployed API is on Render, web app on Vercel |
 | Tests | xUnit 2: `tests/OpportunityPilot.UnitTests` (no I/O), `tests/OpportunityPilot.IntegrationTests` (real API + Postgres container, needs Docker) |
 | Desktop agent | `agent/`: Node ≥20.19, TypeScript ~6, Playwright, tsx, Vitest |
-| AI | none at runtime yet: rules engine only. Gemini is planned (M4) and not built |
+| AI | Scoring is the rules engine (no model). LLM features through `Application/Ai/AiService.cs` with `Infrastructure/Ai/GroqLlmClient.cs` (Groq) and `GeminiLlmClient.cs` (Gemini): campaign goal → criteria, assistant (`Application/Assistant`), draft rewrite, profile improve. Voice: Groq Whisper / OpenAI whisper-1 in `Api/Controllers/VoiceController.cs`. Every AI call has a daily budget and a rules fallback; guests are blocked |
 
 ## 2. Cheat-sheet commands
 

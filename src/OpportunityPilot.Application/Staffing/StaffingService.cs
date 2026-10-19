@@ -189,7 +189,7 @@ public sealed class StaffingService(IStaffingRepository staffing, ICurrentUser u
         }
         if (account is null)
         {
-            var lower = name.Trim().ToLower();
+            var lower = name.Trim().ToLowerInvariant();
             account = await staffing.FindAccountByNameAsync(user.OwnerId, lower, ct);
             if (account is not null && domain is null) confidence = IdentityConfidence.Medium;
         }

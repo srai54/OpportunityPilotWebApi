@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   api:
     runs-on: ubuntu-latest
@@ -15,7 +18,16 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet restore OpportunityPilot.sln
       - run: dotnet build OpportunityPilot.sln --configuration Release --no-restore
-      - run: dotnet test OpportunityPilot.sln --configuration Release --no-build
+      - run: dotnet test OpportunityPilot.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory coverage
+      - name: Coverage report (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: coverage/**/coverage.cobertura.xml
+      - name: No known vulnerable packages
+        run: |
+          dotnet list OpportunityPilot.sln package --vulnerable --include-transitive | tee vuln.txt
+          ! grep -qE "\b(High|Critical)\b" vuln.txt
       # The EF model and the migrations must match for both providers, or a deploy would migrate the wrong schema.
       # The repo pins dotnet-ef in .config/dotnet-tools.json; restore that exact version (a newer global install is ignored).
       - run: dotnet tool restore

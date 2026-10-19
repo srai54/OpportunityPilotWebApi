@@ -85,42 +85,39 @@ public sealed class SafeFetcher(
         if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)) return FetchResult.Fail("The URL is not a valid absolute URL.");
 
         var requests = 0;
-        await concurrency.Gate.WaitAsync(ct);
-        try
+        // The shared concurrency slot is held per attempt only, never during backoff, so one slow or
+        // stalling host cannot block every other user's fetches while it is being retried.
+        for (var hop = 0; hop <= MaxRedirects; hop++)
         {
-            for (var hop = 0; hop <= MaxRedirects; hop++)
+            if (CheckDestination(uri) is { } reason) return FetchResult.Fail(reason, requests);
+
+            Attempt attempt = default!;
+            for (var retry = 0; ; retry++)
             {
-                if (CheckDestination(uri) is { } reason) return FetchResult.Fail(reason, requests);
-
-                Attempt attempt = default!;
-                for (var retry = 0; ; retry++)
-                {
-                    attempt = await AttemptAsync(uri, reading, ct, body, maxBytes);
-                    requests++;
-                    if (!attempt.Transient || retry >= MaxRetries) break;
-                    // Exponential backoff with jitter: 0.5 s, 1 s, 2 s (+ up to 250 ms).
-                    await Task.Delay(TimeSpan.FromMilliseconds(500 * Math.Pow(2, retry) + Random.Shared.Next(250)), ct);
-                }
-
-                switch (attempt)
-                {
-                    case { Redirect: not null } when body is not null:
-                        return FetchResult.Fail("The search answered with a redirect, which is not followed for a search request.", requests);
-                    case { Redirect: { } next }:
-                        uri = next;
-                        continue;
-                    case { Failure: { } failure }:
-                        return FetchResult.Fail(failure, requests, attempt.Status);
-                    default:
-                        return new FetchResult(true, attempt.Content, attempt.ContentType, uri.ToString(), null, requests);
-                }
+                await concurrency.Gate.WaitAsync(ct);
+                try { attempt = await AttemptAsync(uri, reading, ct, body, maxBytes); }
+                finally { concurrency.Gate.Release(); }
+                requests++;
+                // A POST (a paid search) is never repeated: a retry could be billed twice.
+                if (body is not null || !attempt.Transient || retry >= MaxRetries) break;
+                // Exponential backoff with jitter: 0.5 s, 1 s, 2 s (+ up to 250 ms).
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * Math.Pow(2, retry) + Random.Shared.Next(250)), ct);
             }
-            return FetchResult.Fail($"The page redirected more than {MaxRedirects} times.", requests);
+
+            switch (attempt)
+            {
+                case { Redirect: not null } when body is not null:
+                    return FetchResult.Fail("The search answered with a redirect, which is not followed for a search request.", requests);
+                case { Redirect: { } next }:
+                    uri = next;
+                    continue;
+                case { Failure: { } failure }:
+                    return FetchResult.Fail(failure, requests, attempt.Status);
+                default:
+                    return new FetchResult(true, attempt.Content, attempt.ContentType, uri.ToString(), null, requests);
+            }
         }
-        finally
-        {
-            concurrency.Gate.Release();
-        }
+        return FetchResult.Fail($"The page redirected more than {MaxRedirects} times.", requests);
     }
 
     private sealed record Attempt(string? Content, string? ContentType, Uri? Redirect, string? Failure, bool Transient, int? Status = null);

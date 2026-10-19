@@ -170,6 +170,10 @@ public static class AuthSetup
         // fallback policy, only endpoints marked [Authorize(AuthenticationSchemes = AgentKey)].
         authBuilder.AddScheme<AuthenticationSchemeOptions, AgentKeyAuthenticationHandler>(AgentKeyAuthenticationHandler.SchemeName, null);
 
+        // The rate limiter runs before authorization, when only the default scheme has authenticated. These are the user schemes it
+        // tries so Hanko and guest callers get their own bucket instead of sharing their IP's (see UseRateLimitIdentity).
+        builder.Services.AddSingleton(new UserSchemes(schemes.ToArray()));
+
         var authz = builder.Services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder(schemes.ToArray()).RequireAuthenticatedUser().Build());
         // Paid features (AI, voice, live job boards, sending, connectors) need a signed-in account; a guest session can browse and use
@@ -191,6 +195,29 @@ public static class AuthSetup
 public static class SupabaseAal
 {
     public static bool IsTwoFactor(string? aal) => string.Equals(aal, "aal2", StringComparison.Ordinal);
+}
+
+/// <summary>The sign-in schemes a person (not an agent key) can use, in the fallback policy's order.</summary>
+public sealed record UserSchemes(IReadOnlyList<string> Names);
+
+public static class RateLimitIdentity
+{
+    /// <summary>
+    /// Before the rate limiter: when the default scheme found no user, try the other user schemes (Hanko, guest…) so the limiter
+    /// partitions by the signed-in owner, not by IP. Authorization still re-authenticates with its own policy schemes and replaces
+    /// the user, so this only changes which bucket a request counts against, never what it may access. Handlers cache their result
+    /// per request, so nothing is validated twice.
+    /// </summary>
+    public static IApplicationBuilder UseRateLimitIdentity(this IApplicationBuilder app) => app.Use(async (ctx, next) =>
+    {
+        if (ctx.User.Identity?.IsAuthenticated != true)
+            foreach (var scheme in ctx.RequestServices.GetRequiredService<UserSchemes>().Names)
+            {
+                var result = await ctx.AuthenticateAsync(scheme);
+                if (result.Succeeded && result.Principal is not null) { ctx.User = result.Principal; break; }
+            }
+        await next(ctx);
+    });
 }
 
 public static class Policies

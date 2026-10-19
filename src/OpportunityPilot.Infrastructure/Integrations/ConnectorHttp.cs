@@ -43,6 +43,8 @@ public sealed class ConnectorHttp(HttpClient http) : IConnectorHttp
     public async Task<ConnectorResponse> SendAsync(ConnectorRequest r, CancellationToken ct)
     {
         if (!Uri.TryCreate(r.Url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return new(0, "");
+        // Only the standard https port: a pasted webhook must not be usable to probe other ports on a public host.
+        if (!uri.IsDefaultPort) return new(0, ConnectorResponse.Blocked);
         using var message = new HttpRequestMessage(r.Method, uri);
         if (r.Bearer is not null) message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", r.Bearer);
         foreach (var (name, value) in r.Headers ?? new Dictionary<string, string>()) message.Headers.TryAddWithoutValidation(name, value);

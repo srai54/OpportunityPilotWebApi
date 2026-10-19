@@ -3,15 +3,13 @@
 The per-feature contracts written while each module was built, merged into one file on 2026-10-19. The current endpoint reference is `docs/api-contracts.md`; where they differ, `api-contracts.md` wins.
 
 Contents:
-- [CANDIDATE_PHASE1_CONTRACT.md](#candidate-phase1-contract-md)
-- [M4_M5_CONTRACT.md](#m4-m5-contract-md)
-- [RESEARCH_CONTRACT.md](#research-contract-md)
-- [SALES_CONTRACT.md](#sales-contract-md)
-- [ANALYTICS_CONTRACT.md](#analytics-contract-md)
+- [Candidate phase 1 contract: open job sources + batch approval queue](#candidate-phase-1-contract-open-job-sources--batch-approval-queue)
+- [M4 + M5 contract: Gemini with rules fallback, outreach drafts and follow-ups](#m4--m5-contract-gemini-with-rules-fallback-outreach-drafts-and-follow-ups)
+- [Research pipeline contract (M2 + M3, Job and Customer modes)](#research-pipeline-contract-m2--m3-job-and-customer-modes)
+- [Sales pipeline contract (N5)](#sales-pipeline-contract-n5)
+- [Analytics contract (redesign R2a) — overview metrics for the Candidate and Sales workspaces](#analytics-contract-redesign-r2a--overview-metrics-for-the-candidate-and-sales-workspaces)
 
 ---
-
-## CANDIDATE_PHASE1_CONTRACT.md
 
 <!-- merged from docs/CANDIDATE_PHASE1_CONTRACT.md on 2026-10-19 -->
 
@@ -82,8 +80,6 @@ ApprovalItem = { opportunityId, campaignId, campaignName, title, organization, l
 Cover notes / drafts (next feature PR, per M4_M5_CONTRACT), Gemini, Customer-mode suggestions, Freelancer.com.
 
 ---
-
-## M4_M5_CONTRACT.md
 
 <!-- merged from docs/M4_M5_CONTRACT.md on 2026-10-19 -->
 
@@ -247,8 +243,6 @@ Gmail drafts/sending (M6), manual copy/paste AI exchange (§13), Gemini fact ext
 inbox reply sync, delivered reminders, Partner/Investor/Freelance modes (M7).
 
 ---
-
-## RESEARCH_CONTRACT.md
 
 <!-- merged from docs/RESEARCH_CONTRACT.md on 2026-10-19 -->
 
@@ -462,8 +456,6 @@ the description.
 
 ---
 
-## SALES_CONTRACT.md
-
 <!-- merged from docs/SALES_CONTRACT.md on 2026-10-19 -->
 
 ## Sales pipeline contract (N5)
@@ -536,8 +528,6 @@ facts, then provides copy/open/manual-confirmation controls. All five campaign m
 discovery/placement and Gmail sending remain unavailable until approved credentials and live verification exist.
 
 ---
-
-## ANALYTICS_CONTRACT.md
 
 <!-- merged from docs/ANALYTICS_CONTRACT.md on 2026-10-19 -->
 
