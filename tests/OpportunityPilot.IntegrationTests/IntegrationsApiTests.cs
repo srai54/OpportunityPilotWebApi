@@ -143,11 +143,16 @@ public class IntegrationsApiTests(PostgresApiFactory factory) : IClassFixture<Po
 
         // The browser comes back without a bearer token; a tampered state connects nothing.
         var browser = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var bad = await browser.GetAsync($"/api/v1/integrations/oauth/callback/Notion?code=c1&state={Uri.EscapeDataString(state[..^3] + "abc")}");
-        Assert.Equal("https://app.example.test/connectors?error=expired&service=Notion", bad.Headers.Location!.ToString());
-        var back = await browser.GetAsync($"/api/v1/integrations/oauth/callback/Notion?code=c1&state={Uri.EscapeDataString(state)}");
-        Assert.Equal(HttpStatusCode.Redirect, back.StatusCode);
-        Assert.Equal("https://app.example.test/connectors?connected=Notion", back.Headers.Location!.ToString());
+        var handed = await browser.GetAsync($"/api/v1/integrations/oauth/callback/Notion?code=c1&state={Uri.EscapeDataString(state)}");
+        Assert.Equal(HttpStatusCode.Redirect, handed.StatusCode);
+        Assert.StartsWith("https://app.example.test/connectors?oauthCode=c1&oauthState=", handed.Headers.Location!.ToString());
+        var bad = await (await user.PostAsJsonAsync("/api/v1/integrations/oauth/complete/Notion", new { code = "c1", state = state[..^3] + "abc" })).Json(HttpStatusCode.OK);
+        Assert.Equal("https://app.example.test/connectors?error=expired&service=Notion", bad.Str("next"));
+        // Someone else cannot finish this person's sign-in.
+        var stolen = await (await other.PostAsJsonAsync("/api/v1/integrations/oauth/complete/Notion", new { code = "c1", state })).Json(HttpStatusCode.OK);
+        Assert.Equal("https://app.example.test/connectors?error=expired&service=Notion", stolen.Str("next"));
+        var back = await (await user.PostAsJsonAsync("/api/v1/integrations/oauth/complete/Notion", new { code = "c1", state })).Json(HttpStatusCode.OK);
+        Assert.Equal("https://app.example.test/connectors?connected=Notion", back.Str("next"));
 
         var text = await user.GetStringAsync("/api/v1/integrations");
         Assert.DoesNotContain("ntn-", text);

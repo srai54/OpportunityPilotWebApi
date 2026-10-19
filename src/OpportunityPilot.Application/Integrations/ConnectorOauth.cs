@@ -105,10 +105,27 @@ public sealed class ConnectorOauthService(
     }
 
     /// <summary>
+    /// The service's anonymous callback only hands the code and state to the web app; the signed-in app posts them to
+    /// <see cref="FinishAsync"/>, which checks the state belongs to the person finishing. A consent link started by someone else
+    /// therefore cannot attach a victim's Notion/HubSpot/Slack/Airtable to another account.
+    /// </summary>
+    public string HandOff(IntegrationKind kind, string? code, string? state, string? error)
+    {
+        var back = (mail.Value.WebBase ?? string.Empty).TrimEnd('/') + "/connectors";
+        if (!string.IsNullOrEmpty(error)) return $"{back}?error=declined&service={kind}";
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state) || code.Length > 2_000) return $"{back}?error=expired&service={kind}";
+        return $"{back}?oauthCode={Uri.EscapeDataString(code)}&oauthState={Uri.EscapeDataString(state)}&service={kind}";
+    }
+
+    /// <summary>Finishes connecting for the signed-in person only (see <see cref="HandOff"/>).</summary>
+    public Task<string> FinishAsync(IntegrationKind kind, string? code, string? state, string apiBase, CancellationToken ct) =>
+        CompleteAsync(kind, code, state, null, apiBase, ct, user.OwnerId);
+
+    /// <summary>
     /// Finishes the browser round trip and says where to send the person next: <c>/connectors?connected=Notion</c>, or
     /// <c>/connectors?error=declined|expired|failed&amp;service=Notion</c>. Never throws for a service or user mistake; never puts a token in the address.
     /// </summary>
-    public async Task<string> CompleteAsync(IntegrationKind kind, string? code, string? state, string? error, string apiBase, CancellationToken ct)
+    public async Task<string> CompleteAsync(IntegrationKind kind, string? code, string? state, string? error, string apiBase, CancellationToken ct, Guid? requiredOwner = null)
     {
         var back = (mail.Value.WebBase ?? string.Empty).TrimEnd('/') + "/connectors";
         string Failed(string why) => $"{back}?error={why}&service={kind}";
@@ -116,6 +133,7 @@ public sealed class ConnectorOauthService(
         if (!string.IsNullOrEmpty(error)) return Failed("declined");
         var s = ConnectorOauthState.Open(protector, state, Now);
         if (s is null || s.Kind != kind || string.IsNullOrWhiteSpace(code) || code.Length > 2_000 || !Configured(kind)) return Failed("expired");
+        if (requiredOwner is { } owner && s.OwnerId != owner) return Failed("expired");
 
         var redirect = RedirectUri(kind, apiBase);
         var fields = new Dictionary<string, string> { ["grant_type"] = "authorization_code", ["code"] = code, ["redirect_uri"] = redirect };

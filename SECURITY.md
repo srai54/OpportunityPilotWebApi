@@ -17,9 +17,13 @@ Please do not open a public issue. Contact the maintainers privately (repository
 | Errors | Problem details with a correlation id; no exception text, secrets or hosts in responses or activities | `Hosting/` |
 | Automation boundary | The server never automates a logged-in site; the desktop agent runs in the user's own browser and stops at any check | `agent/` |
 
-## Known gaps (tracked in the workspace `TASKS.md`, section SEC)
+## Fixed in the 2026-10-19 security batch
 
-1. OAuth callbacks (mailbox and connector connect) finish in an anonymous callback using the owner sealed in `state`; they should finish in an authenticated request that checks the owner, with single-use state.
-2. Rate limits partition by IP for Hanko/guest/agent callers because only the default scheme runs before the limiter; a policy-scheme selector would partition them per user.
-3. When `Mail__TokenKey` is not set, the encryption key is derived from the connection string; production should require `Mail__TokenKey` (rotation with re-encrypt is planned, decision D3).
-4. SMTP sends re-resolve DNS after the host check (DNS-rebinding window); connect to the checked address instead.
+- **OAuth connection hijack:** provider callbacks no longer exchange anything; the signed-in web app posts the code and state to `/complete`, and the sealed state must belong to that person (mailboxes and connectors). Integration tests cover "someone else cannot finish it".
+- **Rate limits per IP:** Hanko and guest callers are now identified before the rate limiter (`UseRateLimitIdentity`), so limits and costly-call buckets are per person.
+- **Encryption key:** production reports a setup problem when `Mail__TokenKey` is not set.
+
+## Known gaps
+
+1. SMTP sends re-resolve DNS after the host check (DNS-rebinding window); fix by connecting to the checked address (needs MailKit).
+2. Content-Security-Policy on the web app is limited to `frame-ancestors`, `base-uri`, `object-src` and `form-action` until script/connect origins are verified on the live site.

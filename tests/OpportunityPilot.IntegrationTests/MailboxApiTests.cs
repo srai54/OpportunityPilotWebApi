@@ -93,7 +93,10 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         var anonymous = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         var back = await anonymous.GetAsync($"/api/v1/mailboxes/callback/{provider}?code=good&state={Uri.EscapeDataString(state)}");
         Assert.Equal(HttpStatusCode.Redirect, back.StatusCode);
-        Assert.Equal($"https://app.example.test/settings?mailbox=connected&provider={provider}", back.Headers.Location!.ToString());
+        // The anonymous callback only hands the code back to the web app; the signed-in person finishes it.
+        Assert.StartsWith("https://app.example.test/settings?mailboxCode=good&mailboxState=", back.Headers.Location!.ToString());
+        var done = await (await user.PostAsJsonAsync($"/api/v1/mailboxes/{provider}/complete", new { code = "good", state })).Json(HttpStatusCode.OK);
+        Assert.Equal($"https://app.example.test/settings?mailbox=connected&provider={provider}", done.Str("next"));
     }
 
     [Fact]
@@ -206,8 +209,16 @@ public class MailboxApiTests(PostgresApiFactory factory) : IClassFixture<Postgre
         await using var app = App(new FakeTransport());
         var user = PostgresApiFactory.ClientFor(app, "mail-forged@example.test");
         var anonymous = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
-        var back = await anonymous.GetAsync("/api/v1/mailboxes/callback/Google?code=good&state=forged");
-        Assert.Equal("https://app.example.test/settings?mailbox=expired&provider=Google", back.Headers.Location!.ToString());
+        var back = await (await user.PostAsJsonAsync("/api/v1/mailboxes/Google/complete", new { code = "good", state = "forged" })).Json(HttpStatusCode.OK);
+        Assert.Equal("https://app.example.test/settings?mailbox=expired&provider=Google", back.Str("next"));
+
+        // A consent link started by someone else cannot be finished by this person (no mailbox lands on either account).
+        var attacker = PostgresApiFactory.ClientFor(app, "mail-attacker@example.test");
+        var begin = await (await attacker.PostAsync("/api/v1/mailboxes/Google/connect", null)).Json(HttpStatusCode.OK);
+        var theirs = System.Web.HttpUtility.ParseQueryString(new Uri(begin.Str("url")).Query)["state"]!;
+        var stolen = await (await user.PostAsJsonAsync("/api/v1/mailboxes/Google/complete", new { code = "good", state = theirs })).Json(HttpStatusCode.OK);
+        Assert.Contains("mailbox=expired", stolen.Str("next"));
+        Assert.DoesNotContain((await attacker.GetJson("/api/v1/mailboxes")).EnumerateArray(), m => m.GetProperty("connected").GetBoolean());
         Assert.DoesNotContain((await user.GetJson("/api/v1/mailboxes")).EnumerateArray(), m => m.GetProperty("connected").GetBoolean());
         var declined = await anonymous.GetAsync("/api/v1/mailboxes/callback/Google?error=access_denied");
         Assert.Contains("mailbox=declined", declined.Headers.Location!.ToString());

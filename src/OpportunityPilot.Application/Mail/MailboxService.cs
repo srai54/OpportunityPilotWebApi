@@ -17,6 +17,12 @@ public sealed record MailboxDto(MailProvider Provider, bool Configured, bool Con
 
 public sealed record ConnectMailboxResponse(string Url);
 
+/// <summary>The code and state the provider sent back, posted by the signed-in web app to finish connecting.</summary>
+public sealed record OauthFinishRequest(string? Code, string? State);
+
+/// <summary>Where the web app goes next (the same outcome addresses as before: <c>/settings?mailbox=connected…</c>).</summary>
+public sealed record OauthFinishResponse(string Next);
+
 public sealed record SendViaMailboxRequest(int Version, MailProvider Provider);
 
 public sealed record BatchSendItem(Guid Id, int Version);
@@ -103,14 +109,33 @@ public sealed class MailboxService(
     private async Task<bool> IsPublicHostAsync(string host, CancellationToken ct) =>
         Opts.AllowPrivateSmtpHosts || await MailHosts.PublicAddressesAsync(host, allowPrivate: false, ct) is not null;
 
+    /// <summary>
+    /// The provider's anonymous callback only hands the code and state back to the web app; nothing is exchanged there. The signed-in
+    /// app then posts them to <see cref="FinishAsync"/>, which checks that the person finishing is the person who started — so a consent
+    /// link started by someone else can never attach a victim's mailbox to the other account.
+    /// </summary>
+    public string HandOff(MailProvider provider, string? code, string? state, string? error)
+    {
+        var back = (Opts.WebBase ?? string.Empty).TrimEnd('/') + "/settings";
+        if (!string.IsNullOrEmpty(error) || string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state))
+            return $"{back}?mailbox={(string.IsNullOrEmpty(error) ? "expired" : "declined")}&provider={provider}";
+        return $"{back}?mailboxCode={Uri.EscapeDataString(code)}&mailboxState={Uri.EscapeDataString(state)}&provider={provider}";
+    }
+
+    /// <summary>Finishes connecting for the signed-in person only (see <see cref="HandOff"/>).</summary>
+    public Task<string> FinishAsync(MailProvider provider, OauthFinishRequest r, CancellationToken ct) =>
+        CompleteAsync(provider, r?.Code, r?.State, null, ct, user.OwnerId);
+
     /// <summary>Finishes the browser round trip. Returns where to send the person next; never throws for a provider or user mistake.</summary>
-    public async Task<string> CompleteAsync(MailProvider provider, string? code, string? state, string? error, CancellationToken ct)
+    /// <param name="requiredOwner">When set, the sealed state must belong to this owner (the signed-in person), else "expired".</param>
+    public async Task<string> CompleteAsync(MailProvider provider, string? code, string? state, string? error, CancellationToken ct, Guid? requiredOwner = null)
     {
         var back = (Opts.WebBase ?? string.Empty).TrimEnd('/') + "/settings";
         string Result(string outcome) => $"{back}?mailbox={outcome}&provider={provider}";
         if (!string.IsNullOrEmpty(error)) return Result("declined");
         var s = OAuthState.Open(protector, state, Now);
         if (s is null || s.Provider != provider || string.IsNullOrWhiteSpace(code) || !Opts.Ready(provider)) return Result("expired");
+        if (requiredOwner is { } owner && s.OwnerId != owner) return Result("expired");
         MailTokens tokens;
         try { tokens = await transport.ExchangeCodeAsync(provider, code, s.Verifier, RedirectUri(provider), ct); }
         catch (InvalidOperationException) { return Result("failed"); }

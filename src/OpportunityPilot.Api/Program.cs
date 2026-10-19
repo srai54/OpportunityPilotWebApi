@@ -44,6 +44,10 @@ builder.Services.PostConfigure<OpportunityPilot.Application.Mail.MailOptions>(o 
 // without a Supabase URL visitors continue as random guests. /api/v1/capabilities reports both (demo mode).
 var setup = new SetupState();
 builder.Services.AddSingleton(setup);
+// Stored mailbox and connector secrets should not be decryptable by whoever holds the database credentials (security review 2026-10-19).
+if (builder.Environment.IsProduction() && !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Main"))
+    && string.IsNullOrWhiteSpace(builder.Configuration["Mail:TokenKey"]))
+    setup.ConfigProblem("Mail__TokenKey is not set, so stored mailbox and app secrets use a key derived from the database connection. Set a random 32-byte base64 key.");
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration, setup);
 builder.AddOpportunityPilotAuth(setup);
@@ -150,6 +154,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors();
 app.UseAuthentication();
+app.UseRateLimitIdentity();
 app.UseRateLimiter();
 app.UseAuthorization();
 

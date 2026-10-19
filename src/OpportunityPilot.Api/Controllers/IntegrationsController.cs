@@ -49,8 +49,15 @@ public sealed class IntegrationsController(
     [AllowAnonymous]
     [EnableRateLimiting(RateLimits.PublicProgress)]
     [HttpGet("integrations/oauth/callback/{kind}")]
-    public async Task<IActionResult> OauthCallback(IntegrationKind kind, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct) =>
-        Redirect(await oauth.CompleteAsync(kind, code, state, error, ApiBase, ct));
+    public IActionResult OauthCallback(IntegrationKind kind, [FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error) =>
+        Redirect(oauth.HandOff(kind, code, state, error));
+
+    /// <summary>The signed-in web app finishes the sign-in; only the person who started it can (the state is checked against them).</summary>
+    [EnableRateLimiting(RateLimits.Connectors)]
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [HttpPost("integrations/oauth/complete/{kind}")]
+    public async Task<ActionResult<OpportunityPilot.Application.Mail.OauthFinishResponse>> FinishOauth(IntegrationKind kind, OpportunityPilot.Application.Mail.OauthFinishRequest request, CancellationToken ct) =>
+        new OpportunityPilot.Application.Mail.OauthFinishResponse(await oauth.FinishAsync(kind, request?.Code, request?.State, ApiBase, ct));
 
     /// <summary>One-click "Connect" (Notion, Gmail, HubSpot, Slack, Airtable): the managed-connection platform's sign-in address. 409 without Plugins__ApiKey.</summary>
     [EnableRateLimiting(RateLimits.Connectors)]
