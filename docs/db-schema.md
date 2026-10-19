@@ -512,4 +512,4 @@ Both sets must contain the same logical migrations in the same order.
 | 23 | AddJobInterviews | `20261015062624_AddJobInterviews` | `20261015062641_AddJobInterviews` | job_interviews |
 | 24 | AddStaffingContactPhone | `SqlServer\20261015165649_AddStaffingContactPhone` | `Postgres\20261015165756_AddStaffingContactPhone` | nullable `staffing_contacts.Phone` (320) |
 
-Persisted AI usage records from [M4_M5_CONTRACT.md](M4_M5_CONTRACT.md) remain unbuilt; suppressions and next actions are built.
+Persisted AI usage records from [feature-contracts.md](feature-contracts.md) remain unbuilt; suppressions and next actions are built.

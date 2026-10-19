@@ -37,10 +37,9 @@ demo mode (in-memory data, guest sign-in).
 | Database schema and migrations | [docs/db-schema.md](docs/db-schema.md) |
 | Business rules, limits and scoring | [docs/business-rules.md](docs/business-rules.md) |
 | States and transitions | [docs/opportunity-lifecycle.md](docs/opportunity-lifecycle.md) |
-| Candidate + Sales product execution flow | [docs/PRODUCT_EXECUTION_FLOW.md](docs/PRODUCT_EXECUTION_FLOW.md) |
-| Vector-search architecture | [docs/VECTOR_SEARCH_PLAN.md](docs/VECTOR_SEARCH_PLAN.md) |
-| Provider test procedure and evidence | [docs/PROVIDER_TEST_RUNBOOK.md](docs/PROVIDER_TEST_RUNBOOK.md) |
+| Product flow, status and plans (incl. vector search) | [docs/plans-and-status.md](docs/plans-and-status.md) |
+| Operations: provider tests, security, demo, storage, retention | [docs/operations.md](docs/operations.md) |
 | Conventions and error envelope | [docs/conventions.md](docs/conventions.md) |
 | Open questions and known gaps | [docs/open-questions.md](docs/open-questions.md) |
-| Progress and decisions | [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), [docs/DECISIONS.md](docs/DECISIONS.md) |
-| Slice design specs | [docs/RESEARCH_CONTRACT.md](docs/RESEARCH_CONTRACT.md), [docs/M4_M5_CONTRACT.md](docs/M4_M5_CONTRACT.md) (not built) |
+| Progress and decisions | [docs/plans-and-status.md](docs/plans-and-status.md), [docs/DECISIONS.md](docs/DECISIONS.md) |
+| Slice design specs | [docs/feature-contracts.md](docs/feature-contracts.md) (M4/M5 not built) |

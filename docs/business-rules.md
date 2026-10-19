@@ -18,7 +18,7 @@ Code: `Application/Profiles/ProfileService.cs`
 
 ## Analytics
 
-Code: `Application/Analytics/AnalyticsService.cs`; detailed response semantics: [ANALYTICS_CONTRACT.md](ANALYTICS_CONTRACT.md).
+Code: `Application/Analytics/AnalyticsService.cs`; detailed response semantics: [feature-contracts.md](feature-contracts.md).
 
 | Rule | Value |
 |---|---|

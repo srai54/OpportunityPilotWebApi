@@ -9,7 +9,7 @@ public sealed record RetentionResult(int ImportPreviews, int ResearchEvents, int
 }
 
 /// <summary>
-/// Deletes data whose purpose has passed, across all owners, in bounded batches (docs/RETENTION.md). Business records —
+/// Deletes data whose purpose has passed, across all owners, in bounded batches (docs/operations.md). Business records —
 /// profiles, campaigns, opportunities, evidence, drafts, applications, staffing records — are never removed here; only
 /// the owner's own "Delete all data" removes those.
 /// </summary>

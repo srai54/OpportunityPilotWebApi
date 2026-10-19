@@ -20,7 +20,7 @@ public enum AttentionKind
 }
 
 /// <summary>
-/// The v2 overview for one workspace (docs/ANALYTICS_CONTRACT.md). Every number is computed from the caller's stored data;
+/// The v2 overview for one workspace (docs/feature-contracts.md). Every number is computed from the caller's stored data;
 /// a field the stored data cannot answer is null, never an estimate.
 /// </summary>
 /// <param name="ApplicationsPerDay">Candidate only: the last 14 UTC days, oldest first. Null for Sales.</param>

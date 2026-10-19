@@ -35,7 +35,7 @@ public sealed class DatabaseDiagnosticsProbe(AppDbContext db, IOptions<DatabaseO
         {
             var exposed = await db.Database.SqlQueryRaw<string>(ExposureSql).ToListAsync(ct);
             return new(provider, true, true, pending, new SchemaExposure(true, exposed,
-                exposed.Count == 0 ? "Not exposed: anon and authenticated cannot use schema app." : "EXPOSED — see docs/SECURITY_RUNBOOK.md §5."));
+                exposed.Count == 0 ? "Not exposed: anon and authenticated cannot use schema app." : "EXPOSED — see docs/operations.md §5."));
         }
         catch (Exception)
         {

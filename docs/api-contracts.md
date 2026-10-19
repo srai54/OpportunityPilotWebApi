@@ -1,7 +1,7 @@
 # API contracts
 
 **Authoritative list of what the API exposes today**, taken from `src/OpportunityPilot.Api/Controllers/*.cs`.
-Slice specs ([RESEARCH_CONTRACT.md](RESEARCH_CONTRACT.md), [M4_M5_CONTRACT.md](M4_M5_CONTRACT.md)) describe designs;
+Slice specs ([feature-contracts.md](feature-contracts.md), [feature-contracts.md](feature-contracts.md)) describe designs;
 when they disagree with this file, this file (and the code) wins. Update it in the same change as any endpoint.
 
 Envelope, naming and error rules: [conventions.md](conventions.md). Limits and rules behind each endpoint:
@@ -180,7 +180,7 @@ profile is confirmed. No message is sent; approval only makes the exact approved
 
 ### Sales pipeline (N5 first slice)
 
-The complete sales design is documented in [SALES_CONTRACT.md](SALES_CONTRACT.md). The Upwork queue accepts visible
+The complete sales design is documented in [feature-contracts.md](feature-contracts.md). The Upwork queue accepts visible
 facts from an assisted or approved API/MCP import. It does not scrape Upwork and never spends Connects or submits.
 
 | Method | Path | Auth | Request | Response / errors |
@@ -335,7 +335,7 @@ JSON is camelCase and enums are strings. `?` marks nullable.
 |---|---|
 | CapabilitiesDto | `environment, databaseProvider, aiMode, setupRequired: string[], guestSignIn: bool, temporaryStorage: bool, items: CapabilityDto[], signInProviders: string[]` (`"hanko"` and/or `"supabase"`, in that order; empty in demo mode) |
 | CapabilityDto | `key, name, category, status (Ready, Configured, NotConfigured, Disabled, ManualHandoff, NotBuilt, LocalAgent), detail, can: string[], cannot: string[]` |
-| AnalyticsOverviewDto | `workspace, days, generatedAt, campaignCount, kpis, funnel, fitHistogram, unknownCriteria, sources, applicationsPerDay?, attention, activeResearch?, qualifiedByIndustry?, signalsFound?`; fields that stored data cannot answer are `null`, never estimates (full semantics in `ANALYTICS_CONTRACT.md`) |
+| AnalyticsOverviewDto | `workspace, days, generatedAt, campaignCount, kpis, funnel, fitHistogram, unknownCriteria, sources, applicationsPerDay?, attention, activeResearch?, qualifiedByIndustry?, signalsFound?`; fields that stored data cannot answer are `null`, never estimates (full semantics in `feature-contracts.md`) |
 | ProfileSummaryDto | `id, type, name, version, confirmedAt?, updatedAt` |
 | ProfileDto | `id, type, name, data (JSON object), version, confirmedAt?, createdAt, updatedAt` |
 | CreateProfileRequest | `type (Product, Business, Candidate, Services), name, data?, confirmed` |
@@ -385,5 +385,5 @@ Nothing below exists in the code; do not call it or document it as available.
 
 | Source | Endpoints |
 |---|---|
-| [M4_M5_CONTRACT.md](M4_M5_CONTRACT.md) | opportunity AI summary and persisted Gemini usage remain; goal previews, drafts, suppressions, activities, next actions and AI status are built |
+| [feature-contracts.md](feature-contracts.md) | opportunity AI summary and persisted Gemini usage remain; goal previews, drafts, suppressions, activities, next actions and AI status are built |
 | Implementation plan §16 | `POST /api/v1/research-jobs/{id}/resume`, AI exchanges, Gmail integration, sending |

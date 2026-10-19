@@ -71,12 +71,12 @@ Audit date: 2026-10-05.
 
 ### OQ-BE-005 — Fetching of the real public internet is unverified
 - **Priority** P2 · **Owner** Shivanshu · **Status** Open
-- **Where** `Infrastructure/Research/SafeFetcher.cs`; `docs/IMPLEMENTATION_STATUS.md` (Not verified)
+- **Where** `Infrastructure/Research/SafeFetcher.cs`; `docs/plans-and-status.md` (Not verified)
 - **What is needed** One manual run in Development against a few real public pages and feeds (TLS, real redirects, real HTML, charsets) and a note of the results. Tests use stubbed handlers and a loopback server only.
 
 ### OQ-BE-006 — Remaining M4 + M5 AI, outreach and follow-ups not built
 - **Priority** P2 · **Owner** Claude · **Status** Closed 2026-10-07
-- **Where** `docs/M4_M5_CONTRACT.md`; CoverNote persistence, template generation, approval and agent handoff are built, but there is no `ILlmClient`, Suppression, NextAction, UsageRecord, other outreach channel or cross-opportunity draft inbox
+- **Where** `docs/feature-contracts.md`; CoverNote persistence, template generation, approval and agent handoff are built, but there is no `ILlmClient`, Suppression, NextAction, UsageRecord, other outreach channel or cross-opportunity draft inbox
 - **What is needed** Build the remaining contract slices, keeping the deterministic CoverNote path as the no-AI fallback.
 
 ### OQ-BE-007 — Gemini integration absent; model id and `Ai:Mode` unused
@@ -111,7 +111,7 @@ Audit date: 2026-10-05.
 
 ### OQ-BE-013 — Research slice not deployed; status docs dated 2026-10-01
 - **Priority** P2 · **Owner** Shivanshu · **Status** Open
-- **Where** `docs/IMPLEMENTATION_STATUS.md` (M9 row, "Last updated")
+- **Where** `docs/plans-and-status.md` (M9 row, "Last updated")
 - **What is needed** Deploy the research slice, run the end-to-end smoke test listed under "Exact next task", and refresh the status file.
 
 ### OQ-BE-014 — No research resume endpoint (plan §16)
@@ -191,7 +191,7 @@ Audit date: 2026-10-05.
 
 ### OQ-BE-029 — Sales discovery/provider accounts are not selected or connected
 - **Priority** P1 · **Owner** Shivanshu · **Status** Open
-- **Where** `docs/STAFFING_SALES_INTEGRATION_PLAN.md`; tasks X3/X5/X7/X12
+- **Where** `docs/plans-and-status.md`; tasks X3/X5/X7/X12
 - **What is needed** Connect or provide approved accounts/scopes for Upwork MCP/API, the selected sales-intelligence
   provider, Gmail or Microsoft email, Google or Outlook Calendar, and an optional e-signature provider. LinkedIn
   scraping/browser automation is not an option; LinkedIn remains manual/assisted unless an official approved product

@@ -12,7 +12,7 @@ using OpportunityPilot.Domain.Research;
 namespace OpportunityPilot.Application.Analytics;
 
 /// <summary>
-/// Overview metrics for the Candidate (Job) and Sales (Customer) workspaces, per docs/ANALYTICS_CONTRACT.md.
+/// Overview metrics for the Candidate (Job) and Sales (Customer) workspaces, per docs/feature-contracts.md.
 /// Read-only, owner-scoped, EF LINQ only (InMemory demo mode and Postgres alike), every query bounded by the owner and,
 /// where the contract says so, the window. Nothing is estimated: what stored data cannot answer is null.
 /// </summary>

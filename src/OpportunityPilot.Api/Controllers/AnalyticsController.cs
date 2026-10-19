@@ -3,7 +3,7 @@ using OpportunityPilot.Application.Analytics;
 
 namespace OpportunityPilot.Api.Controllers;
 
-/// <summary>Overview metrics for the v2 Candidate and Sales overviews (docs/ANALYTICS_CONTRACT.md). User auth only.</summary>
+/// <summary>Overview metrics for the v2 Candidate and Sales overviews (docs/feature-contracts.md). User auth only.</summary>
 [ApiController]
 [Route("api/v1/analytics")]
 public sealed class AnalyticsController(AnalyticsService analytics) : ControllerBase

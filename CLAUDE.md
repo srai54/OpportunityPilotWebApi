@@ -62,7 +62,7 @@ Run from the repository root unless noted. dotnet-ef 10.x must be installed glob
 | `tests/OpportunityPilot.IntegrationTests/` | `<Feature>ApiTests.cs` on `PostgresApiFactory`; `StartupGuardTests.cs` for production/demo startup |
 | `agent/src/` | `cli.ts` (commands), `run.ts` (apply), `collect.ts`, `circle.ts` (JD circle), `outreach.ts` (LinkedIn notes), `schedule.ts`, `api.ts`, `form.ts`, `answers.ts`, `browser.ts`, `store.ts`, `config.ts`, `util.ts`, `platforms/` (`types.ts`, one adapter per site, `linkedin-people.ts` for people search and profile actions) |
 | `agent/test/` | `*.test.ts` (Vitest) and `mock/server.ts` (local LinkedIn/Naukri stand-in + fake API) |
-| `docs/` | reference docs (table below); `RESEARCH_CONTRACT.md`, `M4_M5_CONTRACT.md` are slice specs |
+| `docs/` | reference docs (table below); `feature-contracts.md` holds the older per-slice specs |
 | `skills/` | task procedures (table below) |
 | `.claude/` | `settings.json` hooks and `hooks/*.mjs` guards |
 
@@ -123,7 +123,7 @@ Hard guardrails:
 - **Push only at the end of the session or when the user says so (rule, set by the user 2026-10-06 — replaces "always push"):** commit locally as each task finishes; a local commit deploys nothing. Do **not** push, raise or merge a PR after a task or a minor change: every push/merge to `main` deploys Vercel and Render and uses up free-tier limits. Push + PR + merge only when **all tasks of the session are done and verified** (typecheck, lint, tests, build, browser check through the local proxy against the live API), or when the user **explicitly** asks. If the session must stop early, leave the work committed locally on its branch (no push) and note the branch in `TASKS.md`. See `../CLAUDE.md`.
 - **Enums are stored as strings**: do not rename a member of a stored enum without a data migration.
 - **Capabilities tell the truth**: never report `Ready` for something not built and verified; missing optional config degrades to demo mode or NotConfigured, never a crash. Only security guards (DevBypass outside Development) stop startup.
-- **Specs are not code**: `docs/RESEARCH_CONTRACT.md` and `docs/M4_M5_CONTRACT.md` are designs; `docs/api-contracts.md` lists what exists. M4–M9 items are not built.
+- **Specs are not code**: `docs/feature-contracts.md` holds designs; `docs/api-contracts.md` lists what exists. M4–M9 items are not built.
 - Do not edit `.env*`, `appsettings.*.local.json`, lock files, `agent/config.json` or `agent/.data/**`; do not write real keys or passwords into any file (hooks in `.claude/settings.json` block these).
 - Do not commit or push unless asked; do not use `--no-verify` or force-push.
 - Keep the build at 0 warnings and `dotnet test` green before calling work done.
@@ -139,10 +139,9 @@ Hard guardrails:
 | Naming, C# and TypeScript style, error envelope, test naming | `docs/conventions.md` |
 | Known gaps, stubs, unverified integrations, decisions needed | `docs/open-questions.md` |
 | Local setup, configuration keys, Supabase, Render deployment | `docs/SETUP.md` |
-| Milestone status and verification record | `docs/IMPLEMENTATION_STATUS.md` |
+| Milestone status and verification record | `docs/plans-and-status.md` |
 | Why things are the way they are | `docs/DECISIONS.md` |
-| Research slice design spec (M2 + M3) | `docs/RESEARCH_CONTRACT.md` |
-| Next slice design spec (M4 + M5, not built) | `docs/M4_M5_CONTRACT.md` |
+| Slice design specs (M2–M5; M4/M5 not built) | `docs/feature-contracts.md` |
 | Error handling procedure | `skills/error-handling.SKILL.md` |
 | Writing tests | `skills/unit-test.SKILL.md` |
 | Debugging | `skills/debug.SKILL.md` |
