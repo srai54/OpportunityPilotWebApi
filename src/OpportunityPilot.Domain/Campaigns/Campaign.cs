@@ -63,8 +63,7 @@ public class Campaign : IOwned
     {
         if (minScore is < MinAutoSuggestScore or > MaxAutoSuggestScore)
             throw new ArgumentOutOfRangeException(nameof(minScore), $"Auto-approve score must be {MinAutoSuggestScore}–{MaxAutoSuggestScore}.");
-        if (minScore is not null && Mode != OpportunityMode.Job)
-            throw new ArgumentException("Only Job campaigns can auto-approve.", nameof(minScore));
+        // Job and Sales (Customer) campaigns alike since 2026-10-16 (U17-13b); approving only marks a lead, sending needs a tap.
         AutoApproveMinScore = minScore;
     }
 
