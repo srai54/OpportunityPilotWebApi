@@ -10,8 +10,8 @@ public sealed class BudgetOptions
     public int GroqPerDay { get; set; } = 1500;
     public int JsearchPerDay { get; set; } = 40;
     public int ApifyPerDay { get; set; } = 15;
-    /// <summary>Apollo lead-search calls. The plan seen on 2026-10-19 allows 50 requests a period, so the default is 3 a day.</summary>
-    public int ApolloPerDay { get; set; } = 3;
+    /// <summary>Apollo lead-search calls. The listing bills per returned result and always returns 25 (live test 2026-10-19), so one search is 25 credits; default 1 a day.</summary>
+    public int ApolloPerDay { get; set; } = 1;
 }
 
 /// <summary>

@@ -20,13 +20,13 @@ public sealed class LeadSearchTests
         public string Query = "";
     }
 
-    private static LeadSearchService Service(FakeHttp http, string? key = "k", int perDay = 20) => new(http, Options.Create(new LeadSearchOptions()),
+    private static LeadSearchService Service(FakeHttp http, string? key = "k", int perDay = 20, LeadSearchOptions? o = null) => new(http, Options.Create(o ?? new LeadSearchOptions()),
         Options.Create(new RapidApiBoardsOptions { Key = key }), new ProviderBudget(TimeProvider.System, Options.Create(new BudgetOptions { ApolloPerDay = perDay })));
 
     [Fact]
     public void Body_uses_apollo_filter_names_and_size_ranges()
     {
-        var json = LeadSearchService.BuildBody(new("SaaS, fintech", ["United States", "Sweden", "Germany"], ["10-20", "20-50", "50-100"]), new LeadSearchOptions());
+        var json = LeadSearchService.BuildBody(new("SaaS, fintech", ["United States", "Sweden", "Germany"], ["10-20", "20-50", "50-100"]), new LeadSearchOptions { SizeParam = "organization_num_employees_ranges" });
         var b = JsonDocument.Parse(json).RootElement;
         Assert.Equal(["SaaS", "fintech"], b.GetProperty("q_organization_keyword_tags").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(["United States", "Sweden", "Germany"], b.GetProperty("organization_locations").EnumerateArray().Select(x => x.GetString()));
@@ -47,7 +47,7 @@ public sealed class LeadSearchTests
     {
         var body = """{"organizations":[{"name":"Acme AB","website_url":"acme.se","linkedin_url":"http://www.linkedin.com/company/acme","estimated_num_employees":35,"city":"Stockholm","country":"Sweden"},{"name":"Big GmbH","estimated_num_employees":900,"country":"Germany"},{"name":"Unknown Inc"}]}""";
         var http = new FakeHttp(200, body);
-        var r = await Service(http).SearchAsync(new("saas", ["Sweden"], ["20-50"]), default);
+        var r = await Service(http, o: new LeadSearchOptions { SizeParam = "organization_num_employees_ranges" }).SearchAsync(new("saas", ["Sweden"], ["20-50"]), default);
         Assert.Equal("Ready", r.Status);
         Assert.Equal("/search_organizations", http.Path);
         Assert.Equal(["Acme AB", "Unknown Inc"], r.Leads.Select(l => l.Name));
@@ -66,8 +66,8 @@ public sealed class LeadSearchTests
         Assert.Equal("GET", http.Method);
         Assert.Equal("/search_people", http.Path);
         Assert.Null(http.Json);
-        Assert.Equal("page=1&per_page=10&person_locations%5B%5D=Sweden&person_locations%5B%5D=Germany&organization_num_employees_ranges%5B%5D=10%2C20"
-            + "&organization_num_employees_ranges%5B%5D=51%2C100&person_titles%5B%5D=CTO&person_titles%5B%5D=Head%20of%20Engineering", http.Query);
+        // Live format (2026-10-19): one comma-separated value per filter; no size filter (the listing rejected it).
+        Assert.Equal("page=1&per_page=10&person_locations=Sweden%2CGermany&person_titles=CTO%2CHead%20of%20Engineering", http.Query);
     }
 
     /// <summary>Trimmed from the listing's real Search People answer (2026-10-19): data.people[], organization without a head count.</summary>

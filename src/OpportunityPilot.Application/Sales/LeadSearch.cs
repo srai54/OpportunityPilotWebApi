@@ -23,8 +23,9 @@ public sealed class LeadSearchOptions
     public int PerPage { get; set; } = 10;
     /// <summary>GET with query parameters (the listing's playground, 2026-10-19) or POST with a JSON body.</summary>
     public string Method { get; set; } = "GET";
-    /// <summary>Appended to a list parameter's name in a query string (Apollo style: <c>person_titles[]=CTO</c>).</summary>
-    public string ArraySuffix { get; set; } = "[]";
+    /// <summary>Lists are sent as one comma-separated value (live test 2026-10-19: the listing splits the text; <c>[]</c> lists fail).
+    /// Set to "[]" to send Apollo-style repeated lists instead.</summary>
+    public string ArraySuffix { get; set; } = "";
     public string PageParam { get; set; } = "page";
     public string PerPageParam { get; set; } = "per_page";
     public string KeywordParam { get; set; } = "q_organization_keyword_tags";
@@ -32,7 +33,9 @@ public sealed class LeadSearchOptions
     public string LocationParam { get; set; } = "organization_locations";
     /// <summary>Where the person is (people search); empty to filter people by their company's location instead.</summary>
     public string PeopleLocationParam { get; set; } = "person_locations";
-    public string SizeParam { get; set; } = "organization_num_employees_ranges";
+    /// <summary>Company-size filter. Empty = not sent: the listing rejected <c>organization_num_employees_ranges=11,20</c> (422) on 2026-10-19
+    /// and people answers carry no head count.</summary>
+    public string SizeParam { get; set; } = "";
     public string TitleParam { get; set; } = "person_titles";
 }
 
@@ -96,7 +99,7 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
         var leads = Map(body, people);
         if (leads is null) return new("Failed", [], 0, "Apollo answered in a shape this app does not read yet.");
         // Apollo's size filter is a request hint; keep only leads whose known size fits, and leads whose size is unknown.
-        var wanted = request.Sizes?.Where(CompanySizes.Bands.ContainsKey).ToHashSet() ?? [];
+        var wanted = string.IsNullOrWhiteSpace(o.SizeParam) ? [] : request.Sizes?.Where(CompanySizes.Bands.ContainsKey).ToHashSet() ?? [];
         var kept = wanted.Count == 0 ? leads : leads.Where(l => l.Employees is null || (l.SizeBand is { } band && wanted.Contains(band))).ToList();
         return new("Ready", kept, leads.Count - kept.Count, null);
     }
@@ -124,7 +127,7 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
         var countries = r.Countries?.Select(c => c.Trim()).Where(c => c.Length > 0).Distinct().Take(20).ToList() ?? [];
         if (countries.Count > 0) body[o.LocationParam] = Arr(countries);
         var sizes = r.Sizes?.Where(CompanySizes.Bands.ContainsKey).Distinct().Select(s => $"{CompanySizes.Bands[s].Min},{CompanySizes.Bands[s].Max}").ToList() ?? [];
-        if (sizes.Count > 0) body[o.SizeParam] = Arr(sizes);
+        if (sizes.Count > 0 && !string.IsNullOrWhiteSpace(o.SizeParam)) body[o.SizeParam] = Arr(sizes);
         if (!string.IsNullOrWhiteSpace(r.Titles)) body[o.TitleParam] = Arr(Split(r.Titles));
         return body.ToJsonString();
     }
@@ -136,7 +139,10 @@ public sealed class LeadSearchService(ILeadSearchHttp http, IOptions<LeadSearchO
         void Add(string name, IEnumerable<string> values)
         {
             if (string.IsNullOrWhiteSpace(name)) return;
-            foreach (var v in values) parts.Add($"{Uri.EscapeDataString(name + o.ArraySuffix)}={Uri.EscapeDataString(v)}");
+            var list = values.ToList();
+            if (list.Count == 0) return;
+            if (o.ArraySuffix.Length == 0) parts.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(string.Join(',', list))}");
+            else foreach (var v in list) parts.Add($"{Uri.EscapeDataString(name + o.ArraySuffix)}={Uri.EscapeDataString(v)}");
         }
         if (!string.IsNullOrWhiteSpace(r.Keywords)) Add(o.KeywordParam, Split(r.Keywords));
         var countries = r.Countries?.Select(c => c.Trim()).Where(c => c.Length > 0).Distinct().Take(20).ToList() ?? [];
