@@ -3,15 +3,13 @@
 Runbooks for running the API: provider tests, security, demo operation, data storage and retention. Merged on 2026-10-19.
 
 Contents:
-- [PROVIDER_TEST_RUNBOOK.md](#provider-test-runbook-md)
-- [SECURITY_RUNBOOK.md](#security-runbook-md)
-- [SALES_DEMO_OPERATOR_GUIDE.md](#sales-demo-operator-guide-md)
-- [DATA_STORAGE.md](#data-storage-md)
-- [RETENTION.md](#retention-md)
+- [Provider test runbook](#provider-test-runbook)
+- [Security runbook](#security-runbook)
+- [Replayable Sales and staffing demo](#replayable-sales-and-staffing-demo)
+- [Where the data lives, and how to look at it](#where-the-data-lives-and-how-to-look-at-it)
+- [Retention, cleanup, archive and export](#retention-cleanup-archive-and-export)
 
 ---
-
-## PROVIDER_TEST_RUNBOOK.md
 
 <!-- merged from docs/PROVIDER_TEST_RUNBOOK.md on 2026-10-19 -->
 
@@ -65,8 +63,6 @@ agent is not reused for Sales connection requests, InMail or messages.
 | 2026-10-07 | LinkedIn | Auth wall reached; the in-app browser is not signed in | None | Existing LinkedIn draft/copy path is being tightened to approved content only; sign-in is needed for profile/deep-link verification |
 
 ---
-
-## SECURITY_RUNBOOK.md
 
 <!-- merged from docs/SECURITY_RUNBOOK.md on 2026-10-19 -->
 
@@ -133,8 +129,6 @@ authenticated;`.
 
 ---
 
-## SALES_DEMO_OPERATOR_GUIDE.md
-
 <!-- merged from docs/SALES_DEMO_OPERATOR_GUIDE.md on 2026-10-19 -->
 
 ## Replayable Sales and staffing demo
@@ -169,8 +163,6 @@ The API integration scenario is `SalesDemoApiTests`. It proves isolation, replay
 shortlists, drafts, approval, Won staffing lifecycle, KPIs and reset preservation. It requires Docker/PostgreSQL.
 
 ---
-
-## DATA_STORAGE.md
 
 <!-- merged from docs/DATA_STORAGE.md on 2026-10-19 -->
 
@@ -212,8 +204,6 @@ select table_name from information_schema.tables where table_schema = 'app' orde
 Use `select * ... limit 20` first: Postgres keeps the EF column names, which may be quoted PascalCase (`"OwnerId"`).
 
 ---
-
-## RETENTION.md
 
 <!-- merged from docs/RETENTION.md on 2026-10-19 -->
 

@@ -207,7 +207,7 @@ Not configurable: the address policy has one production implementation and no co
 | Proxy, cookies | never used |
 | Redirects | followed by hand, max 5, every hop re-checked (an http hop outside Development is refused) |
 | JSON POST | Workday public search uses the same address, timeout, retry and size rules; redirects are refused so a request body is never replayed to another address |
-| Retries | 408, 429, 5xx, timeouts and network errors: 3 retries with 0.5 s / 1 s / 2 s backoff + up to 250 ms jitter |
+| Retries | 408, 429, 5xx, timeouts and network errors: 3 retries with 0.5 s / 1 s / 2 s backoff + up to 250 ms jitter, for GET only (a JSON POST is never repeated, so a paid search is not billed twice). The shared concurrency slot is held per attempt, not during backoff |
 | Content types | text/html, application/xhtml+xml, text/plain, application/rss+xml, application/atom+xml, application/xml, text/xml |
 | Failures | returned as a safe reason (never thrown, never an exception message); 401/403 add "The page may need a login." |
 | Logged-in sites | LinkedIn and Naukri are never fetched server-side; only the desktop agent reads them, in the user's own browser |

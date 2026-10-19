@@ -203,9 +203,20 @@ public static class MailHosts
     {
         if (System.Net.IPAddress.IsLoopback(a) || a.IsIPv6LinkLocal || a.IsIPv6SiteLocal || a.IsIPv6Multicast) return true;
         if (a.IsIPv4MappedToIPv6) a = a.MapToIPv4();
-        if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6) return (a.GetAddressBytes()[0] & 0xFE) == 0xFC;
+        if (a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            var v6 = a.GetAddressBytes();
+            // Only global unicast (2000::/3) is public. That also rejects ::, ::1, IPv4-compatible and NAT64 (64:ff9b::/96),
+            // unique-local fc00::/7, link-local fe80::/10 and multicast. Inside 2000::/3: 6to4 (2002::/16) and Teredo
+            // (2001::/32) can carry a private IPv4, and 2001:db8::/32 is documentation only.
+            if ((v6[0] & 0xE0) != 0x20) return true;
+            if (v6[0] == 0x20 && v6[1] == 0x02) return true;
+            if (v6[0] == 0x20 && v6[1] == 0x01 && (v6[2] == 0x0d && v6[3] == 0xb8 || v6[2] == 0 && v6[3] == 0)) return true;
+            return false;
+        }
         var b = a.GetAddressBytes();
-        return b[0] is 10 or 0 or 127 || b[0] == 169 && b[1] == 254 || b[0] == 172 && b[1] is >= 16 and <= 31 || b[0] == 192 && b[1] == 168 || b[0] == 100 && b[1] is >= 64 and <= 127 || b[0] >= 224;
+        return b[0] is 10 or 0 or 127 || b[0] == 169 && b[1] == 254 || b[0] == 172 && b[1] is >= 16 and <= 31 || b[0] == 192 && b[1] == 168 || b[0] == 100 && b[1] is >= 64 and <= 127 || b[0] >= 224
+            || b[0] == 192 && b[1] == 0 && b[2] == 0 || b[0] == 198 && b[1] is 18 or 19;
     }
 }
 
