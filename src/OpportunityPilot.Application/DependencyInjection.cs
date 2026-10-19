@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<Trends.TrendService>();
         services.AddScoped<AccountDataService>();
         services.AddSingleton<Common.ProviderBudget>();
+        services.AddScoped<Sales.LeadSearchService>();
         services.AddScoped<AiService>();
         services.AddScoped<Assistant.IAssistantService, Assistant.AssistantService>();
         services.AddScoped<IDraftRewriteService, DraftRewriteService>();

@@ -10,6 +10,8 @@ public sealed class BudgetOptions
     public int GroqPerDay { get; set; } = 1500;
     public int JsearchPerDay { get; set; } = 40;
     public int ApifyPerDay { get; set; } = 15;
+    /// <summary>Apollo lead-search calls (the RapidAPI listing bills per returned result; a call returns up to LeadSearch__PerPage).</summary>
+    public int ApolloPerDay { get; set; } = 20;
 }
 
 /// <summary>
@@ -18,12 +20,12 @@ public sealed class BudgetOptions
 /// </summary>
 public sealed class ProviderBudget(TimeProvider clock, IOptions<BudgetOptions> options)
 {
-    public const string Groq = "groq", Jsearch = "jsearch", Apify = "apify";
+    public const string Groq = "groq", Jsearch = "jsearch", Apify = "apify", Apollo = "apollo";
     private readonly ConcurrentDictionary<string, (DateOnly Day, int Used)> counts = new(StringComparer.Ordinal);
 
     public int Limit(string provider) => provider switch
     {
-        Groq => options.Value.GroqPerDay, Jsearch => options.Value.JsearchPerDay, Apify => options.Value.ApifyPerDay, _ => int.MaxValue,
+        Groq => options.Value.GroqPerDay, Jsearch => options.Value.JsearchPerDay, Apify => options.Value.ApifyPerDay, Apollo => options.Value.ApolloPerDay, _ => int.MaxValue,
     };
 
     /// <summary>Counts one call and returns true while today's cap is not reached; false (and nothing counted) once it is.</summary>

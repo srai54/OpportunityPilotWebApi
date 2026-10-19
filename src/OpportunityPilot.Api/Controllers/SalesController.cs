@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpportunityPilot.Application.Sales;
 using OpportunityPilot.Domain.Sales;
@@ -6,8 +7,14 @@ namespace OpportunityPilot.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/sales")]
-public sealed class SalesController(SalesService sales) : ControllerBase
+public sealed class SalesController(SalesService sales, LeadSearchService leads) : ControllerBase
 {
+    /// <summary>Companies or people from Apollo (RapidAPI) by keyword, country and company size. Paid per result: signed-in only, capped per day.</summary>
+    [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [HttpPost("lead-search")]
+    public async Task<ActionResult<LeadSearchResultDto>> LeadSearch(LeadSearchRequest request, CancellationToken ct) =>
+        Ok(await leads.SearchAsync(request, ct));
+
     [HttpGet("projects")]
     public async Task<ActionResult<IReadOnlyList<SalesProjectDto>>> List(
         [FromQuery] int take = 50, [FromQuery] int skip = 0, [FromQuery] SalesProjectState? state = null,

@@ -32,6 +32,7 @@ builder.Services.PostConfigure<OpportunityPilot.Application.Configuration.Featur
     if (!string.IsNullOrWhiteSpace(builder.Configuration["Groq:ApiKey"] ?? builder.Configuration["Ai:GroqApiKey"])) o.GeminiEnabled = true;
 });
 builder.Services.Configure<OpportunityPilot.Application.JobBoards.RapidApiBoardsOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.JobBoards.RapidApiBoardsOptions.Section));
+builder.Services.Configure<OpportunityPilot.Application.Sales.LeadSearchOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Sales.LeadSearchOptions.Section));
 
 builder.Services.Configure<OpportunityPilot.Application.Mail.MailOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Mail.MailOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.Integrations.IntegrationOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Integrations.IntegrationOptions.SectionName));
