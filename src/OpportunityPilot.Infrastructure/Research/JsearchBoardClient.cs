@@ -13,7 +13,7 @@ namespace OpportunityPilot.Infrastructure.Research;
 /// </summary>
 public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions> options, TimeProvider clock,
     ILogger<JsearchBoardClient> logger, Application.Common.OperationalMetrics metrics, IOptions<ApifyOptions>? apify = null,
-    Application.Common.ProviderBudget? budget = null) : IJobBoardSearch
+    Application.Common.ProviderBudget? budget = null, IOptions<SeekOptions>? seek = null) : IJobBoardSearch
 {
     private static readonly ConcurrentDictionary<string, JobBoardSearchResult> Cache = new();
     private static int? LastRemaining;
@@ -29,6 +29,8 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
             return new(request.Board, "NotConfigured", [], 0, $"Live {name} listings need a JSearch key on the server (Jsearch__Key).", null, false, source);
 
         if (request.Board == JobBoard.Naukri && apify?.Value is { Configured: true } a) return await NaukriAsync(request, a, ct);
+        // SEEK straight from seek.com.au when the key is subscribed to the SEEK listing; otherwise (null) the JSearch path below.
+        if (request.Board == JobBoard.Seek && seek?.Value is { Enabled: true } s && await SeekAsync(request, s, o.Key!, ct) is { } seekResult) return seekResult;
         // Naukri and Instahyre do not publish to Google for Jobs (live check 2026-10-14: 19 postings, none from Naukri), so
         // JSearch cannot return them; say so instead of spending the monthly quota on empty searches.
         if (request.Board is JobBoard.Naukri or JobBoard.Instahyre)
@@ -116,6 +118,54 @@ public sealed class JsearchBoardClient(HttpClient http, IOptions<JsearchOptions>
             logger.LogWarning("JSearch request failed: {Type}", e.GetType().Name);
             metrics.Record("jsearch.search", clock.GetElapsedTime(started), e.GetType().Name);
             return new(request.Board, "Failed", [], 0, "JSearch could not be reached. Try again later.", now, false, source);
+        }
+    }
+
+    /// <summary>
+    /// SEEK through the SEEK listing on RapidAPI (same key as JSearch). Null when the key is not subscribed to it, so the caller falls back
+    /// to JSearch. Remote only is applied to SEEK's own work-arrangement label. Cached per search; capped per day (Budgets__SeekPerDay).
+    /// </summary>
+    private async Task<JobBoardSearchResult?> SeekAsync(JobBoardSearchRequest request, SeekOptions s, string key, CancellationToken ct)
+    {
+        const string source = "SEEK (seek.com.au), read through the Seek Jobs Scraper API";
+        var now = clock.GetUtcNow().UtcDateTime;
+        var pathAndQuery = SeekScraper.PathAndQuery(s, request.Query, request.Location, request.Page);
+        var cacheKey = "seek|" + pathAndQuery + (request.RemoteOnly ? "|remote" : "");
+        if (Cache.TryGetValue(cacheKey, out var cached) && cached.ObservedAt > now.AddMinutes(-s.CacheMinutes)) return cached with { FromCache = true };
+        if (budget?.TryUse(Application.Common.ProviderBudget.Seek) == false)
+            return new(request.Board, "Failed", [], 0, Application.Common.ProviderBudget.ExhaustedMessage, now, false, source);
+        try
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Get, $"https://{s.Host}{pathAndQuery}");
+            message.Headers.Add("X-RapidAPI-Key", key);
+            message.Headers.Add("X-RapidAPI-Host", s.Host);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            using var response = await http.SendAsync(message, timeout.Token);
+            var code = (int)response.StatusCode;
+            int? remaining = response.Headers.TryGetValues("X-RateLimit-Requests-Remaining", out var values)
+                && int.TryParse(values.FirstOrDefault(), out var left) ? left : null;
+            if (code is 401 or 403) { logger.LogWarning("SEEK listing answered {Code}: key not subscribed, using JSearch", code); return null; }
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("SEEK listing answered {Code}", code);
+                return new(request.Board, "Failed", [], 0, code == 429
+                    ? "The SEEK search quota is used up for now. Try again later."
+                    : $"SEEK could not be read right now ({code}). Try again in a minute.", now, false, source, remaining);
+            }
+            var jobs = SeekScraper.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            if (jobs is null) return new(request.Board, "Failed", [], 0, "SEEK answered in a shape this app does not read.", now, false, source, remaining);
+            var shown = request.RemoteOnly ? jobs.Where(j => j.IsRemote).ToList() : jobs;
+            var result = new JobBoardSearchResult(request.Board, "Ready", shown, jobs.Count,
+                shown.Count == 0 ? (jobs.Count == 0 ? "SEEK had no jobs for this search. Try fewer words or another place." : "None of these SEEK jobs is marked remote.") : null,
+                now, false, source, remaining);
+            if (jobs.Count > 0) Cache[cacheKey] = result;
+            return result;
+        }
+        catch (Exception e) when ((e is HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning("SEEK listing failed: {Type}", e.GetType().Name);
+            return new(request.Board, "Failed", [], 0, "SEEK could not be read right now. Try again in a minute.", now, false, source);
         }
     }
 

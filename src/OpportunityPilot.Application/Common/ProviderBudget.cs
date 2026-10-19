@@ -12,6 +12,8 @@ public sealed class BudgetOptions
     public int ApifyPerDay { get; set; } = 15;
     /// <summary>Apollo lead-search calls. The listing bills per returned result and always returns 25 (live test 2026-10-19), so one search is 25 credits; default 1 a day.</summary>
     public int ApolloPerDay { get; set; } = 1;
+    /// <summary>SEEK listing searches (one credit each); 20 a day while testing (owner, 2026-10-19).</summary>
+    public int SeekPerDay { get; set; } = 20;
 }
 
 /// <summary>
@@ -20,12 +22,12 @@ public sealed class BudgetOptions
 /// </summary>
 public sealed class ProviderBudget(TimeProvider clock, IOptions<BudgetOptions> options)
 {
-    public const string Groq = "groq", Jsearch = "jsearch", Apify = "apify", Apollo = "apollo";
+    public const string Groq = "groq", Jsearch = "jsearch", Apify = "apify", Apollo = "apollo", Seek = "seek";
     private readonly ConcurrentDictionary<string, (DateOnly Day, int Used)> counts = new(StringComparer.Ordinal);
 
     public int Limit(string provider) => provider switch
     {
-        Groq => options.Value.GroqPerDay, Jsearch => options.Value.JsearchPerDay, Apify => options.Value.ApifyPerDay, Apollo => options.Value.ApolloPerDay, _ => int.MaxValue,
+        Groq => options.Value.GroqPerDay, Jsearch => options.Value.JsearchPerDay, Apify => options.Value.ApifyPerDay, Apollo => options.Value.ApolloPerDay, Seek => options.Value.SeekPerDay, _ => int.MaxValue,
     };
 
     /// <summary>Counts one call and returns true while today's cap is not reached; false (and nothing counted) once it is.</summary>

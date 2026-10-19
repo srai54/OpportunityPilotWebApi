@@ -24,4 +24,7 @@
     <ProjectReference Include="..\..\src\OpportunityPilot.Api\OpportunityPilot.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="seek-live-2026-10-19.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
