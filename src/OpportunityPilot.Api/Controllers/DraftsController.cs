@@ -9,9 +9,11 @@ namespace OpportunityPilot.Api.Controllers;
 public sealed class DraftsController(IDraftService drafts, IDraftPreparer preparer, IDraftRewriteService rewrites) : ControllerBase
 {
     /// <summary>Sales hands-off, step one: write the email for every shortlisted lead that has a published address. Approving and sending stay separate, explicit steps.</summary>
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.AiWrites)]
     [HttpPost("campaigns/{campaignId:guid}/drafts/prepare")]
     public async Task<ActionResult<PrepareDraftsResult>> Prepare(Guid campaignId, CancellationToken ct) => await preparer.PrepareAsync(campaignId, ct);
 
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.AiWrites)]
     [HttpPost("opportunities/{opportunityId:guid}/drafts")]
     public async Task<ActionResult<DraftDto>> Create(Guid opportunityId, CreateDraftRequest request, CancellationToken ct)
     {
@@ -46,6 +48,7 @@ public sealed class DraftsController(IDraftService drafts, IDraftPreparer prepar
 
     /// <summary>AI rewrite suggestion (not saved); apply it with PUT so the normal draft checks run.</summary>
     [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.AiWrites)]
     [HttpPost("drafts/{id:guid}/rewrite")]
     public async Task<ActionResult<DraftRewriteDto>> Rewrite(Guid id, RewriteDraftRequest request, CancellationToken ct) =>
         await rewrites.RewriteAsync(id, request, ct);

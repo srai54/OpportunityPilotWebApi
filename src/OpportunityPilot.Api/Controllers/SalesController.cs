@@ -11,6 +11,7 @@ public sealed class SalesController(SalesService sales, LeadSearchService leads)
 {
     /// <summary>Companies or people from Apollo (RapidAPI) by keyword, country and company size. Paid per result: signed-in only, capped per day.</summary>
     [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.LeadSearch)]
     [HttpPost("lead-search")]
     public async Task<ActionResult<LeadSearchResultDto>> LeadSearch(LeadSearchRequest request, CancellationToken ct) =>
         Ok(await leads.SearchAsync(request, ct));

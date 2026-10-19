@@ -10,6 +10,7 @@ public sealed class ProfilesController(IProfileService profiles, IProfileImprove
 {
     /// <summary>"Improve with AI": suggestions for the person's own fields (no new facts); nothing is saved.</summary>
     [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.AiWrites)]
     [HttpPost("improve")]
     public async Task<ActionResult<ImproveProfileDto>> Improve(ImproveProfileRequest request, CancellationToken ct) => await improve.ImproveAsync(request, ct);
 

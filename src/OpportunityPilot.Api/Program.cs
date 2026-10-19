@@ -84,7 +84,7 @@ builder.Services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
         RateLimitPartition.GetFixedWindowLimiter(
-            ctx.User.FindFirst("sub")?.Value ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            ClientKey.For(ctx),
             _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1) }));
     RateLimits.Add(o);
 });
@@ -92,11 +92,14 @@ builder.Services.AddRateLimiter(o =>
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
     // Render terminates TLS, so the forwarded scheme is needed. Do not trust client-supplied X-Forwarded-For
-    // without a stable published proxy range; anonymous rate limiting uses the actual peer address instead.
+    // without a stable published proxy range; anonymous rate limiting uses Cloudflare's CF-Connecting-IP (ClientKey).
     o.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
     o.KnownIPNetworks.Clear();
     o.KnownProxies.Clear();
 });
+
+// Requests larger than 4 MB are refused unless an endpoint allows more ([RequestSizeLimit] on imports, agent uploads, voice).
+builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = 4 * 1024 * 1024);
 
 var app = builder.Build();
 
@@ -129,6 +132,15 @@ if (allowedOrigins.Length == 0 && allowedOriginPatterns.Length == 0)
     app.Logger.LogWarning("Cors:AllowedOrigins and Cors:AllowedOriginPatterns are empty; browsers on other origins cannot call this API.");
 
 app.UseForwardedHeaders();
+// JSON only, never framed or sniffed; no referrer leaves the API.
+app.Use((ctx, next) =>
+{
+    var h = ctx.Response.Headers;
+    h.XContentTypeOptions = "nosniff";
+    h.XFrameOptions = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    return next(ctx);
+});
 app.UseCorrelationId();
 app.UseExceptionHandler();
 app.UseStatusCodePages();

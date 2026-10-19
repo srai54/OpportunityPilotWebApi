@@ -5,8 +5,8 @@ namespace OpportunityPilot.Api.Hosting;
 
 /// <summary>
 /// Per-endpoint quotas on top of the global 120 requests/minute: actions that create identities, import data, start
-/// work or spend a paid provider quota get their own, smaller budgets. Partitioned by signed-in owner, else by the peer
-/// address (forwarded headers are not trusted for this, see Program.cs).
+/// work or spend a paid provider quota get their own, smaller budgets. Partitioned by signed-in owner, else by the visitor's
+/// address (<see cref="ClientKey"/>: Cloudflare's CF-Connecting-IP, never X-Forwarded-For).
 /// </summary>
 public static class RateLimits
 {
@@ -20,6 +20,8 @@ public static class RateLimits
     public const string VoiceTranscribe = "voice-transcribe";
     public const string VoiceSpeak = "voice-speak";
     public const string Assistant = "assistant";
+    public const string AiWrites = "ai-writes";
+    public const string LeadSearch = "lead-search";
 
     /// <summary>(policy, permits, window). Kept in one place so tests and the runbook can name them.</summary>
     public static readonly (string Name, int Permits, TimeSpan Window)[] Policies =
@@ -35,13 +37,17 @@ public static class RateLimits
         (VoiceTranscribe, 30, TimeSpan.FromHours(1)),
         (VoiceSpeak, 30, TimeSpan.FromHours(1)),
         (Assistant, 30, TimeSpan.FromHours(1)),
+        // Writing, rewriting and improving with AI spend the shared daily Groq budget: 60 an hour per person (2026-10-19).
+        (AiWrites, 60, TimeSpan.FromHours(1)),
+        // Apollo lead search is paid per result; the daily budget caps the total, this caps one person (2026-10-19).
+        (LeadSearch, 10, TimeSpan.FromHours(1)),
     ];
 
     public static void Add(RateLimiterOptions options)
     {
         foreach (var (name, permits, window) in Policies)
             options.AddPolicy(name, ctx => RateLimitPartition.GetFixedWindowLimiter(
-                $"{name}:{ctx.User.FindFirst("sub")?.Value ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous"}",
+                $"{name}:{ClientKey.For(ctx)}",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = permits, Window = window }));
     }
 }

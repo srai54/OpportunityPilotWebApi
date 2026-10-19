@@ -9,6 +9,7 @@ namespace OpportunityPilot.Api.Controllers;
 public sealed class AiController(AiService ai) : ControllerBase
 {
     [Authorize(Policy = OpportunityPilot.Api.Auth.Policies.NotGuest)]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(OpportunityPilot.Api.Hosting.RateLimits.AiWrites)]
     [HttpPost("goal-previews")]
     public async Task<ActionResult<GoalPreviewDto>> Preview(GoalPreviewRequest request, CancellationToken ct) => await ai.PreviewGoalAsync(request, ct);
 
