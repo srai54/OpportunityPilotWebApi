@@ -86,8 +86,8 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         }
         foreach (var (site, jobsOfSite, status) in reads)
         {
-            // Adzuna was searched with the words and the place, over full descriptions it sends only a snippet of, so only "remote only" is applied again.
-            var matched = jobsOfSite.Where(j => site == FeedSite.Adzuna || KeyedFeeds.Sites.Contains(site) ? !remoteOnly || j.Job.IsRemote : Matches(j.Job, query, location, remoteOnly)).ToList();
+            // Adzuna and the keyed APIs were searched with the words and the place (Freelancer.com is filtered again: its search is loose), over full descriptions it sends only a snippet of, so only "remote only" is applied again.
+            var matched = jobsOfSite.Where(j => site == FeedSite.Adzuna || (KeyedFeeds.Sites.Contains(site) && site != FeedSite.Freelancer) ? !remoteOnly || j.Job.IsRemote : Matches(j.Job, query, location, remoteOnly)).ToList();
             statuses.Add(status with { Matched = matched.Count });
             jobs.AddRange(matched);
         }
