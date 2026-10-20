@@ -162,7 +162,7 @@ public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http,
 
     /// <summary>
     /// <c>{ result: { projects: [ { id, title, seo_url, preview_description, type, budget: { minimum, maximum }, currency: { code }, time_submitted } ] } }</c>.
-    /// Freelance projects: contract work by definition, remote by default, the client is not named by the API.
+    /// Freelance projects: contract work by definition, remote by default. The API does not name the client, so the company is left empty (Sales groups by company and leaves these out; Candidate lists them as projects).
     /// </summary>
     public static List<JobBoardJobDto>? Freelancer(string json) => Map(json,
         root => root.TryGetProperty("result", out var res) ? Arr(res, "projects") : null,
@@ -176,7 +176,7 @@ public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http,
             DateTime? posted = p.TryGetProperty("time_submitted", out var t) && t.ValueKind == JsonValueKind.Number && t.TryGetInt64(out var s) && s > 0
                 ? DateTimeOffset.FromUnixTimeSeconds(s).UtcDateTime : null;
             var kind = Str(p, "type") == "hourly" ? "per hour" : "fixed price";
-            var job = Job("freelancer", Str(p, "id"), Str(p, "title"), "Freelancer.com client", url, "Remote", "CONTRACTOR", posted, Str(p, "preview_description") ?? Str(p, "description"), true);
+            var job = Job("freelancer", Str(p, "id"), Str(p, "title"), "", url, "Remote", "CONTRACTOR", posted, Str(p, "preview_description") ?? Str(p, "description"), true);
             return job is null ? null : job with { SalaryMin = min, SalaryMax = max, SalaryCurrency = currency, SalaryPeriod = kind };
         });
 
