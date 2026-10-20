@@ -12,7 +12,7 @@ namespace OpportunityPilot.Application.JobBoards;
 /// The job sites "Search all" can read live. All are free public feeds without a key, except Adzuna, which needs the server's
 /// <c>Adzuna__AppId</c>/<c>Adzuna__AppKey</c> and reports NotConfigured (without calling out) when they are missing.
 /// </summary>
-public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads, HackerNews, Jooble, Careerjet, Findwork, UsaJobs, Freelancer }
+public enum FeedSite { Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna, Instahyre, WorkingNomads, HackerNews, Jooble, Careerjet, Findwork, UsaJobs, Freelancer, Reed, Arbeitsagentur }
 
 public sealed record FeedSiteStatus(string Site, string Status, int Listed, int Matched, string? Message, bool FromCache);
 
@@ -64,6 +64,8 @@ public sealed class FeedSearchService(IWebFetcher fetcher, IContentParser parser
         FeedSite.Findwork => "Findwork",
         FeedSite.UsaJobs => "USAJOBS",
         FeedSite.Freelancer => "Freelancer.com",
+        FeedSite.Reed => "Reed",
+        FeedSite.Arbeitsagentur => "Bundesagentur für Arbeit",
         _ => "Remote OK"
     };
 
