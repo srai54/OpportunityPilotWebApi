@@ -45,6 +45,8 @@ public sealed class StaffingInterview : IOwned
     public string? Location { get; private set; }
     public string? CandidateNotes { get; private set; }
     public string? InternalNotes { get; private set; }
+    /// <summary>Prep tips for the candidate (who they meet, what to prepare). Shown on the progress link only when the team shares prep.</summary>
+    public string? CandidatePrep { get; private set; }
     public NotificationStatus CandidateNotification { get; private set; }
     public DateTime? CandidateNotifiedAt { get; private set; }
     public int Version { get; private set; }
@@ -72,6 +74,10 @@ public sealed class StaffingInterview : IOwned
         Version++;
         UpdatedAt = utcNow;
     }
+
+    /// <summary>Sets the candidate's prep tips. It does not count as a change to the interview (no new version, same "last change"),
+    /// so scheduling and the progress stages behave as before.</summary>
+    public void SetCandidatePrep(string? prep) => CandidatePrep = Guard.Optional(prep, MaxNotesLength, nameof(prep));
 
     public void Finish(InterviewState outcome, DateTime utcNow)
     {

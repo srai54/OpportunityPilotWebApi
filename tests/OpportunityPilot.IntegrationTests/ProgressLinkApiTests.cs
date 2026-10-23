@@ -70,6 +70,53 @@ public class ProgressLinkApiTests(PostgresApiFactory factory) : IClassFixture<Po
     }
 
     [Fact]
+    public async Task Note_prep_and_suggested_roles_show_only_when_shared_and_the_candidate_can_answer()
+    {
+        var (client, candidate) = await SeedAsync("progress-extras@example.test");
+        var account = await (await client.PostAsJsonAsync("/api/v1/staffing/accounts", new { name = "Globex", source = "Manual" })).Json(HttpStatusCode.Created);
+        var role = await (await client.PostAsJsonAsync($"/api/v1/staffing/accounts/{account.Id()}/deals", new { title = "Lead React developer", source = "Manual", estimatedValue = 120000, currency = "EUR" })).Json(HttpStatusCode.Created);
+        var link = await client.GetJson($"/api/v1/staffing/candidates/{candidate.Id()}/progress-link");
+        var interviewId = link.GetProperty("interviews").EnumerateArray().Single().Id();
+        var prep = await (await client.PutAsJsonAsync($"/api/v1/staffing/interviews/{interviewId}/prep", new { prep = "Revise system design; Meera leads the call" })).Json(HttpStatusCode.OK);
+        Assert.Equal("Revise system design; Meera leads the call", prep.Str("prep"));
+
+        // Old-style link (no new items): nothing new appears.
+        var created = await (await client.PostAsJsonAsync($"/api/v1/staffing/candidates/{candidate.Id()}/progress-link", new { show = new[] { "Interviews" }, note = "Hidden note", roleIds = new[] { role.Id() } })).Json(HttpStatusCode.OK);
+        var anonymous = factory.CreateClient();
+        var view = await (await anonymous.GetAsync($"/api/v1/public/progress/{created.Str("token")}")).Json(HttpStatusCode.OK);
+        Assert.Equal(JsonValueKind.Null, view.GetProperty("note").ValueKind);
+        Assert.Equal(JsonValueKind.Null, view.GetProperty("roles").ValueKind);
+        Assert.Equal(JsonValueKind.Null, view.GetProperty("items").EnumerateArray().Single().GetProperty("interview").GetProperty("prep").ValueKind);
+
+        // Shared: note, prep and the suggested role (title only; never the value).
+        created = await (await client.PostAsJsonAsync($"/api/v1/staffing/candidates/{candidate.Id()}/progress-link", new { show = new[] { "Interviews", "Note", "Prep", "Roles" }, note = "Great news: the client liked your profile." })).Json(HttpStatusCode.OK);
+        var token = created.Str("token");
+        view = await (await anonymous.GetAsync($"/api/v1/public/progress/{token}")).Json(HttpStatusCode.OK);
+        Assert.Equal("Great news: the client liked your profile.", view.Str("note"));
+        Assert.Equal("Revise system design; Meera leads the call", view.GetProperty("items").EnumerateArray().Single().GetProperty("interview").Str("prep"));
+        var suggested = view.GetProperty("roles").EnumerateArray().Single();
+        Assert.Equal("Lead React developer", suggested.Str("title"));
+        Assert.Equal(JsonValueKind.Null, suggested.GetProperty("client").ValueKind);
+        Assert.Equal("None", suggested.Str("answer"));
+        Assert.DoesNotContain("120000", view.GetRawText());
+        Assert.DoesNotContain("EUR", view.GetRawText());
+
+        // The candidate answers; the sales team sees it; a bad answer or someone else's role is refused.
+        var answered = await (await anonymous.PostAsJsonAsync($"/api/v1/public/progress/{token}/roles/{suggested.Id()}", new { answer = "Interested" })).Json(HttpStatusCode.OK);
+        Assert.Equal("Interested", answered.Str("answer"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await anonymous.PostAsJsonAsync($"/api/v1/public/progress/{token}/roles/{suggested.Id()}", new { answer = "Maybe" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.PostAsJsonAsync($"/api/v1/public/progress/{token}/roles/{Guid.NewGuid()}", new { answer = "Interested" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.PostAsJsonAsync($"/api/v1/public/progress/not-a-token/roles/{suggested.Id()}", new { answer = "Interested" })).StatusCode);
+        link = await client.GetJson($"/api/v1/staffing/candidates/{candidate.Id()}/progress-link");
+        Assert.Equal("Interested", link.GetProperty("roles").EnumerateArray().Single().Str("answer"));
+        Assert.Equal("Great news: the client liked your profile.", link.Str("note"));
+
+        // Another team cannot write prep on this interview.
+        var other = PostgresApiFactory.ClientFor(factory, "progress-extras-other@example.test");
+        Assert.Equal(HttpStatusCode.NotFound, (await other.PutAsJsonAsync($"/api/v1/staffing/interviews/{interviewId}/prep", new { prep = "x" })).StatusCode);
+    }
+
+    [Fact]
     public async Task Revoking_stops_the_link_and_nobody_else_can_make_one()
     {
         var (client, candidate) = await SeedAsync("progress-revoke@example.test");

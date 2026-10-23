@@ -22,6 +22,7 @@ builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions
 builder.Services.Configure<AdzunaOptions>(builder.Configuration.GetSection(AdzunaOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.JobBoards.JobFeedOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.JobBoards.JobFeedOptions.Section));
 builder.Services.Configure<JsearchOptions>(builder.Configuration.GetSection(JsearchOptions.Section));
+builder.Services.Configure<OpportunityPilot.Application.Access.AccessOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Access.AccessOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.Common.BudgetOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.Common.BudgetOptions.Section));
 builder.Services.Configure<OpportunityPilot.Application.JobBoards.ApifyOptions>(builder.Configuration.GetSection(OpportunityPilot.Application.JobBoards.ApifyOptions.Section));
 // The owner set the token as Apify_Token_Value on Render; Apify__Token works too.

@@ -200,4 +200,60 @@ public class InterviewTrackerTests
         await s.Pipeline.RequestInterviewAsync(s.Deal.Id, new RequestInterviewRequest(s.Submission.Id), default);
         Assert.Equal("The client asked for an interview", (await view.ViewAsync(link.Token!, default)).Items.Single().Stage);
     }
+
+    [Fact]
+    public async Task Note_prep_and_suggested_roles_reach_the_candidate_only_when_shared()
+    {
+        var s = await StaffingSetup();
+        // Two rounds on one submission: the candidate's page shows the latest, so prep is offered only for that one.
+        var earlier = new StaffingInterview(s.Owner, s.Deal.Id, s.Submission.Id, 1, T0);
+        earlier.Schedule(T0.AddHours(5), "Asia/Kolkata", 45, InterviewMode.Video, null, null, null, T0);
+        var interview = new StaffingInterview(s.Owner, s.Deal.Id, s.Submission.Id, 2, T0);
+        interview.Schedule(T0.AddDays(1), "Asia/Kolkata", 45, InterviewMode.Video, "https://meet.example.com/r1", "Tech round", "internal", T0);
+        var other = new StaffingDeal(s.Owner, s.Deal.AccountId, null, "Lead React developer", StaffingDealSource.Manual, T0);
+        s.Db.AddRange(earlier, interview, other);
+        await s.Db.SaveChangesAsync();
+        var versionBefore = interview.Version;
+        var links = new ProgressLinkService(s.Db, new Owner(s.Owner), s.Clock);
+        var view = new ProgressViewService(s.Db, s.Clock);
+
+        var share = await links.GetAsync(s.Candidate.Id, default);
+        Assert.Equal(interview.Id, share.Interviews!.Single().Id);
+        await links.SetPrepAsync(interview.Id, new SetInterviewPrepRequest("Revise system design"), default);
+        Assert.Equal(versionBefore, (await s.Db.StaffingInterviews.SingleAsync(i => i.Id == interview.Id)).Version);
+
+        // Not ticked: nothing new shows, even though a note and a role were given.
+        var link = await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Interviews"], "Hidden", [other.Id]), default);
+        var page = await view.ViewAsync(link.Token!, default);
+        Assert.Null(page.Note);
+        Assert.Null(page.Roles);
+        Assert.Null(page.Items.Single().Interview!.Prep);
+
+        // Ticked: note, prep and the role (client only with Client).
+        link = await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Interviews", "Note", "Prep", "Roles", "Client"], "Client liked your profile"), default);
+        page = await view.ViewAsync(link.Token!, default);
+        Assert.Equal("Client liked your profile", page.Note);
+        Assert.Equal("Revise system design", page.Items.Single().Interview!.Prep);
+        var role = page.Roles!.Single();
+        Assert.Equal(("Lead React developer", "Contoso", "None"), (role.Title, role.Client, role.Answer));
+
+        var answered = await view.AnswerRoleAsync(link.Token!, role.Id, new RoleAnswerRequest("NotForMe"), default);
+        Assert.Equal("NotForMe", answered.Answer);
+        Assert.Equal("NotForMe", (await links.GetAsync(s.Candidate.Id, default)).Roles!.Single().Answer);
+        await Assert.ThrowsAsync<RequestValidationException>(() => view.AnswerRoleAsync(link.Token!, role.Id, new RoleAnswerRequest("None"), default));
+        await Assert.ThrowsAsync<NotFoundException>(() => view.AnswerRoleAsync("not-a-token", role.Id, new RoleAnswerRequest("Interested"), default));
+
+        // Re-sharing the same roles keeps the answer; an empty list removes them.
+        await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Roles"], null, [other.Id]), default);
+        Assert.Equal("NotForMe", (await links.GetAsync(s.Candidate.Id, default)).Roles!.Single().Answer);
+        await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Roles"], null, []), default);
+        Assert.Empty((await links.GetAsync(s.Candidate.Id, default)).Roles!);
+
+        // Another team's role cannot be suggested; another team cannot write prep.
+        var stranger = new StaffingDeal(Guid.NewGuid(), Guid.NewGuid(), null, "Not yours", StaffingDealSource.Manual, T0);
+        s.Db.Add(stranger);
+        await s.Db.SaveChangesAsync();
+        await Assert.ThrowsAsync<RequestValidationException>(() => links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Roles"], null, [stranger.Id]), default));
+        await Assert.ThrowsAsync<NotFoundException>(() => new ProgressLinkService(s.Db, new Owner(Guid.NewGuid()), s.Clock).SetPrepAsync(interview.Id, new SetInterviewPrepRequest("x"), default));
+    }
 }

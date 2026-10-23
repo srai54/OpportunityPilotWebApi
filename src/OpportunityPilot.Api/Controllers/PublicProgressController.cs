@@ -13,4 +13,8 @@ public sealed class PublicProgressController(ProgressViewService view) : Control
 {
     [HttpGet("progress/{token}")]
     public async Task<ActionResult<ProgressViewDto>> Progress(string token, CancellationToken ct) => Ok(await view.ViewAsync(token, ct));
+
+    /// <summary>The candidate answers a role the recruiter suggested: Interested or NotForMe.</summary>
+    [HttpPost("progress/{token}/roles/{id:guid}")]
+    public async Task<ActionResult<ProgressRoleDto>> AnswerRole(string token, Guid id, RoleAnswerRequest request, CancellationToken ct) => Ok(await view.AnswerRoleAsync(token, id, request, ct));
 }

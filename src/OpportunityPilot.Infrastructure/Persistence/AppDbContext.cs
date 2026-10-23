@@ -69,6 +69,8 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<Domain.Mail.MailboxConnection> MailboxConnections => Set<Domain.Mail.MailboxConnection>();
     public DbSet<Domain.Integrations.IntegrationConnection> IntegrationConnections => Set<Domain.Integrations.IntegrationConnection>();
     public DbSet<CandidateProgressLink> CandidateProgressLinks => Set<CandidateProgressLink>();
+    public DbSet<ProgressRoleSuggestion> ProgressRoleSuggestions => Set<ProgressRoleSuggestion>();
+    public DbSet<Domain.Access.UserAccess> UserAccess => Set<Domain.Access.UserAccess>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
     public DbSet<Domain.Circle.CirclePerson> CirclePeople => Set<Domain.Circle.CirclePerson>();
     public DbSet<Domain.Interviews.JobInterview> JobInterviews => Set<Domain.Interviews.JobInterview>();
@@ -169,9 +171,30 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
             e.Property(x => x.Show).HasConversion<int>();
+            e.Property(x => x.Note).HasMaxLength(CandidateProgressLink.MaxNoteLength);
             // The public page finds a link by the hash of the token, so it must be unique and fast to look up.
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => new { x.OwnerId, x.CandidateId });
+        });
+
+        modelBuilder.Entity<Domain.Access.UserAccess>(e =>
+        {
+            e.ToTable("user_access");
+            e.HasKey(x => x.OwnerId);
+            e.Property(x => x.OwnerId).ValueGeneratedNever();
+            e.Property(x => x.Email).HasMaxLength(Domain.Access.UserAccess.MaxEmailLength);
+            e.Property(x => x.Role).HasConversion<int>();
+            e.Ignore(x => x.RoleChosen);
+            e.HasIndex(x => x.LastSeenAt);
+        });
+
+        modelBuilder.Entity<ProgressRoleSuggestion>(e =>
+        {
+            e.ToTable("progress_role_suggestions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Answer).HasConversion<string>().HasMaxLength(16);
+            e.HasIndex(x => new { x.OwnerId, x.CandidateId, x.DealId }).IsUnique();
         });
 
         modelBuilder.Entity<Domain.Ai.AiUsage>(e =>
@@ -648,6 +671,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.Location).HasMaxLength(StaffingInterview.MaxLocationLength);
             e.Property(x => x.CandidateNotes).HasMaxLength(StaffingInterview.MaxNotesLength);
             e.Property(x => x.InternalNotes).HasMaxLength(StaffingInterview.MaxNotesLength);
+            e.Property(x => x.CandidatePrep).HasMaxLength(StaffingInterview.MaxNotesLength);
             e.Property(x => x.CandidateNotification).HasConversion<string>().HasMaxLength(32);
             e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne<StaffingDeal>().WithMany().HasForeignKey(x => x.DealId).OnDelete(DeleteBehavior.Cascade);

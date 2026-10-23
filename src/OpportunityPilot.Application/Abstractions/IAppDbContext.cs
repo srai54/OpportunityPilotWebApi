@@ -62,6 +62,8 @@ public interface IAppDbContext
     DbSet<Domain.Mail.MailboxConnection> MailboxConnections { get; }
     DbSet<Domain.Integrations.IntegrationConnection> IntegrationConnections { get; }
     DbSet<CandidateProgressLink> CandidateProgressLinks { get; }
+    DbSet<ProgressRoleSuggestion> ProgressRoleSuggestions { get; }
+    DbSet<Domain.Access.UserAccess> UserAccess { get; }
     DbSet<UserEvent> UserEvents { get; }
     DbSet<Domain.Circle.CirclePerson> CirclePeople { get; }
     DbSet<Domain.Interviews.JobInterview> JobInterviews { get; }

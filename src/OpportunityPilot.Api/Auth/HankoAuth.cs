@@ -103,6 +103,26 @@ public static class HankoAuth
     /// The request identity for a validated Hanko token: "sub" becomes the derived owner id, the Hanko user id is kept
     /// as "hanko_sub". Null when the token has no subject.
     /// </summary>
+    /// <summary>
+    /// The user's email from a Hanko session token, when the project includes it: either a plain string or an object
+    /// {"address": ..., "is_verified": ...}. An address marked unverified is ignored. Used only as a label and to recognise the admin.
+    /// </summary>
+    public static string? EmailFrom(ClaimsPrincipal? validated)
+    {
+        var raw = validated?.FindFirst("email")?.Value?.Trim();
+        if (string.IsNullOrEmpty(raw)) return null;
+        if (!raw.StartsWith('{')) return raw.Contains('@') && raw.Length <= 256 ? raw : null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("is_verified", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.False) return null;
+            var address = root.TryGetProperty("address", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.String ? a.GetString()?.Trim() : null;
+            return address is { Length: > 0 and <= 256 } && address.Contains('@') ? address : null;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
+
     public static ClaimsPrincipal? ToOwnerPrincipal(ClaimsPrincipal? validated)
     {
         var hankoUserId = validated?.FindFirst("sub")?.Value;
@@ -114,6 +134,7 @@ public static class HankoAuth
             new(HankoSubjectClaim, hankoUserId),
             new(ProviderClaim, "hanko")
         };
+        if (EmailFrom(validated) is { } email) claims.Add(new Claim("email", email));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName, "sub", null));
     }
 

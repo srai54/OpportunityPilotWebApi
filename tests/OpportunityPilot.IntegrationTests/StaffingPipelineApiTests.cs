@@ -229,7 +229,7 @@ public class StaffingPipelineApiTests(PostgresApiFactory factory) : IClassFixtur
 
         var meeting = await (await client.PostAsJsonAsync($"{api}/meetings", new
         {
-            title = "Discovery call", startsAt = "2026-10-21T05:00:00Z", timeZone = "Asia/Kolkata", durationMinutes = 30, invitees = "rao@beta.test", agenda = "Scope", link = "https://meet.example.test/x"
+            title = "Discovery call", startsAt = DateTime.UtcNow.AddDays(3).ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "Asia/Kolkata", durationMinutes = 30, invitees = "rao@beta.test", agenda = "Scope", link = "https://meet.example.test/x"
         })).Json(HttpStatusCode.OK);
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync($"{api}/meetings/{meeting.Id()}/invited", new { expectedVersion = meeting.Int("version"), receipt = "x" })).StatusCode);
         meeting = await (await client.PostAsJsonAsync($"{api}/meetings/{meeting.Id()}/approve", new { expectedVersion = meeting.Int("version") })).Json(HttpStatusCode.OK);
@@ -262,7 +262,7 @@ public class StaffingPipelineApiTests(PostgresApiFactory factory) : IClassFixtur
         await (await client.PostAsJsonAsync($"{api}/feedback", new { submissionId = submission.Id(), source = "Internal", decision = "None", detail = "n", sharedWithCandidate = false })).Json(HttpStatusCode.OK);
         await (await client.PostAsJsonAsync($"{api}/offers", new { submissionId = submission.Id(), clientRate = 10, currency = "USD", unit = "Hour" })).Json(HttpStatusCode.OK);
         await (await client.PostAsJsonAsync($"{api}/messages", new { channel = "Email", recipient = "a@b.test", body = "Hi" })).Json(HttpStatusCode.OK);
-        await (await client.PostAsJsonAsync($"{api}/meetings", new { title = "Call", startsAt = "2026-10-21T05:00:00Z", timeZone = "UTC", durationMinutes = 30, invitees = "a@b.test" })).Json(HttpStatusCode.OK);
+        await (await client.PostAsJsonAsync($"{api}/meetings", new { title = "Call", startsAt = DateTime.UtcNow.AddDays(3).ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC", durationMinutes = 30, invitees = "a@b.test" })).Json(HttpStatusCode.OK);
         await (await client.PostAsJsonAsync("/api/v1/staffing/rate-cards", new { name = "Card", currency = "USD", lines = new[] { new { role = "Dev", seniority = (string?)null, unit = "Hour", rate = 10m } } })).Json(HttpStatusCode.OK);
 
         // A researched campaign too: deleting it must not trip over evidence links.

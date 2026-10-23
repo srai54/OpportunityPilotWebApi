@@ -188,6 +188,7 @@ public static class AuthSetup
         builder.Services.AddHttpClient(nameof(SupabaseJwks), c => c.Timeout = TimeSpan.FromSeconds(10));
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+        builder.Services.AddScoped<OpportunityPilot.Application.Access.ICallerInfo, CallerInfo>();
     }
 }
 

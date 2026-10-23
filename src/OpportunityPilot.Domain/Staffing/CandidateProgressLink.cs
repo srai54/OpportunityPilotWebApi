@@ -10,7 +10,13 @@ public enum ProgressShow
     Client = 1,
     Role = 2,
     Interviews = 4,
-    Offer = 8
+    Offer = 8,
+    /// <summary>A short note from the recruiter at the top of the page.</summary>
+    Note = 16,
+    /// <summary>Prep tips the recruiter wrote for each scheduled interview.</summary>
+    Prep = 32,
+    /// <summary>Open roles the recruiter suggests; the candidate can answer "interested" or "not for me".</summary>
+    Roles = 64
 }
 
 /// <summary>
@@ -20,9 +26,11 @@ public enum ProgressShow
 /// </summary>
 public sealed class CandidateProgressLink : IOwned
 {
+    public const int MaxNoteLength = 1_000;
+
     private CandidateProgressLink() { }
 
-    public CandidateProgressLink(Guid ownerId, Guid candidateId, string tokenHash, ProgressShow show, DateTime utcNow)
+    public CandidateProgressLink(Guid ownerId, Guid candidateId, string tokenHash, ProgressShow show, DateTime utcNow, string? note = null)
     {
         if (ownerId == Guid.Empty) throw new ArgumentException("Owner is required.", nameof(ownerId));
         if (candidateId == Guid.Empty) throw new ArgumentException("Candidate is required.", nameof(candidateId));
@@ -32,6 +40,7 @@ public sealed class CandidateProgressLink : IOwned
         CandidateId = candidateId;
         TokenHash = tokenHash;
         Show = show;
+        Note = Guard.Optional(note, MaxNoteLength, nameof(note));
         CreatedAt = utcNow;
     }
 
@@ -40,6 +49,8 @@ public sealed class CandidateProgressLink : IOwned
     public Guid CandidateId { get; private set; }
     public string TokenHash { get; private set; } = string.Empty;
     public ProgressShow Show { get; private set; }
+    /// <summary>The recruiter's note; shown only when <see cref="ProgressShow.Note"/> is chosen.</summary>
+    public string? Note { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? RevokedAt { get; private set; }
 

@@ -23,6 +23,37 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Access.UserAccess", b =>
+                {
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("RoleSetAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("RoleSetByAdmin")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("OwnerId");
+
+                    b.HasIndex("LastSeenAt");
+
+                    b.ToTable("user_access", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Agents.AgentKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1645,6 +1676,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
 
@@ -1667,6 +1702,39 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.HasIndex("OwnerId", "CandidateId");
 
                     b.ToTable("candidate_progress_links", "app");
+                });
+
+            modelBuilder.Entity("OpportunityPilot.Domain.Staffing.ProgressRoleSuggestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DealId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("SuggestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "CandidateId", "DealId")
+                        .IsUnique();
+
+                    b.ToTable("progress_role_suggestions", "app");
                 });
 
             modelBuilder.Entity("OpportunityPilot.Domain.Staffing.StaffingAccount", b =>
@@ -2051,6 +2119,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
 
                     b.Property<DateTime?>("CandidateNotifiedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CandidatePrep")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

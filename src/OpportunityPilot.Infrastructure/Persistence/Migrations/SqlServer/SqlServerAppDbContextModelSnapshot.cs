@@ -23,6 +23,37 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Access.UserAccess", b =>
+                {
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RoleSetAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("RoleSetByAdmin")
+                        .HasColumnType("bit");
+
+                    b.HasKey("OwnerId");
+
+                    b.HasIndex("LastSeenAt");
+
+                    b.ToTable("user_access", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Agents.AgentKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1646,6 +1677,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1668,6 +1703,39 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
                     b.HasIndex("OwnerId", "CandidateId");
 
                     b.ToTable("candidate_progress_links", "app");
+                });
+
+            modelBuilder.Entity("OpportunityPilot.Domain.Staffing.ProgressRoleSuggestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DealId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SuggestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "CandidateId", "DealId")
+                        .IsUnique();
+
+                    b.ToTable("progress_role_suggestions", "app");
                 });
 
             modelBuilder.Entity("OpportunityPilot.Domain.Staffing.StaffingAccount", b =>
@@ -2052,6 +2120,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.SqlServer
 
                     b.Property<DateTime?>("CandidateNotifiedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("CandidatePrep")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");

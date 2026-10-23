@@ -14,6 +14,9 @@ public sealed class StaffingPipelineController(StaffingPipelineService pipeline,
     [HttpPost("candidates/{id:guid}/progress-link")]
     public async Task<ActionResult<ProgressLinkDto>> CreateProgressLink(Guid id, CreateProgressLinkRequest request, CancellationToken ct) => Ok(await progress.CreateAsync(id, request, ct));
 
+    [HttpPut("interviews/{id:guid}/prep")]
+    public async Task<ActionResult<ShareInterviewDto>> SetInterviewPrep(Guid id, SetInterviewPrepRequest request, CancellationToken ct) => Ok(await progress.SetPrepAsync(id, request, ct));
+
     [HttpDelete("candidates/{id:guid}/progress-link")]
     public async Task<IActionResult> RevokeProgressLink(Guid id, CancellationToken ct) { await progress.RevokeAsync(id, ct); return NoContent(); }
 
