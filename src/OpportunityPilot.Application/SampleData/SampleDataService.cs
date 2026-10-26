@@ -24,7 +24,8 @@ public sealed record SampleDataRequest(string? Workspace);
 /// </param>
 public sealed record SampleDataResultDto(
     bool SalesCreated, int Accounts, int Contacts, int Candidates, int Deals, int Submissions, int StaffingInterviews, int ProgressLinks,
-    bool CandidateCreated, int Profiles, int Campaigns, int Sources, Guid? ResearchJobId, int JobInterviews, bool JobInterviewsPending);
+    bool CandidateCreated, int Profiles, int Campaigns, int Sources, Guid? ResearchJobId, int JobInterviews, bool JobInterviewsPending,
+    string? ProgressToken = null);
 
 /// <summary>
 /// Fills an empty account with realistic, clearly marked demo records (names end in <see cref="Suffix"/>) so a new user can try every
@@ -58,10 +59,10 @@ public sealed class SampleDataService(
         var s = sales ? await SalesAsync(ct) : SalesPart.None;
         var c = candidate ? await CandidateAsync(ct) : CandidatePart.None;
         return new(s.Created, s.Accounts, s.Contacts, s.Candidates, s.Deals, s.Submissions, s.Interviews, s.ProgressLinks,
-            c.Created, c.Profiles, c.Campaigns, c.Sources, c.ResearchJobId, c.Interviews, c.InterviewsPending);
+            c.Created, c.Profiles, c.Campaigns, c.Sources, c.ResearchJobId, c.Interviews, c.InterviewsPending, s.ProgressToken);
     }
 
-    private sealed record SalesPart(bool Created, int Accounts, int Contacts, int Candidates, int Deals, int Submissions, int Interviews, int ProgressLinks)
+    private sealed record SalesPart(bool Created, int Accounts, int Contacts, int Candidates, int Deals, int Submissions, int Interviews, int ProgressLinks, string? ProgressToken = null)
     {
         public static readonly SalesPart None = new(false, 0, 0, 0, 0, 0, 0, 0);
     }
@@ -133,10 +134,24 @@ public sealed class SampleDataService(
         await pipeline.ScheduleInterviewAsync(dotnet.Id, phone.Id, new(IstToUtc(3, 15, 0), "Asia/Kolkata", 30, InterviewMode.Phone,
             "Meera Kapoor calls Priya on +91 98111 22334", "Short call with the hiring manager.", "Sample interview", phone.Version), ct);
 
+        // Priya (sample) uses every candidate feature (2026-10-26): job descriptions, interview prep, a note, a suggested role, a journey,
+        // a reviewed resume, and a link that shares all of it. Its code goes back to the browser, so the candidate view opens it at once.
+        foreach (var (dealId, jd) in new[] { (dotnet.Id, SampleJdDotnet), (data.Id, SampleJdData) })
+            (await db.StaffingDeals.FirstAsync(d => d.Id == dealId && d.OwnerId == user.OwnerId, ct)).SetJobDescription(jd);
+        foreach (var iv in await db.StaffingInterviews.Where(i => i.OwnerId == user.OwnerId && i.SubmissionId == submission.Id).ToListAsync(ct))
+            iv.SetCandidatePrep(iv.Round == 1
+                ? "Revise C# async/await, EF Core performance and how you would design an idempotent payments API. Have the claims pipeline story ready (STAR)."
+                : "Meera Kapoor (hiring manager) calls you. Be ready to explain why payments, your notice period, and one question about the team.");
+        await db.SaveChangesAsync(ct);
         await SeedJourneysAsync(ct);
-        await progress.CreateAsync(priya.Id, new(["Client", "Role", "Interviews", "Journey"]), ct);
-        return new(true, 2, 4, 3, 2, 1, 2, 1);
+        var link = await progress.CreateAsync(priya.Id, new(["Client", "Role", "Interviews", "Offer", "Note", "Prep", "Roles", "Resume", "Journey"],
+            "Great news: Northwind liked your profile. Two rounds are booked; prep notes are under each interview. Also have a look at the Globex role.",
+            [data.Id]), ct);
+        return new(true, 2, 4, 3, 2, 1, 2, 1, link.Token);
     }
+
+    private const string SampleJdDotnet = "Northwind Technologies is building a new payments platform. We need senior .NET developers (5+ years) with C#, .NET 8, ASP.NET Core, Entity Framework Core, Azure, Azure Service Bus, SQL Server, Docker and Kubernetes. Microservices and event-driven design; REST APIs; CI/CD with Azure DevOps. Contract, 12 months, hybrid in Gurugram.";
+    private const string SampleJdData = "Globex Fintech is extending its data science team. Python, pandas, scikit-learn, SQL, AWS SageMaker, MLflow; experience with fraud or risk models. Contract, 6 months, remote (India).";
 
     private const string SampleResumeJson = """{"name":"Priya Sharma (sample)","title":"Senior .NET developer | Azure | 6 years","summary":"Software engineer with 6 years building .NET payment and claims platforms on Azure. Designs microservices with ASP.NET Core, Azure Service Bus and SQL Server; processed 4M+ records daily.","skills":[{"label":"Backend","items":"C#, .NET 8, ASP.NET Core, Entity Framework Core"},{"label":"Cloud","items":"Azure, Azure Service Bus, Azure Functions, Key Vault"},{"label":"Databases","items":"SQL Server, Redis"}],"projects":[{"name":"ClaimSure - Claims Data Platform","details":"Claims platform for 150,000+ users.","teamSize":"17","technology":"C#, .NET, Azure Service Bus, SQL Server, Docker","responsibilities":"Built 5 microservices in .NET\nPublished events with Azure Service Bus topics\nTuned SQL Server queries for 4M+ records a day"}]}""";
 
@@ -154,6 +169,11 @@ public sealed class SampleDataService(
             {
                 c.SetJourneyProfile(now.AddDays(-45), "Meera Kapoor", true);
                 Add(c, JourneyKind.Certification, "AZ-900 Azure Fundamentals", "Passed in the first week", -41);
+                Add(c, JourneyKind.Learning, "C# advanced patterns", "Async, generics, LINQ performance", -38, 6);
+                Add(c, JourneyKind.Learning, "System design primer", "Queues, idempotency, sagas", -27, 8);
+                Add(c, JourneyKind.Learning, "Kubernetes for developers", "Deployments, services, Helm basics", -12, 10);
+                Add(c, JourneyKind.InterviewPrep, "Prep: Northwind payments domain", "Read their product pages; drafted 3 questions", -2);
+                Add(c, JourneyKind.Note, "Resume shared with Meera for review", null, -5);
                 Add(c, JourneyKind.Learning, "Microservices on Azure", "Service Bus topics, Durable Functions, Key Vault", -32, 24);
                 Add(c, JourneyKind.InterviewPrep, "Mock interview with the delivery lead", "System design 4/5, communication 4/5", -24);
                 Add(c, JourneyKind.Project, "Built a claims event pipeline", ".NET, Azure Service Bus, SQL Server; repo shared with sales", -16);
