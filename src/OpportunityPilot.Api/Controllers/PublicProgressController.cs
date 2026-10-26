@@ -9,7 +9,7 @@ namespace OpportunityPilot.Api.Controllers;
 [AllowAnonymous]
 [Route("api/v1/public")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.PublicProgress)]
-public sealed class PublicProgressController(ProgressViewService view, ResumeService resumes) : ControllerBase
+public sealed class PublicProgressController(ProgressViewService view, ResumeService resumes, JourneyService journey) : ControllerBase
 {
     [HttpGet("progress/{token}")]
     public async Task<ActionResult<ProgressViewDto>> Progress(string token, CancellationToken ct) => Ok(await view.ViewAsync(token, ct));
@@ -24,6 +24,14 @@ public sealed class PublicProgressController(ProgressViewService view, ResumeSer
 
     [HttpPost("progress/{token}/resumes/{dealId:guid}/submit")]
     public async Task<ActionResult<ResumeDto>> SubmitResume(string token, Guid dealId, CancellationToken ct) => Ok(await resumes.SubmitAsync(token, dealId, ct));
+
+    /// <summary>The candidate's journey since joining (when the team shares it): timeline, upcoming events, their recruiter.</summary>
+    [HttpGet("progress/{token}/journey")]
+    public async Task<ActionResult<JourneyDto>> Journey(string token, CancellationToken ct) => Ok(await journey.PublicAsync(token, ct));
+
+    /// <summary>The candidate logs progress: a course, a certification, a project, interview prep or a note.</summary>
+    [HttpPost("progress/{token}/journey")]
+    public async Task<ActionResult<JourneyDto>> AddJourney(string token, JourneyEntryRequest request, CancellationToken ct) => Ok(await journey.PublicAddAsync(token, request, ct));
 
     [HttpPost("progress/{token}/roles/{id:guid}")]
     public async Task<ActionResult<ProgressRoleDto>> AnswerRole(string token, Guid id, RoleAnswerRequest request, CancellationToken ct) => Ok(await view.AnswerRoleAsync(token, id, request, ct));

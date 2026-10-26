@@ -133,8 +133,46 @@ public sealed class SampleDataService(
         await pipeline.ScheduleInterviewAsync(dotnet.Id, phone.Id, new(IstToUtc(3, 15, 0), "Asia/Kolkata", 30, InterviewMode.Phone,
             "Meera Kapoor calls Priya on +91 98111 22334", "Short call with the hiring manager.", "Sample interview", phone.Version), ct);
 
-        await progress.CreateAsync(priya.Id, new(["Client", "Role", "Interviews"]), ct);
+        await SeedJourneysAsync(ct);
+        await progress.CreateAsync(priya.Id, new(["Client", "Role", "Interviews", "Journey"]), ct);
         return new(true, 2, 4, 3, 2, 1, 2, 1);
+    }
+
+    /// <summary>Journeys for the sample bench (2026-10-26): joining dates, aligned salespeople, certifications, learning, a project, a booked exam.</summary>
+    private async Task SeedJourneysAsync(CancellationToken ct)
+    {
+        var owner = user.OwnerId;
+        var all = await db.StaffingCandidates.Where(c => c.OwnerId == owner && c.Name.EndsWith(Suffix)).ToListAsync(ct);
+        var now = Now;
+        void Add(StaffingCandidate c, JourneyKind kind, string title, string? detail, int daysFromNow, int? hours = null) =>
+            db.CandidateJourneyEntries.Add(new CandidateJourneyEntry(owner, c.Id, kind, title, detail, now.AddDays(daysFromNow), hours, JourneyAuthor.Candidate, now));
+        foreach (var c in all)
+        {
+            if (c.Name.StartsWith("Priya"))
+            {
+                c.SetJourneyProfile(now.AddDays(-45), "Meera Kapoor", true);
+                Add(c, JourneyKind.Certification, "AZ-900 Azure Fundamentals", "Passed in the first week", -41);
+                Add(c, JourneyKind.Learning, "Microservices on Azure", "Service Bus topics, Durable Functions, Key Vault", -32, 24);
+                Add(c, JourneyKind.InterviewPrep, "Mock interview with the delivery lead", "System design 4/5, communication 4/5", -24);
+                Add(c, JourneyKind.Project, "Built a claims event pipeline", ".NET, Azure Service Bus, SQL Server; repo shared with sales", -16);
+                Add(c, JourneyKind.Certification, "AZ-204 Azure Developer Associate", "Score 862 / 1000", -8);
+                Add(c, JourneyKind.Certification, "AZ-400 exam (booked)", "Online, proctored", 6);
+            }
+            else if (c.Name.StartsWith("Rahul"))
+            {
+                c.SetJourneyProfile(now.AddDays(-111), "Arjun Singh", true);
+                Add(c, JourneyKind.Certification, "DP-100 Azure Data Scientist", null, -60);
+                Add(c, JourneyKind.Project, "Fraud detection model (practice)", "scikit-learn, SageMaker", -40);
+                Add(c, JourneyKind.Learning, "MLOps with MLflow", null, -20, 30);
+            }
+            else if (c.Name.StartsWith("Ananya"))
+            {
+                c.SetJourneyProfile(now.AddDays(-20), "Meera Kapoor", false);
+                Add(c, JourneyKind.Certification, "Meta Front-End Developer", null, -10);
+                Add(c, JourneyKind.Learning, "Next.js App Router course", "Ends next week", -3, 18);
+            }
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task<StaffingDealDto> MoveThroughAsync(StaffingDealDto deal, IReadOnlyList<StaffingDealStage> stages, CancellationToken ct)

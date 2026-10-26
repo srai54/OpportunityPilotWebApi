@@ -300,4 +300,53 @@ public class InterviewTrackerTests
         await Assert.ThrowsAsync<NotFoundException>(() => other.ListAsync(s.Candidate.Id, default));
         await Assert.ThrowsAsync<NotFoundException>(() => other.ReviewAsync(row.Id, new ReviewResumeRequest(10, null), default));
     }
+
+    [Fact]
+    public async Task Journey_merges_logged_progress_with_the_pipeline_and_drives_the_bench()
+    {
+        var s = await StaffingSetup();
+        var view = new ProgressViewService(s.Db, s.Clock);
+        var journey = new JourneyService(s.Db, new Owner(s.Owner), view, s.Clock);
+        var links = new ProgressLinkService(s.Db, new Owner(s.Owner), s.Clock);
+
+        var j = await journey.SetProfileAsync(s.Candidate.Id, new JourneyProfileRequest(T0.AddDays(-45), "Meera Kapoor", true), default);
+        Assert.Equal((46, "Meera Kapoor", true, "available"), (j.Day, j.Salesperson, j.Priority, j.Status));
+        Assert.Equal("Joined", j.Timeline.Last().Kind);
+
+        await journey.AddEntryAsync(s.Candidate.Id, new JourneyEntryRequest("Certification", "AZ-204", "Score 862", T0.AddDays(-8), null), default);
+        await journey.AddEntryAsync(s.Candidate.Id, new JourneyEntryRequest("Learning", "Microservices on Azure", null, T0.AddDays(-3), 24), default);
+        await journey.AddEntryAsync(s.Candidate.Id, new JourneyEntryRequest("Certification", "AZ-400 exam", null, T0.AddDays(7), null), default);
+        await Assert.ThrowsAsync<RequestValidationException>(() => journey.AddEntryAsync(s.Candidate.Id, new JourneyEntryRequest("Party", "x", null, null, null), default));
+
+        var interview = new StaffingInterview(s.Owner, s.Deal.Id, s.Submission.Id, 1, T0);
+        interview.Schedule(T0.AddDays(2), "Asia/Kolkata", 45, InterviewMode.Video, null, null, null, T0);
+        s.Db.Add(interview);
+        await s.Db.SaveChangesAsync();
+
+        j = await journey.GetAsync(s.Candidate.Id, default);
+        Assert.Equal("interviewing", j.Status);
+        Assert.Equal(["AZ-204"], j.Certifications);              // the booked exam is upcoming, not held yet
+        Assert.Equal(24, j.LearningHours);
+        Assert.Equal(["Interview", "Certification"], j.Upcoming.Select(u => u.Kind));
+        Assert.Contains(j.Timeline, t => t.Kind == "Learning" && t.Detail == "24 h");
+
+        var bench = await journey.BenchAsync(default);
+        var row = bench.Rows.Single();
+        Assert.Equal(("interviewing", true, "Interview"), (row.Status, row.Priority, row.Next!.Kind));
+
+        // The candidate sees their own journey only when it is shared, never the priority flag, and can log progress.
+        var plain = await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Role"]), default);
+        await Assert.ThrowsAsync<NotFoundException>(() => journey.PublicAsync(plain.Token!, default));
+        var link = await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Role", "Journey"]), default);
+        var mine = await journey.PublicAsync(link.Token!, default);
+        Assert.False(mine.Priority);
+        Assert.Equal("Meera Kapoor", mine.Salesperson);
+        mine = await journey.PublicAddAsync(link.Token!, new JourneyEntryRequest("Project", "Claims event pipeline", "repo link", T0.AddHours(-1), null), default);
+        Assert.Contains(mine.Timeline, t => t.Title == "Claims event pipeline" && t.Source == "Candidate");
+
+        // Another team cannot read or change it.
+        var other = new JourneyService(s.Db, new Owner(Guid.NewGuid()), view, s.Clock);
+        await Assert.ThrowsAsync<NotFoundException>(() => other.GetAsync(s.Candidate.Id, default));
+        await Assert.ThrowsAsync<NotFoundException>(() => other.DeleteEntryAsync(mine.Timeline.First(t => t.EntryId != null).EntryId!.Value, default));
+    }
 }

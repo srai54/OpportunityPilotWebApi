@@ -31,7 +31,7 @@ public sealed record RoleAnswerRequest(string? Answer);
 /// <summary>The sales team's side: make, look at and revoke a candidate's private progress link.</summary>
 public sealed class ProgressLinkService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
 {
-    private const ProgressShow All = ProgressShow.Client | ProgressShow.Role | ProgressShow.Interviews | ProgressShow.Offer | ProgressShow.Note | ProgressShow.Prep | ProgressShow.Roles | ProgressShow.Resume;
+    private const ProgressShow All = ProgressShow.Client | ProgressShow.Role | ProgressShow.Interviews | ProgressShow.Offer | ProgressShow.Note | ProgressShow.Prep | ProgressShow.Roles | ProgressShow.Resume | ProgressShow.Journey;
 
     public static string NewToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
     public static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
