@@ -48,7 +48,8 @@ public class KeyedFeedsTests
         Assert.Empty(KeyedFeeds.Jooble("""{"jobs":[{"title":"x","link":"javascript:alert(1)"}]}""")!);
         Assert.False(new JobFeedOptions().Has(FeedSite.Jooble));
         Assert.True(new JobFeedOptions().Has(FeedSite.Freelancer));
-        Assert.True(new JobFeedOptions().Has(FeedSite.Arbeitsagentur));
+        Assert.False(new JobFeedOptions().Has(FeedSite.Arbeitsagentur));
+        Assert.True(new JobFeedOptions { ArbeitsagenturEnabled = true }.Has(FeedSite.Arbeitsagentur));
         Assert.False(new JobFeedOptions().Has(FeedSite.Reed));
     }
 }

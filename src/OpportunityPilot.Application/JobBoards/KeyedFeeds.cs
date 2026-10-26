@@ -31,6 +31,9 @@ public sealed class JobFeedOptions
     /// <summary>The Bundesagentur für Arbeit Jobsuche API's public client id (documented at jobsuche.api.bund.dev); overridable.</summary>
     public string ArbeitsagenturClientId { get; set; } = "jobboerse-jobsuche";
 
+    /// <summary>Search the Bundesagentur feed (JobFeeds__ArbeitsagenturEnabled=true). Off by default since its API refused requests on 2026-10-26.</summary>
+    public bool ArbeitsagenturEnabled { get; set; }
+
     public bool Has(FeedSite site) => site switch
     {
         FeedSite.Jooble => !string.IsNullOrWhiteSpace(JoobleKey),
@@ -38,6 +41,8 @@ public sealed class JobFeedOptions
         FeedSite.Findwork => !string.IsNullOrWhiteSpace(FindworkToken),
         FeedSite.UsaJobs => !string.IsNullOrWhiteSpace(UsaJobsKey) && !string.IsNullOrWhiteSpace(UsaJobsEmail),
         FeedSite.Reed => !string.IsNullOrWhiteSpace(ReedKey),
+        // Off unless switched on: its public API answered 403 on 2026-10-26, and a failing source would show on every search.
+        FeedSite.Arbeitsagentur => ArbeitsagenturEnabled,
         _ => true,
     };
 }
