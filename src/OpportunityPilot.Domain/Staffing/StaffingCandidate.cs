@@ -74,9 +74,25 @@ public sealed class StaffingCandidate : IOwned
     public string? ConsentEvidence { get; private set; }
     public CandidateField ShareableFields { get; private set; }
     public bool NotifyByEmail { get; private set; }
+    /// <summary>The day the resource joined the bench (journey day 1). Null: the record's creation date stands in.</summary>
+    public DateTime? JoinedAt { get; private set; }
+    /// <summary>The salesperson who looks after this resource, shown to the candidate.</summary>
+    public string? AlignedSalesperson { get; private set; }
+    /// <summary>Put forward first: a strong profile with a fitting open role.</summary>
+    public bool Priority { get; private set; }
     public int Version { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
+
+    public const int MaxSalespersonLength = 120;
+
+    /// <summary>Journey profile (2026-10-26). Not a profile edit: no new version, so consent and submissions are unaffected.</summary>
+    public void SetJourneyProfile(DateTime? joinedAt, string? alignedSalesperson, bool priority)
+    {
+        JoinedAt = joinedAt is null ? null : DateTime.SpecifyKind(joinedAt.Value.Date, DateTimeKind.Utc);
+        AlignedSalesperson = Guard.Optional(alignedSalesperson, MaxSalespersonLength, nameof(alignedSalesperson));
+        Priority = priority;
+    }
 
     public void Update(string name, string? headline, string? email, string? phone, string? location, string? skills,
         double? yearsExperience, CandidateAvailability availability, int? noticePeriodDays, decimal? rateAmount,

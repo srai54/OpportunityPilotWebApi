@@ -72,6 +72,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<ProgressRoleSuggestion> ProgressRoleSuggestions => Set<ProgressRoleSuggestion>();
     public DbSet<Domain.Access.UserAccess> UserAccess => Set<Domain.Access.UserAccess>();
     public DbSet<CandidateResume> CandidateResumes => Set<CandidateResume>();
+    public DbSet<CandidateJourneyEntry> CandidateJourneyEntries => Set<CandidateJourneyEntry>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
     public DbSet<Domain.Circle.CirclePerson> CirclePeople => Set<Domain.Circle.CirclePerson>();
     public DbSet<Domain.Interviews.JobInterview> JobInterviews => Set<Domain.Interviews.JobInterview>();
@@ -187,6 +188,18 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.Role).HasConversion<int>();
             e.Ignore(x => x.RoleChosen);
             e.HasIndex(x => x.LastSeenAt);
+        });
+
+        modelBuilder.Entity<CandidateJourneyEntry>(e =>
+        {
+            e.ToTable("candidate_journey_entries");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(24);
+            e.Property(x => x.AddedBy).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.Title).HasMaxLength(CandidateJourneyEntry.MaxTitleLength).IsRequired();
+            e.Property(x => x.Detail).HasMaxLength(CandidateJourneyEntry.MaxDetailLength);
+            e.HasIndex(x => new { x.OwnerId, x.CandidateId, x.OccurredAt });
         });
 
         modelBuilder.Entity<CandidateResume>(e =>
@@ -652,6 +665,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.ConsentEvidence).HasMaxLength(StaffingCandidate.MaxConsentEvidenceLength);
             e.Property(x => x.ShareableFields).HasConversion<int>();
             e.Property(x => x.Version).IsConcurrencyToken();
+            e.Property(x => x.AlignedSalesperson).HasMaxLength(StaffingCandidate.MaxSalespersonLength);
             e.HasIndex(x => new { x.OwnerId, x.UpdatedAt });
         });
 

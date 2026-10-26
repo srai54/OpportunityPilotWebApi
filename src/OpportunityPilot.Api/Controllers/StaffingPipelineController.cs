@@ -6,13 +6,29 @@ namespace OpportunityPilot.Api.Controllers;
 /// <summary>Candidates, submissions, interviews, feedback, offers, rate cards, proposals and KPIs of the staffing CRM.</summary>
 [ApiController]
 [Route("api/v1/staffing")]
-public sealed class StaffingPipelineController(StaffingPipelineService pipeline, ProgressLinkService progress, ResumeService resumes) : ControllerBase
+public sealed class StaffingPipelineController(StaffingPipelineService pipeline, ProgressLinkService progress, ResumeService resumes, JourneyService journey) : ControllerBase
 {
     [HttpGet("candidates/{id:guid}/progress-link")]
     public async Task<ActionResult<ProgressLinkDto>> ProgressLink(Guid id, CancellationToken ct) => Ok(await progress.GetAsync(id, ct));
 
     [HttpPost("candidates/{id:guid}/progress-link")]
     public async Task<ActionResult<ProgressLinkDto>> CreateProgressLink(Guid id, CreateProgressLinkRequest request, CancellationToken ct) => Ok(await progress.CreateAsync(id, request, ct));
+
+    /// <summary>The bench: every resource with status, resume strength, best fit, certifications and the next event.</summary>
+    [HttpGet("bench")]
+    public async Task<ActionResult<BenchDto>> Bench(CancellationToken ct) => Ok(await journey.BenchAsync(ct));
+
+    [HttpGet("candidates/{id:guid}/journey")]
+    public async Task<ActionResult<JourneyDto>> Journey(Guid id, CancellationToken ct) => Ok(await journey.GetAsync(id, ct));
+
+    [HttpPut("candidates/{id:guid}/journey-profile")]
+    public async Task<ActionResult<JourneyDto>> JourneyProfile(Guid id, JourneyProfileRequest request, CancellationToken ct) => Ok(await journey.SetProfileAsync(id, request, ct));
+
+    [HttpPost("candidates/{id:guid}/journey")]
+    public async Task<ActionResult<JourneyDto>> AddJourney(Guid id, JourneyEntryRequest request, CancellationToken ct) => Ok(await journey.AddEntryAsync(id, request, ct));
+
+    [HttpDelete("journey/{entryId:guid}")]
+    public async Task<IActionResult> DeleteJourney(Guid entryId, CancellationToken ct) { await journey.DeleteEntryAsync(entryId, ct); return NoContent(); }
 
     [HttpGet("candidates/{id:guid}/resumes")]
     public async Task<ActionResult<IReadOnlyList<SalesResumeDto>>> Resumes(Guid id, CancellationToken ct) => Ok(await resumes.ListAsync(id, ct));

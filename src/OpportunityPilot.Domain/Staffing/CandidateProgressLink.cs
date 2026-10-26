@@ -18,7 +18,9 @@ public enum ProgressShow
     /// <summary>Open roles the recruiter suggests; the candidate can answer "interested" or "not for me".</summary>
     Roles = 64,
     /// <summary>The candidate writes a resume for a shared role in the agency's format; the sales team scores it.</summary>
-    Resume = 128
+    Resume = 128,
+    /// <summary>The candidate's journey since joining: timeline, upcoming events, their recruiter; they can log progress.</summary>
+    Journey = 256
 }
 
 /// <summary>
