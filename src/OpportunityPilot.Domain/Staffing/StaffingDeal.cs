@@ -41,6 +41,7 @@ public sealed class StaffingDeal : IOwned
     public const int MaxExternalReferenceLength = 1_000;
     public const int MaxCurrencyLength = 3;
     public const int MaxNextActionLength = 500;
+    public const int MaxJobDescriptionLength = 8_000;
 
     private StaffingDeal() { }
 
@@ -65,6 +66,8 @@ public sealed class StaffingDeal : IOwned
     public Guid AccountId { get; private set; }
     public Guid? ContactId { get; private set; }
     public string Title { get; private set; } = string.Empty;
+    /// <summary>The client's job description, pasted by the sales team; candidates write their resume against it.</summary>
+    public string? JobDescription { get; private set; }
     public StaffingDealSource Source { get; private set; }
     public string? ExternalReference { get; private set; }
     public decimal? EstimatedValue { get; private set; }
@@ -76,6 +79,9 @@ public sealed class StaffingDeal : IOwned
     public int Version { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime UpdatedAt { get; private set; }
+
+    /// <summary>Sets the job description. Not a commercial change: no new version, so stage moves and edits are unaffected.</summary>
+    public void SetJobDescription(string? text) => JobDescription = Guard.Optional(text, MaxJobDescriptionLength, nameof(text));
 
     public void UpdateCommercials(string title, string? externalReference, decimal? estimatedValue, string? currency,
         string? nextAction, DateTime? nextActionAt, DateTime utcNow)

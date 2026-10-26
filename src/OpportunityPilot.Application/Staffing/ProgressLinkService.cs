@@ -31,7 +31,7 @@ public sealed record RoleAnswerRequest(string? Answer);
 /// <summary>The sales team's side: make, look at and revoke a candidate's private progress link.</summary>
 public sealed class ProgressLinkService(IAppDbContext db, ICurrentUser user, TimeProvider clock)
 {
-    private const ProgressShow All = ProgressShow.Client | ProgressShow.Role | ProgressShow.Interviews | ProgressShow.Offer | ProgressShow.Note | ProgressShow.Prep | ProgressShow.Roles;
+    private const ProgressShow All = ProgressShow.Client | ProgressShow.Role | ProgressShow.Interviews | ProgressShow.Offer | ProgressShow.Note | ProgressShow.Prep | ProgressShow.Roles | ProgressShow.Resume;
 
     public static string NewToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
     public static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
@@ -141,7 +141,7 @@ public sealed class ProgressLinkService(IAppDbContext db, ICurrentUser user, Tim
 /// <summary>The candidate's side: what the link shows. No sign-in; the unguessable token is the key, and only what was chosen is returned.</summary>
 public sealed class ProgressViewService(IAppDbContext db, TimeProvider clock)
 {
-    private async Task<(CandidateProgressLink Link, StaffingCandidate Candidate)> LinkAsync(string token, CancellationToken ct)
+    public async Task<(CandidateProgressLink Link, StaffingCandidate Candidate)> LinkAsync(string token, CancellationToken ct)
     {
         var hash = ProgressLinkService.Hash(token ?? string.Empty);
         var link = await db.CandidateProgressLinks.FirstOrDefaultAsync(l => l.TokenHash == hash && l.RevokedAt == null, ct) ?? throw new NotFoundException("This link is not active.");

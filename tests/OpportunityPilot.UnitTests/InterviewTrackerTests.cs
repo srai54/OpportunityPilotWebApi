@@ -256,4 +256,48 @@ public class InterviewTrackerTests
         await Assert.ThrowsAsync<RequestValidationException>(() => links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Roles"], null, [stranger.Id]), default));
         await Assert.ThrowsAsync<NotFoundException>(() => new ProgressLinkService(s.Db, new Owner(Guid.NewGuid()), s.Clock).SetPrepAsync(interview.Id, new SetInterviewPrepRequest("x"), default));
     }
+
+    [Fact]
+    public async Task Resume_builder_candidate_writes_for_a_shared_role_and_sales_scores_it()
+    {
+        var s = await StaffingSetup();
+        var links = new ProgressLinkService(s.Db, new Owner(s.Owner), s.Clock);
+        var view = new ProgressViewService(s.Db, s.Clock);
+        var resumes = new ResumeService(s.Db, new Owner(s.Owner), view, s.Clock);
+
+        // Not shared yet: the builder is closed.
+        var plain = await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Role"]), default);
+        await Assert.ThrowsAsync<NotFoundException>(() => resumes.WorkspaceAsync(plain.Token!, default));
+
+        Assert.Equal("Build payment APIs in .NET", await resumes.SetJobDescriptionAsync(s.Deal.Id, new JobDescriptionRequest("  Build payment APIs in .NET "), default));
+        var link = await links.CreateAsync(s.Candidate.Id, new CreateProgressLinkRequest(["Role", "Resume"]), default);
+        var ws = await resumes.WorkspaceAsync(link.Token!, default);
+        Assert.Equal("Asha Rao", ws.Name);
+        var job = ws.Jobs.Single();
+        Assert.Equal((s.Deal.Id, "Two .NET developers", "Build payment APIs in .NET", "Draft"), (job.DealId, job.Title, job.JobDescription, job.Resume.Status));
+        Assert.Null(job.Client); // client name only when the team shares it
+
+        await Assert.ThrowsAsync<RequestValidationException>(() => resumes.SaveAsync(link.Token!, s.Deal.Id, new SaveResumeRequest("not json", 50), default));
+        await Assert.ThrowsAsync<NotFoundException>(() => resumes.SaveAsync(link.Token!, Guid.NewGuid(), new SaveResumeRequest("{}", 50), default));
+        var saved = await resumes.SaveAsync(link.Token!, s.Deal.Id, new SaveResumeRequest("""{"summary":"Senior .NET engineer"}""", 72), default);
+        Assert.Equal((72, "Draft"), (saved.MatchScore, saved.Status));
+
+        var row = (await resumes.ListAsync(s.Candidate.Id, default)).Single();
+        await Assert.ThrowsAsync<RequestValidationException>(() => resumes.ReviewAsync(row.Id, new ReviewResumeRequest(80, "x"), default)); // not submitted
+
+        Assert.Equal("Submitted", (await resumes.SubmitAsync(link.Token!, s.Deal.Id, default)).Status);
+        var reviewed = await resumes.ReviewAsync(row.Id, new ReviewResumeRequest(84, "Add your Kafka work to the ClaimSure project."), default);
+        Assert.Equal((84, "Reviewed", "Two .NET developers"), (reviewed.SalesScore, reviewed.Status, reviewed.DealTitle));
+        await Assert.ThrowsAsync<RequestValidationException>(() => resumes.ReviewAsync(row.Id, new ReviewResumeRequest(101, null), default));
+
+        // The candidate sees the score; editing again goes back to draft but keeps the review visible.
+        var again = (await resumes.WorkspaceAsync(link.Token!, default)).Jobs.Single().Resume;
+        Assert.Equal((84, "Add your Kafka work to the ClaimSure project."), (again.SalesScore, again.SalesFeedback));
+        Assert.Equal("Draft", (await resumes.SaveAsync(link.Token!, s.Deal.Id, new SaveResumeRequest("""{"summary":"v2"}""", 80), default)).Status);
+
+        // Another team sees nothing.
+        var other = new ResumeService(s.Db, new Owner(Guid.NewGuid()), view, s.Clock);
+        await Assert.ThrowsAsync<NotFoundException>(() => other.ListAsync(s.Candidate.Id, default));
+        await Assert.ThrowsAsync<NotFoundException>(() => other.ReviewAsync(row.Id, new ReviewResumeRequest(10, null), default));
+    }
 }

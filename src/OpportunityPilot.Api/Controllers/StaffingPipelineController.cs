@@ -6,13 +6,25 @@ namespace OpportunityPilot.Api.Controllers;
 /// <summary>Candidates, submissions, interviews, feedback, offers, rate cards, proposals and KPIs of the staffing CRM.</summary>
 [ApiController]
 [Route("api/v1/staffing")]
-public sealed class StaffingPipelineController(StaffingPipelineService pipeline, ProgressLinkService progress) : ControllerBase
+public sealed class StaffingPipelineController(StaffingPipelineService pipeline, ProgressLinkService progress, ResumeService resumes) : ControllerBase
 {
     [HttpGet("candidates/{id:guid}/progress-link")]
     public async Task<ActionResult<ProgressLinkDto>> ProgressLink(Guid id, CancellationToken ct) => Ok(await progress.GetAsync(id, ct));
 
     [HttpPost("candidates/{id:guid}/progress-link")]
     public async Task<ActionResult<ProgressLinkDto>> CreateProgressLink(Guid id, CreateProgressLinkRequest request, CancellationToken ct) => Ok(await progress.CreateAsync(id, request, ct));
+
+    [HttpGet("candidates/{id:guid}/resumes")]
+    public async Task<ActionResult<IReadOnlyList<SalesResumeDto>>> Resumes(Guid id, CancellationToken ct) => Ok(await resumes.ListAsync(id, ct));
+
+    [HttpPost("resumes/{id:guid}/review")]
+    public async Task<ActionResult<SalesResumeDto>> ReviewResume(Guid id, ReviewResumeRequest request, CancellationToken ct) => Ok(await resumes.ReviewAsync(id, request, ct));
+
+    [HttpPut("deals/{id:guid}/job-description")]
+    public async Task<ActionResult<object>> SetJobDescription(Guid id, JobDescriptionRequest request, CancellationToken ct) => Ok(new { jobDescription = await resumes.SetJobDescriptionAsync(id, request, ct) });
+
+    [HttpPost("deals/job-descriptions")]
+    public async Task<ActionResult<IReadOnlyDictionary<Guid, string?>>> JobDescriptions(IReadOnlyList<Guid> ids, CancellationToken ct) => Ok(await resumes.JobDescriptionsAsync(ids ?? [], ct));
 
     [HttpPut("interviews/{id:guid}/prep")]
     public async Task<ActionResult<ShareInterviewDto>> SetInterviewPrep(Guid id, SetInterviewPrepRequest request, CancellationToken ct) => Ok(await progress.SetPrepAsync(id, request, ct));

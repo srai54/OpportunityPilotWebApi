@@ -16,7 +16,9 @@ public enum ProgressShow
     /// <summary>Prep tips the recruiter wrote for each scheduled interview.</summary>
     Prep = 32,
     /// <summary>Open roles the recruiter suggests; the candidate can answer "interested" or "not for me".</summary>
-    Roles = 64
+    Roles = 64,
+    /// <summary>The candidate writes a resume for a shared role in the agency's format; the sales team scores it.</summary>
+    Resume = 128
 }
 
 /// <summary>
