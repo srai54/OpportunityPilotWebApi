@@ -26,6 +26,10 @@ public sealed class JobFeedOptions
     /// <summary>developer.usajobs.gov → Authorization-Key, and the e-mail it was registered with (sent as User-Agent, as USAJOBS requires).</summary>
     public string? UsaJobsKey { get; set; }
     public string? UsaJobsEmail { get; set; }
+    /// <summary>reed.co.uk/developers → API key (UK, many contract roles).</summary>
+    public string? ReedKey { get; set; }
+    /// <summary>The Bundesagentur für Arbeit Jobsuche API's public client id (documented at jobsuche.api.bund.dev); overridable.</summary>
+    public string ArbeitsagenturClientId { get; set; } = "jobboerse-jobsuche";
 
     public bool Has(FeedSite site) => site switch
     {
@@ -33,6 +37,7 @@ public sealed class JobFeedOptions
         FeedSite.Careerjet => !string.IsNullOrWhiteSpace(CareerjetAffid),
         FeedSite.Findwork => !string.IsNullOrWhiteSpace(FindworkToken),
         FeedSite.UsaJobs => !string.IsNullOrWhiteSpace(UsaJobsKey) && !string.IsNullOrWhiteSpace(UsaJobsEmail),
+        FeedSite.Reed => !string.IsNullOrWhiteSpace(ReedKey),
         _ => true,
     };
 }
@@ -44,7 +49,7 @@ public sealed class JobFeedOptions
 /// </summary>
 public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http, IOptions<JobFeedOptions> options, TimeProvider clock)
 {
-    public static readonly FeedSite[] Sites = [FeedSite.Jooble, FeedSite.Careerjet, FeedSite.Findwork, FeedSite.UsaJobs, FeedSite.Freelancer];
+    public static readonly FeedSite[] Sites = [FeedSite.Jooble, FeedSite.Careerjet, FeedSite.Findwork, FeedSite.UsaJobs, FeedSite.Freelancer, FeedSite.Reed, FeedSite.Arbeitsagentur];
     private const int MaxCached = 200;
     private static readonly ConcurrentDictionary<string, (DateTime At, List<JobBoardJobDto> Jobs)> Cache = new(StringComparer.Ordinal);
     private JobFeedOptions O => options.Value;
@@ -88,6 +93,21 @@ public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http,
                 (text, failure) = (r.Ok ? r.Body : null, r.Ok ? null : r.Status is 401 ? "USAJOBS rejected the server's key." : "USAJOBS could not be read.");
                 break;
             }
+            case FeedSite.Reed:
+            {
+                var basic = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(O.ReedKey!.Trim() + ":"));
+                var r = await http.SendAsync(new ConnectorRequest(HttpMethod.Get, $"https://www.reed.co.uk/api/1.0/search?keywords={q}{(where.Length > 0 ? "&locationName=" + where : "")}&resultsToTake=50",
+                    Headers: new Dictionary<string, string> { ["Authorization"] = $"Basic {basic}" }), ct);
+                (text, failure) = (r.Ok ? r.Body : null, r.Ok ? null : r.Status is 401 or 403 ? "Reed rejected the server's key." : "Reed could not be read.");
+                break;
+            }
+            case FeedSite.Arbeitsagentur:
+            {
+                var r = await http.SendAsync(new ConnectorRequest(HttpMethod.Get, $"https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs?was={q}{(where.Length > 0 ? "&wo=" + where : "")}&size=50",
+                    Headers: new Dictionary<string, string> { ["X-API-Key"] = O.ArbeitsagenturClientId }), ct);
+                (text, failure) = (r.Ok ? r.Body : null, r.Ok ? null : "Bundesagentur für Arbeit could not be read.");
+                break;
+            }
             default:
             {
                 var r = await fetcher.FetchJsonAsync($"https://www.freelancer.com/api/projects/0.1/projects/active/?query={q}&limit=50&full_description=true&job_details=true", ct, ResearchOptions.LargeFeedBytes);
@@ -102,6 +122,8 @@ public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http,
             FeedSite.Careerjet => Careerjet(text),
             FeedSite.Findwork => Findwork(text),
             FeedSite.UsaJobs => UsaJobs(text),
+            FeedSite.Reed => Reed(text),
+            FeedSite.Arbeitsagentur => Arbeitsagentur(text),
             _ => Freelancer(text),
         };
         if (jobs is null) return ([], "Failed", $"{FeedSearchService.Name(site)} sent a response that could not be read.", false);
@@ -140,7 +162,7 @@ public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http,
 
     /// <summary>
     /// <c>{ result: { projects: [ { id, title, seo_url, preview_description, type, budget: { minimum, maximum }, currency: { code }, time_submitted } ] } }</c>.
-    /// Freelance projects: contract work by definition, remote by default, the client is not named by the API.
+    /// Freelance projects: contract work by definition, remote by default. The API does not name the client, so the company is left empty (Sales groups by company and leaves these out; Candidate lists them as projects).
     /// </summary>
     public static List<JobBoardJobDto>? Freelancer(string json) => Map(json,
         root => root.TryGetProperty("result", out var res) ? Arr(res, "projects") : null,
@@ -154,9 +176,28 @@ public sealed partial class KeyedFeeds(IWebFetcher fetcher, IConnectorHttp http,
             DateTime? posted = p.TryGetProperty("time_submitted", out var t) && t.ValueKind == JsonValueKind.Number && t.TryGetInt64(out var s) && s > 0
                 ? DateTimeOffset.FromUnixTimeSeconds(s).UtcDateTime : null;
             var kind = Str(p, "type") == "hourly" ? "per hour" : "fixed price";
-            var job = Job("freelancer", Str(p, "id"), Str(p, "title"), "Freelancer.com client", url, "Remote", "CONTRACTOR", posted, Str(p, "preview_description") ?? Str(p, "description"), true);
+            var job = Job("freelancer", Str(p, "id"), Str(p, "title"), "", url, "Remote", "CONTRACTOR", posted, Str(p, "preview_description") ?? Str(p, "description"), true);
             return job is null ? null : job with { SalaryMin = min, SalaryMax = max, SalaryCurrency = currency, SalaryPeriod = kind };
         });
+
+    /// <summary><c>{ results: [ { jobId, employerName, jobTitle, locationName, minimumSalary, maximumSalary, currency, date (dd/MM/yyyy), jobDescription, jobUrl } ] }</c></summary>
+    public static List<JobBoardJobDto>? Reed(string json) => Map(json, root => Arr(root, "results"), j =>
+    {
+        DateTime? posted = DateTime.TryParseExact(Str(j, "date"), "dd/MM/yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var d) ? d : null;
+        var job = Job("reed", Str(j, "jobId"), Str(j, "jobTitle"), Str(j, "employerName"), Str(j, "jobUrl"), Str(j, "locationName"), null, posted, Str(j, "jobDescription"));
+        decimal? Num(string n) => j.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal() : null;
+        return job is null ? null : job with { SalaryMin = Num("minimumSalary"), SalaryMax = Num("maximumSalary"), SalaryCurrency = Str(j, "currency") };
+    });
+
+    /// <summary><c>{ stellenangebote: [ { refnr, titel, arbeitgeber, arbeitsort: { ort, land }, aktuelleVeroeffentlichungsdatum, externeUrl } ] }</c>; links to the official job page.</summary>
+    public static List<JobBoardJobDto>? Arbeitsagentur(string json) => Map(json, root => Arr(root, "stellenangebote"), j =>
+    {
+        var refnr = Str(j, "refnr");
+        if (refnr is null) return null;
+        var place = j.TryGetProperty("arbeitsort", out var a) ? string.Join(", ", new[] { Str(a, "ort"), Str(a, "land") }.Where(x => x is not null)) : null;
+        return Job("arbeitsagentur", refnr, Str(j, "titel") ?? Str(j, "beruf"), Str(j, "arbeitgeber"), $"https://www.arbeitsagentur.de/jobsuche/jobdetail/{Uri.EscapeDataString(refnr)}",
+            string.IsNullOrEmpty(place) ? null : place, null, Date(Str(j, "aktuelleVeroeffentlichungsdatum")), Str(j, "beruf"));
+    });
 
     private static List<JobBoardJobDto>? Map(string json, Func<JsonElement, JsonElement?> list, Func<JsonElement, JobBoardJobDto?> one)
     {

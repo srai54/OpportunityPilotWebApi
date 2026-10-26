@@ -33,11 +33,22 @@ public class KeyedFeedsTests
     }
 
     [Fact]
+    public void Reed_and_arbeitsagentur_map_their_own_shapes()
+    {
+        var r = KeyedFeeds.Reed("""{"results":[{"jobId":42,"employerName":"Hays","jobTitle":"Contract .NET Developer","locationName":"London","minimumSalary":500,"maximumSalary":600,"currency":"GBP","date":"18/10/2026","jobDescription":"Day rate, outside IR35","jobUrl":"https://www.reed.co.uk/jobs/42"}]}""")!.Single();
+        Assert.Equal(("reed:42", "Hays", 500m, new DateTime(2026, 10, 18)), (r.ProviderJobId, r.CompanyName, r.SalaryMin, r.PostedAt!.Value.Date));
+        var a = KeyedFeeds.Arbeitsagentur("""{"stellenangebote":[{"refnr":"10000-1","titel":"Softwareentwickler (m/w/d)","arbeitgeber":"Beispiel GmbH","arbeitsort":{"ort":"Berlin","land":"Deutschland"},"aktuelleVeroeffentlichungsdatum":"2026-10-17"}]}""")!.Single();
+        Assert.Equal(("Beispiel GmbH", "Berlin, Deutschland", "https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-1"), (a.CompanyName, a.Location, a.BoardUrl));
+    }
+
+    [Fact]
     public void Bad_answers_and_unsafe_links_are_dropped()
     {
         Assert.Null(KeyedFeeds.Jooble("not json"));
         Assert.Empty(KeyedFeeds.Jooble("""{"jobs":[{"title":"x","link":"javascript:alert(1)"}]}""")!);
         Assert.False(new JobFeedOptions().Has(FeedSite.Jooble));
         Assert.True(new JobFeedOptions().Has(FeedSite.Freelancer));
+        Assert.True(new JobFeedOptions().Has(FeedSite.Arbeitsagentur));
+        Assert.False(new JobFeedOptions().Has(FeedSite.Reed));
     }
 }
