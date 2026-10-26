@@ -138,6 +138,8 @@ public sealed class SampleDataService(
         return new(true, 2, 4, 3, 2, 1, 2, 1);
     }
 
+    private const string SampleResumeJson = """{"name":"Priya Sharma (sample)","title":"Senior .NET developer | Azure | 6 years","summary":"Software engineer with 6 years building .NET payment and claims platforms on Azure. Designs microservices with ASP.NET Core, Azure Service Bus and SQL Server; processed 4M+ records daily.","skills":[{"label":"Backend","items":"C#, .NET 8, ASP.NET Core, Entity Framework Core"},{"label":"Cloud","items":"Azure, Azure Service Bus, Azure Functions, Key Vault"},{"label":"Databases","items":"SQL Server, Redis"}],"projects":[{"name":"ClaimSure - Claims Data Platform","details":"Claims platform for 150,000+ users.","teamSize":"17","technology":"C#, .NET, Azure Service Bus, SQL Server, Docker","responsibilities":"Built 5 microservices in .NET\nPublished events with Azure Service Bus topics\nTuned SQL Server queries for 4M+ records a day"}]}""";
+
     /// <summary>Journeys for the sample bench (2026-10-26): joining dates, aligned salespeople, certifications, learning, a project, a booked exam.</summary>
     private async Task SeedJourneysAsync(CancellationToken ct)
     {
@@ -148,7 +150,7 @@ public sealed class SampleDataService(
             db.CandidateJourneyEntries.Add(new CandidateJourneyEntry(owner, c.Id, kind, title, detail, now.AddDays(daysFromNow), hours, JourneyAuthor.Candidate, now));
         foreach (var c in all)
         {
-            if (c.Name.StartsWith("Priya"))
+            if (c.Name.StartsWith("Priya", StringComparison.Ordinal))
             {
                 c.SetJourneyProfile(now.AddDays(-45), "Meera Kapoor", true);
                 Add(c, JourneyKind.Certification, "AZ-900 Azure Fundamentals", "Passed in the first week", -41);
@@ -157,6 +159,16 @@ public sealed class SampleDataService(
                 Add(c, JourneyKind.Project, "Built a claims event pipeline", ".NET, Azure Service Bus, SQL Server; repo shared with sales", -16);
                 Add(c, JourneyKind.Certification, "AZ-204 Azure Developer Associate", "Score 862 / 1000", -8);
                 Add(c, JourneyKind.Certification, "AZ-400 exam (booked)", "Online, proctored", 6);
+                // A reviewed resume for her submitted role, so the bench shows resume strength and best fit.
+                var dealId = await db.StaffingSubmissions.Where(x => x.OwnerId == owner && x.CandidateId == c.Id).Select(x => x.DealId).FirstOrDefaultAsync(ct);
+                if (dealId != Guid.Empty && !await db.CandidateResumes.AnyAsync(r => r.OwnerId == owner && r.CandidateId == c.Id, ct))
+                {
+                    var resume = new CandidateResume(owner, c.Id, dealId, now.AddDays(-5));
+                    resume.Save(SampleResumeJson, 80, now.AddDays(-5));
+                    resume.Submit(now.AddDays(-5));
+                    resume.Review(86, "Strong match. Add your Kubernetes work if you have any.", now.AddDays(-4));
+                    db.CandidateResumes.Add(resume);
+                }
             }
             else if (c.Name.StartsWith("Rahul"))
             {
