@@ -6,7 +6,7 @@ description: How to raise, map and report errors in the OpportunityPilot API and
 # Error handling
 
 The envelope (ProblemDetails + `correlationId`) and status meanings are defined in
-[docs/conventions.md](../docs/conventions.md#response-and-error-envelope). This skill is the procedure.
+[docs/conventions.md](../../../docs/conventions.md#response-and-error-envelope). This skill is the procedure.
 
 ## Decision table — API (C#)
 

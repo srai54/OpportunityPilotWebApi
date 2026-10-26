@@ -1,8 +1,8 @@
 # Conventions
 
 How code in this repository is written. Follow the surrounding code when this file is silent. How to throw and map
-errors step by step: [skills/error-handling.SKILL.md](../skills/error-handling.SKILL.md); how to write tests:
-[skills/unit-test.SKILL.md](../skills/unit-test.SKILL.md).
+errors step by step: [.claude/skills/error-handling/SKILL.md](../.claude/skills/error-handling/SKILL.md); how to write tests:
+[.claude/skills/unit-test/SKILL.md](../.claude/skills/unit-test/SKILL.md).
 
 ## Naming
 

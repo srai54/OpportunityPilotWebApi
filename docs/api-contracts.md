@@ -330,6 +330,41 @@ Read-only live searches; nothing is stored. Rate limit `JobBoardSearch`. Rules i
 | GET | `/api/v1/jobboards/feeds` | user | `query` (1–200), `sites?` comma list of `FeedSite` (Arbeitnow, Jobicy, WeWorkRemotely, Remotive, RemoteOk, Himalayas, TheMuse, Adzuna; empty = all, Adzuna only when configured), `location?` (≤100), `remoteOnly`, `take` (1–100, default 60) | `FeedSearchResult { sites: { site, status (Ready, Failed, NotConfigured), listed, matched, message?, fromCache }[], jobs: { site, siteName, job: JobBoardJobDto }[], observedAt }`; 400 with `errors.query`/`location`/`sites` |
 | GET | `/api/v1/jobboards/jobs` | user | `query`, `board` (Indeed, LinkedIn, Seek), `location?`, `remoteOnly`, `datePosted`, `country?`, `page`, `cursor?`, `employmentType?`, `experience?`, `radiusKm?` | `JobBoardSearchResult` (status Ready, NotConfigured or Failed) through JSearch |
 
+### Access and roles (2026-10-22)
+
+Code: `Application/Access/AccessService.cs`, `Api/Controllers/AccessController.cs`. Admin = `Access:AdminEmails` (token email only) or `Access:AdminOwnerIds`.
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/v1/me` | user | `label?` (shown email, admin label only) | `MeDto { accountId, role (Candidate, Sales, Both), roleChosen, isAdmin, guest, newAccount }`; guests are not stored |
+| PUT | `/api/v1/me/role` | user (not guest) | `{ role }` | `MeDto`; 409 once a role is set; 400 for guests or an unknown role |
+| GET | `/api/v1/admin/users` | admin | — | `AccessUserDto[] { accountId, email, role, roleChosen, roleSetByAdmin, firstSeenAt, lastSeenAt }`; 403 otherwise |
+| PUT | `/api/v1/admin/users/{accountId}/role` | admin | `{ role }` | `AccessUserDto`; 403 / 404 |
+
+### Candidate progress link: shared extras, resume builder, journey (2026-10-22 … 26)
+
+Code: `Application/Staffing/ProgressLinkService.cs`, `ResumeService.cs`, `JourneyService.cs`. `show` flags: Client, Role, Interviews, Offer, Note,
+Prep, Roles, Resume, Journey. The public endpoints need no account (the token is the key, rate limit `PublicProgress`) and return only shared fields.
+
+| Method | Path | Auth | Request | Response / errors |
+|---|---|---|---|---|
+| POST | `/api/v1/staffing/candidates/{id}/progress-link` | user | `{ show[], note?, roleIds? (≤10; null keeps) }` | `ProgressLinkDto { active, show, createdAt, token (only now), note, roles[], interviews[] }` |
+| PUT | `/api/v1/staffing/interviews/{id}/prep` | user | `{ prep }` | `ShareInterviewDto`; no new interview version |
+| GET | `/api/v1/public/progress/{token}` | anonymous | — | `ProgressViewDto { firstName, asOf, items[] (stage, client?, role?, interview? with prep?), note?, roles? }`; 404 when revoked or consent withdrawn |
+| POST | `/api/v1/public/progress/{token}/roles/{id}` | anonymous | `{ answer: Interested \| NotForMe }` | `ProgressRoleDto`; 404 when Roles is not shared |
+| PUT | `/api/v1/staffing/deals/{id}/job-description` | user | `{ text (≤8000) }` | `{ jobDescription }` |
+| GET | `/api/v1/public/progress/{token}/resumes` | anonymous (Resume shared) | — | `ResumeWorkspaceDto { name, headline, skills, jobs[] { dealId, title, client?, jobDescription, resume } }` |
+| PUT | `/api/v1/public/progress/{token}/resumes/{dealId}` | anonymous (Resume shared) | `{ data (JSON ≤60,000), matchScore? }` | `ResumeDto`; back to Draft after a change |
+| POST | `/api/v1/public/progress/{token}/resumes/{dealId}/submit` | anonymous (Resume shared) | — | `ResumeDto` (Submitted) |
+| GET | `/api/v1/staffing/candidates/{id}/resumes` | user | — | `SalesResumeDto[]` |
+| POST | `/api/v1/staffing/resumes/{id}/review` | user | `{ score (0–100), feedback? }` | `SalesResumeDto` (Reviewed); 400 for a draft |
+| GET | `/api/v1/staffing/bench` | user | — | `BenchDto { rows[] { candidateId, name, headline, day, salesperson, priority, status (available, interviewing, mapped, training), resumeStrength, bestFit, certifications[], next }, averageStrength }` |
+| GET | `/api/v1/staffing/candidates/{id}/journey` | user | — | `JourneyDto { …profile, status, resumeStrength, bestFit, certifications, learningHours, timeline[], upcoming[] }` |
+| PUT | `/api/v1/staffing/candidates/{id}/journey-profile` | user | `{ joinedAt?, salesperson?, priority }` | `JourneyDto` |
+| POST | `/api/v1/staffing/candidates/{id}/journey` | user | `{ kind, title, detail?, at?, hours? }` | `JourneyDto` |
+| DELETE | `/api/v1/staffing/journey/{entryId}` | user | — | 204 |
+| GET / POST | `/api/v1/public/progress/{token}/journey` | anonymous (Journey shared) | POST: `{ kind, title, detail?, at?, hours? }` | `JourneyDto` without the priority flag |
+
 ## DTO shapes
 
 JSON is camelCase and enums are strings. `?` marks nullable.

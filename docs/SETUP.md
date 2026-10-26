@@ -78,7 +78,7 @@ Environment variables use `__` for nesting (`ConnectionStrings__Main`).
 
 There are two migration sets, one per provider (SqlServer and Postgres), both in schema `app`. The exact commands are in
 the [CLAUDE.md](../CLAUDE.md#2-cheat-sheet-commands) cheat-sheet and the procedure with its review checklist in
-[skills/migrations.SKILL.md](../skills/migrations.SKILL.md). Outside Development, applying them is an explicit release
+[.claude/skills/migrations/SKILL.md](../.claude/skills/migrations/SKILL.md). Outside Development, applying them is an explicit release
 step: `dotnet OpportunityPilot.Api.dll --migrate` applies pending migrations and exits.
 
 ## 4. Supabase
@@ -146,4 +146,4 @@ with backoff rather than reporting a failure.
 
 `dotnet test` runs everything; integration tests start `postgres:17-alpine` with Testcontainers and need a running
 Docker daemon, unit tests and `StartupGuardTests` do not. How the test harness works (dev-bypass users, the research
-processor switched off, the loopback fetch policy) is in [skills/unit-test.SKILL.md](../skills/unit-test.SKILL.md).
+processor switched off, the loopback fetch policy) is in [.claude/skills/unit-test/SKILL.md](../.claude/skills/unit-test/SKILL.md).

@@ -5,7 +5,7 @@ description: Where and how to write tests in OpportunityPilot — xUnit unit tes
 
 # Writing tests
 
-Naming and style rules: [docs/conventions.md](../docs/conventions.md#tests). Commands: `CLAUDE.md` cheat-sheet.
+Naming and style rules: [docs/conventions.md](../../../docs/conventions.md#tests). Commands: `CLAUDE.md` cheat-sheet.
 
 ## Decision table — where does the test go?
 

@@ -2,7 +2,7 @@
 
 Source of truth: `src/OpportunityPilot.Infrastructure/Persistence/AppDbContext.cs` (shared model) and
 `ProviderContexts.cs` (provider differences). This file must change in the same commit as any entity, mapping or
-migration change. How to add a migration: [skills/migrations.SKILL.md](../skills/migrations.SKILL.md).
+migration change. How to add a migration: [.claude/skills/migrations/SKILL.md](../.claude/skills/migrations/SKILL.md).
 
 ## Conventions that apply to every table
 
@@ -457,6 +457,52 @@ ProviderReceiptRecorded. Detail is required and limited to 2000 characters; deal
 | CreatedAt, ExpiresAt | time | 30-day lifetime |
 
 Indexes: unique `TokenHash` for authentication lookup; `ExpiresAt` for bounded cleanup.
+
+### user_access — `Domain/Access/UserAccess.cs` (2026-10-22)
+
+| Column | Type | Notes |
+|---|---|---|
+| OwnerId | uuid, key | The signed-in account (guests are not stored) |
+| Email | string(256)? | Label for the admin only; never grants access |
+| Role | int (flags) | 0 None (= both views), 1 Candidate, 2 Sales, 3 Both |
+| FirstSeenAt, LastSeenAt | time | Last seen written at most every 5 minutes |
+| RoleSetAt, RoleSetByAdmin | time?, bool | Sign-up choice (once) or the admin |
+
+Index: `LastSeenAt` (admin list).
+
+### progress_role_suggestions — `Domain/Staffing/ProgressRoleSuggestion.cs` (2026-10-22)
+
+Roles (deals) the team suggests to a candidate through the progress link, and the candidate's `Answer` (None, Interested, NotForMe) with
+`AnsweredAt`. Kept per candidate across new links. Unique index `(OwnerId, CandidateId, DealId)`. At most 10 per candidate.
+
+### candidate_resumes — `Domain/Staffing/CandidateResume.cs` (2026-10-26)
+
+| Column | Type | Notes |
+|---|---|---|
+| Id, OwnerId, CandidateId, DealId | uuid | One resume per candidate and role |
+| Data | text (≤ 60,000) | The resume document as JSON (name, title, summary, skill groups, projects) |
+| MatchScore | int? | Share of the job description's skills the resume names (0–100) |
+| Status | string(16) | Draft, Submitted, Reviewed |
+| SalesScore, SalesFeedback | int?, string(2000)? | The team's score (0–100) and feedback |
+| CreatedAt, UpdatedAt, SubmittedAt, ReviewedAt | time | |
+
+Unique index `(OwnerId, CandidateId, DealId)`. `staffing_deals.JobDescription` (string 8000, nullable) holds the JD the resume is written against.
+
+### candidate_journey_entries — `Domain/Staffing/CandidateJourneyEntry.cs` (2026-10-26)
+
+| Column | Type | Notes |
+|---|---|---|
+| Id, OwnerId, CandidateId | uuid | |
+| Kind | string(24) | Learning, Certification, Project, InterviewPrep, Note |
+| Title, Detail | string(300), string(1000)? | |
+| OccurredAt | time | A future date is an upcoming event (an exam booked) |
+| Hours | int? | 0–2000 |
+| AddedBy | string(16) | Candidate (through the link) or Sales |
+| CreatedAt | time | |
+
+Index `(OwnerId, CandidateId, OccurredAt)`. `staffing_candidates` gained `JoinedAt` (date?), `AlignedSalesperson` (string 120?) and `Priority` (bool);
+`candidate_progress_links` gained `Note` (string 1000?) and `staffing_interviews` gained `CandidatePrep` (string 2000?).
+Account deletion removes all four tables' rows of the owner.
 
 ## Delete behaviour
 

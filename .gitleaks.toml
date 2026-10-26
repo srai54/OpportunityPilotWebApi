@@ -1,0 +1,12 @@
+# gitleaks: default rules, plus an allowlist for the fake keys used in tests.
+title = "OpportunityPilot"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake keys in test fixtures only"
+paths = [
+  '''^tests/''',
+  '''^agent/test/'''
+]

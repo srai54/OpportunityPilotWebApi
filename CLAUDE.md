@@ -63,7 +63,7 @@ Run from the repository root unless noted. dotnet-ef 10.x must be installed glob
 | `agent/src/` | `cli.ts` (commands), `run.ts` (apply), `collect.ts`, `circle.ts` (JD circle), `outreach.ts` (LinkedIn notes), `schedule.ts`, `api.ts`, `form.ts`, `answers.ts`, `browser.ts`, `store.ts`, `config.ts`, `util.ts`, `platforms/` (`types.ts`, one adapter per site, `linkedin-people.ts` for people search and profile actions) |
 | `agent/test/` | `*.test.ts` (Vitest) and `mock/server.ts` (local LinkedIn/Naukri stand-in + fake API) |
 | `docs/` | reference docs (table below); `feature-contracts.md` holds the older per-slice specs |
-| `skills/` | task procedures (table below) |
+| `.claude/skills/` | task procedures, loaded as Claude Code skills (table below) |
 | `.claude/` | `settings.json` hooks and `hooks/*.mjs` guards |
 
 New feature `Foo`, in this order:
@@ -97,14 +97,14 @@ None. There are no import aliases in either stack.
 
 | Trigger | Rule |
 |---|---|
-| Before throwing, catching or mapping any error | Read `skills/error-handling.SKILL.md` |
-| Before writing or changing a test | Read `skills/unit-test.SKILL.md` |
-| Before investigating any failure (build, test, runtime, research job, agent) | Read `skills/debug.SKILL.md` |
-| Before changing an entity, `AppDbContext`, `ProviderContexts` or a migration | Read `docs/db-schema.md` and `skills/migrations.SKILL.md`; add the migration to **both** providers; update `docs/db-schema.md` in the same change |
+| Before throwing, catching or mapping any error | Read `.claude/skills/error-handling/SKILL.md` |
+| Before writing or changing a test | Read `.claude/skills/unit-test/SKILL.md` |
+| Before investigating any failure (build, test, runtime, research job, agent) | Read `.claude/skills/debug/SKILL.md` |
+| Before changing an entity, `AppDbContext`, `ProviderContexts` or a migration | Read `docs/db-schema.md` and `.claude/skills/migrations/SKILL.md`; add the migration to **both** providers; update `docs/db-schema.md` in the same change |
 | Before changing scoring, filters, weights, dedupe, limits, CSV/paste rules, agent rules or approval | Read `docs/business-rules.md`; update it in the same change |
 | Before changing a status, state or transition | Read `docs/opportunity-lifecycle.md`; update it in the same change |
 | Before adding or changing an endpoint | Read `docs/api-contracts.md` and `docs/conventions.md`; update `docs/api-contracts.md` in the same change |
-| Before touching `agent/src/platforms`, `form.ts`, `answers.ts` or the mock site | Read `skills/agent-adapter.SKILL.md` |
+| Before touching `agent/src/platforms`, `form.ts`, `answers.ts` or the mock site | Read `.claude/skills/agent-adapter/SKILL.md` |
 | When something is unclear, unbuilt or a decision is needed | Read `docs/open-questions.md`; log a new `OQ-BE-###` entry instead of improvising |
 | When the stack, a port, a command or a folder changes | Update this file in the same change |
 
@@ -142,9 +142,15 @@ Hard guardrails:
 | Milestone status and verification record | `docs/plans-and-status.md` |
 | Why things are the way they are | `docs/DECISIONS.md` |
 | Slice design specs (M2–M5; M4/M5 not built) | `docs/feature-contracts.md` |
-| Error handling procedure | `skills/error-handling.SKILL.md` |
-| Writing tests | `skills/unit-test.SKILL.md` |
-| Debugging | `skills/debug.SKILL.md` |
-| Changing the database model | `skills/migrations.SKILL.md` |
-| Agent platform adapters | `skills/agent-adapter.SKILL.md` |
+| Error handling procedure | `.claude/skills/error-handling/SKILL.md` |
+| Writing tests | `.claude/skills/unit-test/SKILL.md` |
+| Debugging | `.claude/skills/debug/SKILL.md` |
+| Changing the database model | `.claude/skills/migrations/SKILL.md` |
+| Agent platform adapters | `.claude/skills/agent-adapter/SKILL.md` |
 | Agent usage for end users | `agent/README.md` |
+
+## AI tooling, privacy and review
+
+- AI tooling policy (MCP, skills, hooks, permissions, secrets): `docs/AI_TOOLING.md`. No MCP server is configured; add one only with that policy.
+- Privacy and data handling: `docs/PRIVACY.md`.
+- Before a commit run `/verify`; a finished batch goes out with `/release` (PR template in `.github/`).

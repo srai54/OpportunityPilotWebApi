@@ -52,7 +52,7 @@ Audit date: 2026-10-05.
 ### OQ-BE-001 — Live LinkedIn and Naukri selectors are unverified
 - **Priority** P1 · **Owner** Shivanshu · **Status** Open
 - **Where** `agent/src/platforms/linkedin.ts:52-96`, `agent/src/platforms/naukri.ts:42-76`, `agent/test/mock/server.ts:1-4`
-- **What is needed** The adapters are tested only against the local mock. Run `npm run agent -- collect linkedin --campaign <id>` and `apply linkedin` (dry run) on a real account, then the same for Naukri; send `agent/.data/debug/*` from any failure so selectors can be fixed (see `skills/agent-adapter.SKILL.md`).
+- **What is needed** The adapters are tested only against the local mock. Run `npm run agent -- collect linkedin --campaign <id>` and `apply linkedin` (dry run) on a real account, then the same for Naukri; send `agent/.data/debug/*` from any failure so selectors can be fixed (see `.claude/skills/agent-adapter/SKILL.md`).
 
 ### OQ-BE-002 — Production runs in demo mode: Supabase not configured on Render
 - **Priority** P1 · **Owner** Shivanshu · **Status** Open

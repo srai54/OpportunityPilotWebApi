@@ -6,7 +6,7 @@ description: How to change the OpportunityPilot database model — entity and ma
 # Migrations (two providers)
 
 There are two migration sets, one per provider, generated from the same model. Every model change needs a migration in
-**both**, with the same name, in the same change. Schema reference: [docs/db-schema.md](../docs/db-schema.md) — update it
+**both**, with the same name, in the same change. Schema reference: [docs/db-schema.md](../../../docs/db-schema.md) — update it
 in the same commit.
 
 ## Decision table — where does the change go?
@@ -35,7 +35,7 @@ in the same commit.
 5. Apply locally: run the API in Development (it migrates LocalDB on startup) or `dotnet ef database update -p src/OpportunityPilot.Infrastructure -s src/OpportunityPilot.Api --context SqlServerAppDbContext`.
 6. Postgres is applied by every integration test run (`Database:MigrateOnStartup` in `PostgresApiFactory`): run `dotnet test`.
 7. Confirm nothing is pending for either context: `dotnet ef migrations has-pending-model-changes -p src/OpportunityPilot.Infrastructure -s src/OpportunityPilot.Api --context <Context>`.
-8. Update [docs/db-schema.md](../docs/db-schema.md) (table section and the migration list).
+8. Update [docs/db-schema.md](../../../docs/db-schema.md) (table section and the migration list).
 
 To undo an **unapplied** migration: `dotnet ef migrations remove -p src/OpportunityPilot.Infrastructure -s src/OpportunityPilot.Api --context <Context>` for each provider.
 
