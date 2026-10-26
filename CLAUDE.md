@@ -52,36 +52,10 @@ Run from the repository root unless noted. dotnet-ef 10.x must be installed glob
 
 ## 3. Folder blueprint
 
-| Path | Holds |
-|---|---|
-| `src/OpportunityPilot.Domain/<Feature>/` | entities (`IOwned`, private setters, validating constructor, `Max…Length` constants) and one enum per file; `Common/` has `IOwned`, `OpportunityMode`, `Guard` |
-| `src/OpportunityPilot.Application/<Feature>/` | `<Feature>Service.cs` + `<Feature>Dtos.cs` (+ feature helpers, e.g. `Research/Rules/`); `Abstractions/` (`IAppDbContext`, `ICurrentUser`), `Common/AppExceptions.cs`, `Configuration/` (options, `SetupState`), `DependencyInjection.cs` |
-| `src/OpportunityPilot.Infrastructure/` | `Persistence/` (`AppDbContext`, `ProviderContexts`, `DesignTimeFactories`, `Repositories/` (EF `I<Feature>Repository` implementations), `Migrations/SqlServer`, `Migrations/Postgres`); `Research/` (safe fetcher, address policy, content parser); `DependencyInjection.cs` |
-| `src/OpportunityPilot.Api/` | `Controllers/`, `Auth/` (schemes, guest tokens, JWKS, `CurrentUser`), `Hosting/` (exception handler, correlation id, health check, research processor), `Program.cs`, `appsettings*.json` |
-| `tests/OpportunityPilot.UnitTests/` | pure tests; research ones under `Research/` |
-| `tests/OpportunityPilot.IntegrationTests/` | `<Feature>ApiTests.cs` on `PostgresApiFactory`; `StartupGuardTests.cs` for production/demo startup |
-| `agent/src/` | `cli.ts` (commands), `run.ts` (apply), `collect.ts`, `circle.ts` (JD circle), `outreach.ts` (LinkedIn notes), `schedule.ts`, `api.ts`, `form.ts`, `answers.ts`, `browser.ts`, `store.ts`, `config.ts`, `util.ts`, `platforms/` (`types.ts`, one adapter per site, `linkedin-people.ts` for people search and profile actions) |
-| `agent/test/` | `*.test.ts` (Vitest) and `mock/server.ts` (local LinkedIn/Naukri stand-in + fake API) |
-| `docs/` | reference docs (table below); `feature-contracts.md` holds the older per-slice specs |
-| `.claude/skills/` | task procedures, loaded as Claude Code skills (table below) |
-| `.claude/` | `settings.json` hooks and `hooks/*.mjs` guards |
-
-New feature `Foo`, in this order:
-
-| Step | File |
-|---|---|
-| 1 Domain | `Domain/Foo/Foo.cs` (+ `Domain/Foo/FooStatus.cs`) |
-| 2 Persistence | `DbSet<Foo>` in `Application/Abstractions/IAppDbContext.cs` and `Infrastructure/Persistence/AppDbContext.cs`; mapping in `AppDbContext.OnModelCreating`; provider-only parts in `ProviderContexts.cs`; migrations for both providers |
-| 3 Application | `Application/Foo/IFooService.cs` + `FooService.cs`, `Application/Foo/IFooRepository.cs`, `Application/Foo/FooDtos.cs`; register `AddScoped<IFooService, FooService>()` in `Application/DependencyInjection.cs` |
-| 3b Repository | `Infrastructure/Persistence/Repositories/FooRepository.cs`; register in `AddRepositories` in `Infrastructure/DependencyInjection.cs` (layering: `docs/conventions.md` → Layering) |
-| 4 External adapter (if any) | interface in `Application/Foo/`, implementation in `Infrastructure/Foo/`, registered in `Infrastructure/DependencyInjection.cs` |
-| 5 Api | `Api/Controllers/FooController.cs` (`[ApiController]`, `[Route("api/v1/foo")]`, thin, depends on `IFooService`) |
-| 6 Tests | `UnitTests/FooTests.cs`; `IntegrationTests/FooApiTests.cs` |
-| 7 Docs | `docs/db-schema.md`, `docs/api-contracts.md`, `docs/business-rules.md`, lifecycle doc if it has states |
-
-Co-location: DTOs and requests live in the feature's single `<Feature>Dtos.cs` next to its service; feature options live in
-the feature folder (`Research/ResearchOptions.cs`), shared options in `Configuration/Options.cs`; exceptions only in
-`Application/Common`; nothing feature-specific in `Common/`.
+Domain → Application (services, DTOs, abstractions) → Infrastructure (EF, providers, HTTP) → Api (controllers, auth, hosting); `agent/` is the
+local Playwright CLI; `tests/` holds unit (InMemory) and integration (Postgres) tests. The full folder map and the order for a new feature
+(Domain → persistence → service → repository → adapter → controller → tests → docs) are in `docs/ARCHITECTURE.md`; open it before adding a
+feature or a folder. Endpoint work: the `add-endpoint` skill.
 
 ## 4. Path aliases
 
@@ -103,7 +77,8 @@ None. There are no import aliases in either stack.
 | Before changing an entity, `AppDbContext`, `ProviderContexts` or a migration | Read `docs/db-schema.md` and `.claude/skills/migrations/SKILL.md`; add the migration to **both** providers; update `docs/db-schema.md` in the same change |
 | Before changing scoring, filters, weights, dedupe, limits, CSV/paste rules, agent rules or approval | Read `docs/business-rules.md`; update it in the same change |
 | Before changing a status, state or transition | Read `docs/opportunity-lifecycle.md`; update it in the same change |
-| Before adding or changing an endpoint | Read `docs/api-contracts.md` and `docs/conventions.md`; update `docs/api-contracts.md` in the same change |
+| Before adding or changing an endpoint | Read `.claude/skills/add-endpoint/SKILL.md`; run `python tools/endpoints.py` and update `docs/api-contracts.md` in the same change |
+| Before finishing a batch | Read `.claude/skills/docs-sync/SKILL.md` and update every document it lists |
 | Before touching `agent/src/platforms`, `form.ts`, `answers.ts` or the mock site | Read `.claude/skills/agent-adapter/SKILL.md` |
 | When something is unclear, unbuilt or a decision is needed | Read `docs/open-questions.md`; log a new `OQ-BE-###` entry instead of improvising |
 | When the stack, a port, a command or a folder changes | Update this file in the same change |
@@ -119,13 +94,11 @@ Hard guardrails:
 - **Demo mode must keep working**: no raw SQL or provider-only features in Application; InMemory enforces no unique index, FK or cascade, so check duplicates and delete children in services; `StartupGuardTests` must pass.
 - **Research never changes `Opportunity.Status`**; only the user (PATCH) and an Applied agent report do.
 - **Time**: inject `TimeProvider`; no `DateTime.UtcNow` in Domain or Application. Store UTC only.
-- **Git workflow**: Every feature or change goes on a **new branch** (`feature/`, `fix/`, `docs/`, `chore/` + name); never commit to `main`. Run this repo's checks, commit, then from the workspace root run `bash tools/pr.sh <repo> "<title>" <body-file>`: it pushes, raises a PR to `main` and **squash-merges** it (auto-merge authorised by the user *for now*; if withdrawn, pass `--no-merge` and wait), deletes the branch and pulls `main`. `main` deploys automatically, so a merge is a release.
-- **Push only at the end of the session or when the user says so (rule, set by the user 2026-10-06 — replaces "always push"):** commit locally as each task finishes; a local commit deploys nothing. Do **not** push, raise or merge a PR after a task or a minor change: every push/merge to `main` deploys Vercel and Render and uses up free-tier limits. Push + PR + merge only when **all tasks of the session are done and verified** (typecheck, lint, tests, build, browser check through the local proxy against the live API), or when the user **explicitly** asks. If the session must stop early, leave the work committed locally on its branch (no push) and note the branch in `TASKS.md`. See `../CLAUDE.md`.
+- **Git, push and merge:** the workspace rules in `../CLAUDE.md` (one branch and one PR per batch, push only when the batch is verified, merge with `tools/pr.sh`) and `CONTRIBUTING.md`. Never commit to `main`, force-push or use `--no-verify`.
 - **Enums are stored as strings**: do not rename a member of a stored enum without a data migration.
 - **Capabilities tell the truth**: never report `Ready` for something not built and verified; missing optional config degrades to demo mode or NotConfigured, never a crash. Only security guards (DevBypass outside Development) stop startup.
 - **Specs are not code**: `docs/feature-contracts.md` holds designs; `docs/api-contracts.md` lists what exists. M4–M9 items are not built.
 - Do not edit `.env*`, `appsettings.*.local.json`, lock files, `agent/config.json` or `agent/.data/**`; do not write real keys or passwords into any file (hooks in `.claude/settings.json` block these).
-- Do not commit or push unless asked; do not use `--no-verify` or force-push.
 - Keep the build at 0 warnings and `dotnet test` green before calling work done.
 
 ### Reference table — these files are not auto-loaded; open the one that matches the task
@@ -133,9 +106,13 @@ Hard guardrails:
 | Domain | File |
 |---|---|
 | Tables, columns, indexes, provider differences, migration list | `docs/db-schema.md` |
-| Endpoints, auth per endpoint, request/response shapes, status codes | `docs/api-contracts.md` |
+| Every endpoint with auth and rate limit (generated) | `docs/api-endpoints.md` |
+| Request/response shapes, status codes | `docs/api-contracts.md` |
+| What data is stored, its class and retention; outside services | `docs/DATA_INVENTORY.md`, `docs/THIRD_PARTIES.md` |
+| Logs, error reports, feedback, triage | `docs/OBSERVABILITY.md` |
 | Validation, limits, scoring, filters, dedupe, safe fetch, CSV, agent rules, demo mode, rate limits | `docs/business-rules.md` |
 | Opportunity status, filter outcome, research job states, source status, application status | `docs/opportunity-lifecycle.md` |
+| Folder map and the order of files for a new feature | `docs/ARCHITECTURE.md` |
 | Naming, C# and TypeScript style, error envelope, test naming | `docs/conventions.md` |
 | Known gaps, stubs, unverified integrations, decisions needed | `docs/open-questions.md` |
 | Local setup, configuration keys, Supabase, Render deployment | `docs/SETUP.md` |
@@ -153,4 +130,5 @@ Hard guardrails:
 
 - AI tooling policy (MCP, skills, hooks, permissions, secrets): `docs/AI_TOOLING.md`. No MCP server is configured; add one only with that policy.
 - Privacy and data handling: `docs/PRIVACY.md`.
+- Observability and feedback (logs, error reports, feedback, triage loop): `docs/OBSERVABILITY.md`. AI with a person's own Claude key: `docs/DECISIONS.md` (BYOK).
 - Before a commit run `/verify`; a finished batch goes out with `/release` (PR template in `.github/`).

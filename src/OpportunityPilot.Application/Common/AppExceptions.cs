@@ -12,3 +12,6 @@ public sealed class RequestValidationException(IDictionary<string, string[]> err
 {
     public IDictionary<string, string[]> Errors { get; } = errors;
 }
+
+/// <summary>Maps to 403: the caller is signed in but may not do this (e.g. an admin-only list).</summary>
+public sealed class ForbiddenException(string message) : Exception(message);

@@ -22,6 +22,10 @@ public static class RateLimits
     public const string Assistant = "assistant";
     public const string AiWrites = "ai-writes";
     public const string LeadSearch = "lead-search";
+    public const string Feedback = "feedback";
+    public const string ClientErrors = "client-errors";
+    public const string ClaudeConnect = "claude-connect";
+    public const string ResumeTailor = "resume-tailor";
 
     /// <summary>(policy, permits, window). Kept in one place so tests and the runbook can name them.</summary>
     public static readonly (string Name, int Permits, TimeSpan Window)[] Policies =
@@ -41,6 +45,13 @@ public static class RateLimits
         (AiWrites, 60, TimeSpan.FromHours(1)),
         // Apollo lead search is paid per result; the daily budget caps the total, this caps one person (2026-10-19).
         (LeadSearch, 10, TimeSpan.FromHours(1)),
+        // In-app feedback and browser error reports (2026-10-26): enough for real use, too few to flood the admin's list.
+        (Feedback, 20, TimeSpan.FromHours(1)),
+        (ClientErrors, 60, TimeSpan.FromHours(1)),
+        // Connecting a Claude key makes a test call to Anthropic: 10 tries an hour stops key guessing through this server.
+        (ClaudeConnect, 10, TimeSpan.FromHours(1)),
+        // Tailoring a resume spends the candidate's, the recruiter's or the server's AI: 10 an hour per visitor.
+        (ResumeTailor, 10, TimeSpan.FromHours(1)),
     ];
 
     public static void Add(RateLimiterOptions options)

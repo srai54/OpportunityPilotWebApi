@@ -6,12 +6,33 @@ How this repository is worked on with Claude Code, and what the assistant may an
 
 - `CLAUDE.md` (this repo) is loaded every session: stack, commands, folder map, mandatory rules, and a table of docs to open only when a task needs them.
 - The workspace `CLAUDE.md`, `HANDOFF.md` (where things stand) and `TASKS.md` (single task list) sit one level up.
-- Personal assistant memory is kept in the user profile and never committed. Anything the team needs goes into `CLAUDE.md`, `docs/` or `HANDOFF.md`.
+- Personal assistant memory is kept in the user profile and never committed. Anything the team needs goes into `CLAUDE.md`, `docs/` or `HANDOFF.md`:
+  a preference that becomes a team rule is copied into the workspace `CLAUDE.md` "Mandatory rules" with its date.
+- Load order: workspace `CLAUDE.md` → this repo's `CLAUDE.md` → a skill when the task matches → a doc from the routing table. Nothing else is read
+  at session start; generated files (build output, migrations' designer files, coverage) are denied in `permissions` so they never fill the context.
 
 ## Skills and commands
 
 - Skills live in `.claude/skills/<name>/SKILL.md` (front matter: `name`, `description`) and load when their description matches the task.
-- Slash commands live in `.claude/commands/`. `/verify` runs every check before a commit; `/release` raises the one PR for a finished batch.
+  This repo: `add-endpoint`, `docs-sync`, `migrations`, `unit-test`, `error-handling`, `debug`, `agent-adapter`.
+- Slash commands live in `.claude/commands/`: `/verify` (every check before a commit), `/review` (findings on the branch before the PR),
+  `/release` (the one PR for a finished batch), `/live-check` (the deployed site after a merge), `/handoff` (HANDOFF.md and TASKS.md at the end).
+
+## AI data rules
+
+- Never paste production data, a candidate's personal details or a secret into a prompt, an issue or a chat. Use the labelled sample data
+  (Settings → Sample data) or the unit-test fixtures.
+- In the product, AI providers receive only the text a request needs; contact details, pay and rates are never sent
+  (see `docs/THIRD_PARTIES.md` and `docs/DATA_INVENTORY.md`). Every AI output shown to a user is labelled as AI and reviewed before it is
+  sent or saved.
+- A person's own Claude key is used only for that person's requests (and, if they switch it on, their candidates' resume tailoring).
+
+## Checks that keep this true
+
+- `node .claude/check-ai-config.mjs` (CI job `ai-config`): `.mcp.json` lists only servers from the table below, with no inline
+  credentials; project servers are never auto-enabled; the deny rules and hook files exist; every skill has a name and a description.
+- `node --test .claude/hooks/hooks.test.mjs` (same CI job): the guard hooks block what they claim to block.
+- `.githooks/pre-commit` (enable with `git config core.hooksPath .githooks`): gitleaks on the staged changes.
 
 ## MCP servers and plugins
 

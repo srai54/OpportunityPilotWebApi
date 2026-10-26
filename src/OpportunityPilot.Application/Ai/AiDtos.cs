@@ -11,7 +11,8 @@ public sealed record AiStatusDto(bool Active, string Provider, string Model, str
     int CallsToday, int DailyLimit, int MaxCallsPerRun, object? LastFailure, bool RewriteAvailable);
 
 /// <summary>What one AI call produced. <see cref="Json"/> is null when it failed; <see cref="Outcome"/> says why.</summary>
-public sealed record LlmResult(string? Json, Domain.Ai.AiOutcome Outcome, string? Reason, int Attempts, TimeSpan Duration);
+/// <param name="Provider">Who answered (Claude, Groq, Gemini); null when not known.</param>
+public sealed record LlmResult(string? Json, Domain.Ai.AiOutcome Outcome, string? Reason, int Attempts, TimeSpan Duration, string? Provider = null);
 
 public interface ILlmClient
 {

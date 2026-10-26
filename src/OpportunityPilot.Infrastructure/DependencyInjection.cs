@@ -29,6 +29,8 @@ public static class DependencyInjection
             c.BaseAddress = new Uri("https://api.groq.com/");
             c.Timeout = Timeout.InfiniteTimeSpan;
         });
+        // A person's own Claude key (Settings → Claude); the SDK sets the address and handles retries, so no base address or timeout here.
+        services.AddHttpClient<Application.Ai.IClaudeClient, ClaudeLlmClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
         services.AddTransient<ILlmClient, RoutingLlmClient>();
         services.AddHttpClient<Integrations.ConnectorHttp>(Integrations.ConnectorHttp.ClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(Integrations.ConnectorHttp.Handler);

@@ -69,6 +69,9 @@ public interface IAppDbContext
     DbSet<UserEvent> UserEvents { get; }
     DbSet<Domain.Circle.CirclePerson> CirclePeople { get; }
     DbSet<Domain.Interviews.JobInterview> JobInterviews { get; }
+    DbSet<Domain.Feedback.UserFeedback> UserFeedback { get; }
+    DbSet<Domain.Feedback.ClientError> ClientErrors { get; }
+    DbSet<Domain.Ai.AiCredential> AiCredentials { get; }
 
     /// <summary>The research runner clears tracked state before recording a failure, so a half-applied batch is not saved.</summary>
     Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }

@@ -9,7 +9,7 @@ namespace OpportunityPilot.Api.Controllers;
 [AllowAnonymous]
 [Route("api/v1/public")]
 [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.PublicProgress)]
-public sealed class PublicProgressController(ProgressViewService view, ResumeService resumes, JourneyService journey) : ControllerBase
+public sealed class PublicProgressController(ProgressViewService view, ResumeService resumes, JourneyService journey, ResumeTailorService tailor) : ControllerBase
 {
     [HttpGet("progress/{token}")]
     public async Task<ActionResult<ProgressViewDto>> Progress(string token, CancellationToken ct) => Ok(await view.ViewAsync(token, ct));
@@ -21,6 +21,12 @@ public sealed class PublicProgressController(ProgressViewService view, ResumeSer
 
     [HttpPut("progress/{token}/resumes/{dealId:guid}")]
     public async Task<ActionResult<ResumeDto>> SaveResume(string token, Guid dealId, SaveResumeRequest request, CancellationToken ct) => Ok(await resumes.SaveAsync(token, dealId, request, ct));
+
+    /// <summary>Tailors the resume to the role's job description with Claude (or the server's AI). Returns it for review; nothing is saved.</summary>
+    [HttpPost("progress/{token}/resumes/{dealId:guid}/tailor")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Hosting.RateLimits.ResumeTailor)]
+    public async Task<ActionResult<TailorResumeDto>> TailorResume(string token, Guid dealId, TailorResumeRequest request, CancellationToken ct) =>
+        Ok(await tailor.TailorAsync(token, dealId, request, ct));
 
     [HttpPost("progress/{token}/resumes/{dealId:guid}/submit")]
     public async Task<ActionResult<ResumeDto>> SubmitResume(string token, Guid dealId, CancellationToken ct) => Ok(await resumes.SubmitAsync(token, dealId, ct));

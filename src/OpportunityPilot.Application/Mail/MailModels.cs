@@ -60,6 +60,9 @@ public sealed class TokenProtector(Microsoft.Extensions.Options.IOptions<MailOpt
 {
     private const int NonceSize = 12, TagSize = 16;
 
+    /// <summary>True when an encryption key is available, so secrets can be stored.</summary>
+    public bool Ready => options.Value.HasKey;
+
     public string Protect(string plain)
     {
         if (!options.Value.TryKey(out var key)) throw new InvalidOperationException("Mail__TokenKey is not set.");

@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Pre-commit secret scan (2026-10-26). Turn on once per clone:  git config core.hooksPath .githooks
+# Scans only the staged changes with gitleaks (same rules as CI, .gitleaks.toml). Without gitleaks installed it says so and
+# lets the commit through; CI still scans the full history on every push.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --no-banner --redact -c .gitleaks.toml || {
+    echo "pre-commit: gitleaks found a possible secret in the staged changes. Remove it (and rotate it if it was real)." >&2
+    exit 1
+  }
+else
+  echo "pre-commit: gitleaks is not installed, so staged changes were not scanned (CI scans every push). Install: https://github.com/gitleaks/gitleaks" >&2
+fi

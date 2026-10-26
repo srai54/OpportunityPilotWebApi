@@ -21,7 +21,7 @@ What OpportunityPilot stores about people, why, for how long, and how it is remo
 
 ## Retention and removal
 
-- Research events older than 90 days are deleted by the retention service; guest sessions expire after 30 days.
+- Research events older than 90 days are deleted by the retention service; guest sessions expire after 30 days; browser error reports are deleted 30 days after they were last seen.
 - **Export:** Settings → Your data → Export JSON (`GET /api/v1/account-data/export`).
 - **Delete:** Settings → Delete all data (`DELETE /api/v1/account-data`) removes every record of the account, including candidates, resumes, journeys and links.
 - A candidate who withdraws consent: their private link stops working at once.
@@ -29,6 +29,15 @@ What OpportunityPilot stores about people, why, for how long, and how it is remo
 ## Where data lives
 
 PostgreSQL (Render), the web app on Vercel. AI providers (Groq, Gemini, Whisper) receive only the text needed for the request (a goal, a draft, a voice clip), never a candidate's contact details or rate.
+
+**Claude with your own key (2026-10-26):** a person may connect their own Anthropic API key. Their AI requests then go to Anthropic under
+*their* Anthropic account and its data terms. Resume tailoring sends the resume text (name, summary, skills, projects) and the role's job
+description; never contact details, pay or rates. The key is stored encrypted, shown only as its last four characters, never logged or
+exported, and deleted with "Remove key" or "Delete all data". A candidate's own key pasted on the resume page is used for that one request
+and not stored.
+
+**Feedback and error reports:** feedback stores the message, rating, page path and the sender's sign-in email (for a reply). Error reports
+store the error message, the page path (link tokens masked), the first stack lines, the browser and the build; no form contents.
 
 ## Contact
 

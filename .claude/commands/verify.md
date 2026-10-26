@@ -8,5 +8,8 @@ Run, in order, and stop at the first failure (show its output):
 2. `dotnet test tests/OpportunityPilot.UnitTests --no-build` (integration tests need Docker; they run in CI)
 3. A schema change: `dotnet ef migrations has-pending-model-changes` for both providers
 4. `agent/`: `npm test` when agent files changed
+5. `python tools/endpoints.py --check` (regenerate with `python tools/endpoints.py` when a controller changed)
+6. `node .claude/check-ai-config.mjs` and `node --test .claude/hooks/hooks.test.mjs` when `.claude/`, `.mcp.json` or the policy changed
+7. Coverage floors: `dotnet test tests/OpportunityPilot.UnitTests --no-build --collect:"XPlat Code Coverage" --results-directory coverage` then `python tools/coverage-gate.py coverage`
 
 Then report one line per check with its result and counts (tests passed / failed). Never report a check you did not run. For UI changes, also say whether the Edge check (1280 + 375, light + dark, axe 0) was done.

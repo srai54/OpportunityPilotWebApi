@@ -76,6 +76,9 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
     public DbSet<Domain.Circle.CirclePerson> CirclePeople => Set<Domain.Circle.CirclePerson>();
     public DbSet<Domain.Interviews.JobInterview> JobInterviews => Set<Domain.Interviews.JobInterview>();
+    public DbSet<Domain.Feedback.UserFeedback> UserFeedback => Set<Domain.Feedback.UserFeedback>();
+    public DbSet<Domain.Feedback.ClientError> ClientErrors => Set<Domain.Feedback.ClientError>();
+    public DbSet<Domain.Ai.AiCredential> AiCredentials => Set<Domain.Ai.AiCredential>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -177,6 +180,46 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             // The public page finds a link by the hash of the token, so it must be unique and fast to look up.
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => new { x.OwnerId, x.CandidateId });
+        });
+
+        modelBuilder.Entity<Domain.Feedback.UserFeedback>(e =>
+        {
+            e.ToTable("user_feedback");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.Email).HasMaxLength(Domain.Feedback.UserFeedback.MaxEmailLength);
+            e.Property(x => x.Message).HasMaxLength(Domain.Feedback.UserFeedback.MaxMessageLength).IsRequired();
+            e.Property(x => x.Page).HasMaxLength(Domain.Feedback.UserFeedback.MaxPageLength);
+            e.Property(x => x.AppVersion).HasMaxLength(Domain.Feedback.UserFeedback.MaxVersionLength);
+            e.HasIndex(x => x.CreatedAt);
+            e.HasIndex(x => x.OwnerId);
+        });
+
+        modelBuilder.Entity<Domain.Feedback.ClientError>(e =>
+        {
+            e.ToTable("client_errors");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Message).HasMaxLength(Domain.Feedback.ClientError.MaxMessageLength).IsRequired();
+            e.Property(x => x.Source).HasMaxLength(Domain.Feedback.ClientError.MaxTextLength);
+            e.Property(x => x.Page).HasMaxLength(Domain.Feedback.ClientError.MaxTextLength);
+            e.Property(x => x.Stack).HasMaxLength(Domain.Feedback.ClientError.MaxStackLength);
+            e.Property(x => x.UserAgent).HasMaxLength(Domain.Feedback.ClientError.MaxTextLength);
+            e.Property(x => x.AppVersion).HasMaxLength(64);
+            e.Property(x => x.CorrelationId).HasMaxLength(64);
+            e.HasIndex(x => x.LastSeenAt);
+        });
+
+        modelBuilder.Entity<Domain.Ai.AiCredential>(e =>
+        {
+            e.ToTable("ai_credentials");
+            e.HasKey(x => x.OwnerId);
+            e.Property(x => x.OwnerId).ValueGeneratedNever();
+            e.Property(x => x.EncryptedKey).HasMaxLength(Domain.Ai.AiCredential.MaxEncryptedLength).IsRequired();
+            e.Property(x => x.KeyHint).HasMaxLength(8).IsRequired();
+            e.Property(x => x.Model).HasMaxLength(Domain.Ai.AiCredential.MaxModelLength).IsRequired();
         });
 
         modelBuilder.Entity<Domain.Access.UserAccess>(e =>

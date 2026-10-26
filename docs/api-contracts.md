@@ -356,6 +356,7 @@ Prep, Roles, Resume, Journey. The public endpoints need no account (the token is
 | GET | `/api/v1/public/progress/{token}/resumes` | anonymous (Resume shared) | — | `ResumeWorkspaceDto { name, headline, skills, jobs[] { dealId, title, client?, jobDescription, resume } }` |
 | PUT | `/api/v1/public/progress/{token}/resumes/{dealId}` | anonymous (Resume shared) | `{ data (JSON ≤60,000), matchScore? }` | `ResumeDto`; back to Draft after a change |
 | POST | `/api/v1/public/progress/{token}/resumes/{dealId}/submit` | anonymous (Resume shared) | — | `ResumeDto` (Submitted) |
+| POST | `/api/v1/public/progress/{token}/resumes/{dealId}/tailor` | anonymous (Resume shared; 10/h) | `{ data (resume JSON), apiKey? (the candidate's own Anthropic key, this call only, never stored) }` | `TailorResumeDto { data, provider, model?, changes[], notAdded[] }`; not saved. Key order: own key → the link owner's shared Claude key (100/day) → server AI; 409 when none, or with the provider's reason; 400 without a JD |
 | GET | `/api/v1/staffing/candidates/{id}/resumes` | user | — | `SalesResumeDto[]` |
 | POST | `/api/v1/staffing/resumes/{id}/review` | user | `{ score (0–100), feedback? }` | `SalesResumeDto` (Reviewed); 400 for a draft |
 | GET | `/api/v1/staffing/bench` | user | — | `BenchDto { rows[] { candidateId, name, headline, day, salesperson, priority, status (available, interviewing, mapped, training), resumeStrength, bestFit, certifications[], next }, averageStrength }` |
@@ -364,6 +365,25 @@ Prep, Roles, Resume, Journey. The public endpoints need no account (the token is
 | POST | `/api/v1/staffing/candidates/{id}/journey` | user | `{ kind, title, detail?, at?, hours? }` | `JourneyDto` |
 | DELETE | `/api/v1/staffing/journey/{entryId}` | user | — | 204 |
 | GET / POST | `/api/v1/public/progress/{token}/journey` | anonymous (Journey shared) | POST: `{ kind, title, detail?, at?, hours? }` | `JourneyDto` without the priority flag |
+
+### Claude key, feedback and browser errors (2026-10-26)
+
+| Method | Path | Auth | Body | Response |
+|---|---|---|---|---|
+| GET | `/api/v1/ai/claude` | user, not guest | — | `ClaudeKeyStatusDto { connected, keyHint ("…wxyz"), model, models[], shareWithCandidates, checkedAt?, canStore }`; the key itself is never returned |
+| PUT | `/api/v1/ai/claude` | user, not guest; 10/h | `{ apiKey (sk-ant-…, not an admin key), model? }` | `ClaudeKeyStatusDto`; tested with a free call (`GET /v1/models`) first; 400 when Anthropic refuses it, 409 when Anthropic is unreachable or the server has no encryption key |
+| PATCH | `/api/v1/ai/claude` | user, not guest | `{ model?, shareWithCandidates? }` | `ClaudeKeyStatusDto`; 404 without a key |
+| DELETE | `/api/v1/ai/claude` | user, not guest | — | 204 |
+| POST | `/api/v1/feedback` | user or guest; 20/h | `{ kind (Bug, Idea, Praise, Other), rating? (1–5), message (3–2000), page?, appVersion? }` | `FeedbackDto` |
+| POST | `/api/v1/client-errors` | anonymous; 60/h | `{ message, source?, page?, stack? (≤4000), userAgent?, appVersion?, correlationId? }` | 202; the same message on the same page within an hour is counted on one row |
+| GET | `/api/v1/admin/feedback` | admin (else 403) | — | `FeedbackDto[]` (newest 200) |
+| PUT | `/api/v1/admin/feedback/{id}/status` | admin | `{ status (New, Seen, Done) }` | `FeedbackDto` |
+| GET | `/api/v1/admin/client-errors` | admin | — | `ClientErrorDto[]` (newest 100) |
+| GET | `/api/v1/admin/feedback/summary` | admin | — | `FeedbackSummaryDto { new, last7Days, averageRating?, byKind, errorsLast24h, errorKinds }` |
+
+With a Claude key connected, every AI call of that person (`ILlmClient`: goal previews, draft rewrite, profile improve, the assistant) goes to
+Claude; `GET /api/v1/ai/status` then reports `provider: "Claude"`, the chosen model and a daily cap of 500. When Claude is down, busy or declines,
+the call falls back to the server's provider; a refused key is reported instead ("Reconnect it in Settings → Claude").
 
 ## DTO shapes
 

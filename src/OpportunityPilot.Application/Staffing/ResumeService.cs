@@ -87,6 +87,15 @@ public sealed class ResumeService(IAppDbContext db, ICurrentUser user, ProgressV
         return Dto(resume, dealId);
     }
 
+    /// <summary>The role a candidate may tailor their resume to: the link's owner, the role's title and its job description.</summary>
+    public async Task<(Guid OwnerId, string Title, string? JobDescription)> RoleAsync(string token, Guid dealId, CancellationToken ct)
+    {
+        var (link, candidate) = await SharedAsync(token, ct);
+        if (!(await AllowedDealsAsync(link.OwnerId, candidate.Id, ct)).Contains(dealId)) throw new NotFoundException("Role not found.");
+        var deal = await db.StaffingDeals.AsNoTracking().FirstOrDefaultAsync(d => d.Id == dealId && d.OwnerId == link.OwnerId, ct) ?? throw new NotFoundException("Role not found.");
+        return (link.OwnerId, deal.Title, deal.JobDescription);
+    }
+
     // ---------- Sales team ----------
 
     public async Task<IReadOnlyList<SalesResumeDto>> ListAsync(Guid candidateId, CancellationToken ct)

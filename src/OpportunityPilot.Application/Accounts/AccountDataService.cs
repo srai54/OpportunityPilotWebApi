@@ -106,6 +106,9 @@ public sealed class AccountDataService(IAppDbContext db, ICurrentUser user, Time
         db.CandidateJourneyEntries.RemoveRange(await db.CandidateJourneyEntries.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.CandidateResumes.RemoveRange(await db.CandidateResumes.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.UserAccess.RemoveRange(await db.UserAccess.Where(x => x.OwnerId == owner).ToListAsync(ct));
+        db.AiCredentials.RemoveRange(await db.AiCredentials.Where(x => x.OwnerId == owner).ToListAsync(ct));
+        db.UserFeedback.RemoveRange(await db.UserFeedback.Where(x => x.OwnerId == owner).ToListAsync(ct));
+        db.ClientErrors.RemoveRange(await db.ClientErrors.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.SecurityEvents.RemoveRange(await db.SecurityEvents.Where(x => x.OwnerId == owner).ToListAsync(ct));
         // The one record kept: that this owner's data was deleted, and when. It holds nothing else.
         audit.Record(owner, Domain.Auth.SecurityEventType.AccountDataDeleted);

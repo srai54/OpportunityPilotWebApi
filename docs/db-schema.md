@@ -504,6 +504,47 @@ Index `(OwnerId, CandidateId, OccurredAt)`. `staffing_candidates` gained `Joined
 `candidate_progress_links` gained `Note` (string 1000?) and `staffing_interviews` gained `CandidatePrep` (string 2000?).
 Account deletion removes all four tables' rows of the owner.
 
+### user_feedback — `Domain/Feedback/UserFeedback.cs` (2026-10-26)
+
+| Column | Type | Notes |
+|---|---|---|
+| Id, OwnerId | uuid | |
+| Guest | bool | Sent from a guest session |
+| Email | string(256)? | The sender's sign-in email, for a reply |
+| Kind, Status | string(16) | Bug, Idea, Praise, Other · New, Seen, Done |
+| Rating | int? | 1–5 |
+| Message | string(2000) | |
+| Page, AppVersion | string(300)?, string(64)? | Path only (a progress link's token is masked by the web app) |
+| CreatedAt, HandledAt | time, time? | |
+
+Indexes `CreatedAt`, `OwnerId`.
+
+### client_errors — `Domain/Feedback/ClientError.cs` (2026-10-26)
+
+| Column | Type | Notes |
+|---|---|---|
+| Id | uuid | |
+| OwnerId | uuid? | Null on pages without sign-in |
+| Message, Source, Page, UserAgent | string(500), string(300)? ×3 | |
+| Stack | string(4000)? | First lines only |
+| AppVersion, CorrelationId | string(64)? | |
+| Count, FirstSeenAt, LastSeenAt | int, time, time | Repeats within an hour are counted on one row |
+
+Index `LastSeenAt`. The retention service deletes rows not seen for 30 days.
+
+### ai_credentials — `Domain/Ai/AiCredential.cs` (2026-10-26)
+
+| Column | Type | Notes |
+|---|---|---|
+| OwnerId | uuid, key | One key per person |
+| EncryptedKey | string(1024) | AES-256-GCM (`TokenProtector`: `Mail__TokenKey` or the derived fallback key); never returned, logged or exported |
+| KeyHint | string(8) | The last 4 characters, to show which key is connected |
+| Model | string(64) | claude-opus-5-5 (default), claude-sonnet-5-5 or claude-haiku-5-5 |
+| ShareWithCandidates | bool | Candidates on this person's links may tailor resumes with it (100 calls a day) |
+| CreatedAt, CheckedAt | time | |
+
+Account deletion removes the owner's rows of all three tables (migration `FeedbackErrorsClaudeKeys`, 2026-10-26).
+
 ## Delete behaviour
 
 | From | To | Behaviour |

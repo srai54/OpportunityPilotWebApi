@@ -73,9 +73,25 @@ public sealed class GroqLlmClient(HttpClient http, IOptions<AiOptions> options, 
     }
 }
 
-/// <summary>The one AI client the app uses: Groq when its key is set, otherwise Gemini.</summary>
-public sealed class RoutingLlmClient(GroqLlmClient groq, GeminiLlmClient gemini, IOptions<AiOptions> options) : ILlmClient
+/// <summary>
+/// The one AI client the app uses. Claude when the signed-in person connected their own key (Settings → Claude); otherwise, or when Claude
+/// is down or busy, the server's provider: Groq when its key is set, else Gemini. A refused Claude key is reported, not hidden by a fallback.
+/// </summary>
+public sealed class RoutingLlmClient(GroqLlmClient groq, GeminiLlmClient gemini, IOptions<AiOptions> options,
+    IUserClaudeKey? userKey = null, IClaudeClient? claude = null) : ILlmClient
 {
-    public Task<LlmResult> GenerateJsonAsync(string operation, string system, string input, CancellationToken ct) =>
-        options.Value.UsesGroq ? groq.GenerateJsonAsync(operation, system, input, ct) : gemini.GenerateJsonAsync(operation, system, input, ct);
+    public async Task<LlmResult> GenerateJsonAsync(string operation, string system, string input, CancellationToken ct)
+    {
+        if (userKey is not null && claude is not null && await userKey.CurrentAsync(ct) is { } key)
+        {
+            var result = await claude.GenerateJsonAsync(key.ApiKey, key.Model, operation, system, input, Math.Clamp(options.Value.MaxOutputTokens * 2, 2048, 8192), ct);
+            if (result.Outcome == AiOutcome.Succeeded || result.Reason == ClaudeLlmClient.KeyRejectedReason || !options.Value.HasKey) return result;
+            return await ServerAsync(operation, system, input, ct);
+        }
+        return await ServerAsync(operation, system, input, ct);
+    }
+
+    public async Task<LlmResult> ServerAsync(string operation, string system, string input, CancellationToken ct) =>
+        (options.Value.UsesGroq ? await groq.GenerateJsonAsync(operation, system, input, ct) : await gemini.GenerateJsonAsync(operation, system, input, ct))
+        with { Provider = options.Value.ProviderName };
 }

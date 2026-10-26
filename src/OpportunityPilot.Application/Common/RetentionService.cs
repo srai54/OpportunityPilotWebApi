@@ -3,9 +3,9 @@ using OpportunityPilot.Application.Abstractions;
 
 namespace OpportunityPilot.Application.Common;
 
-public sealed record RetentionResult(int ImportPreviews, int ResearchEvents, int AiUsage, int SecurityEvents, int GuestSessions)
+public sealed record RetentionResult(int ImportPreviews, int ResearchEvents, int AiUsage, int SecurityEvents, int GuestSessions, int ClientErrors = 0)
 {
-    public int Total => ImportPreviews + ResearchEvents + AiUsage + SecurityEvents + GuestSessions;
+    public int Total => ImportPreviews + ResearchEvents + AiUsage + SecurityEvents + GuestSessions + ClientErrors;
 }
 
 /// <summary>
@@ -19,6 +19,7 @@ public sealed class RetentionService(IAppDbContext db, TimeProvider clock)
     public static readonly TimeSpan ResearchEventAge = TimeSpan.FromDays(90);
     public static readonly TimeSpan AiUsageAge = TimeSpan.FromDays(90);
     public static readonly TimeSpan SecurityEventAge = TimeSpan.FromDays(365);
+    public static readonly TimeSpan ClientErrorAge = TimeSpan.FromDays(30);
 
     public async Task<RetentionResult> RunOnceAsync(CancellationToken ct)
     {
@@ -42,7 +43,11 @@ public sealed class RetentionService(IAppDbContext db, TimeProvider clock)
         var sessions = await db.GuestSessions.Where(s => s.ExpiresAt < now).OrderBy(s => s.ExpiresAt).Take(BatchSize).ToListAsync(ct);
         db.GuestSessions.RemoveRange(sessions);
 
+        var errorCutoff = now - ClientErrorAge;
+        var errors = await db.ClientErrors.Where(e => e.LastSeenAt < errorCutoff).OrderBy(e => e.LastSeenAt).Take(BatchSize).ToListAsync(ct);
+        db.ClientErrors.RemoveRange(errors);
+
         await db.SaveChangesAsync(ct);
-        return new(imports.Count, events.Count, usage.Count, security.Count, sessions.Count);
+        return new(imports.Count, events.Count, usage.Count, security.Count, sessions.Count, errors.Count);
     }
 }

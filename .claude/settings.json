@@ -64,7 +64,13 @@
       "Read(./**/appsettings.*.local.json)",
       "Read(./agent/config.json)",
       "Read(./agent/.data/**)",
-      "Bash(dotnet ef database drop:*)"
+      "Bash(dotnet ef database drop:*)",
+      "Read(./**/bin/**)",
+      "Read(./**/obj/**)",
+      "Read(./coverage/**)",
+      "Read(./src/OpportunityPilot.Infrastructure/Persistence/Migrations/**/*.Designer.cs)",
+      "Read(./src/OpportunityPilot.Infrastructure/Persistence/Migrations/**/*ModelSnapshot.cs)",
+      "Read(./agent/node_modules/**)"
     ]
   }
 }

@@ -35,6 +35,10 @@ public static class DependencyInjection
         services.AddSingleton<Common.ProviderBudget>();
         services.AddScoped<Sales.LeadSearchService>();
         services.AddScoped<AiService>();
+        services.AddScoped<ClaudeKeyService>();
+        services.AddScoped<IUserClaudeKey>(sp => sp.GetRequiredService<ClaudeKeyService>());
+        services.AddScoped<Staffing.ResumeTailorService>();
+        services.AddScoped<Feedback.FeedbackService>();
         services.AddScoped<Assistant.IAssistantService, Assistant.AssistantService>();
         services.AddScoped<IDraftRewriteService, DraftRewriteService>();
         services.AddScoped<IApplicationService, ApplicationService>();

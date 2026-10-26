@@ -206,3 +206,19 @@ First moved: Campaigns, Opportunities, Profiles. The rest keep `IAppDbContext` i
 
 **Why:** the user asked for this layering; it keeps controllers free of concrete services and query code out of business logic.
 **Trade-offs:** more files per module; `DbUpdateConcurrencyException` still surfaces from `SaveChangesAsync` and is mapped in the service.
+
+## 2026-10-26 — Bring your own Claude key; feedback and error reports in-house (BYOK, OBS)
+
+**Decision:** each person may connect their own Anthropic API key (Settings → Claude). It is tested with a free call, stored encrypted
+(AES-256-GCM via `TokenProtector`) and from then on `RoutingLlmClient` sends that person's AI calls to Claude through the official Anthropic
+C# SDK (`Anthropic` 13.3.0), model `claude-opus-5-5` by default, effort `low`. When Claude fails for any reason other than a refused key
+(down, busy, declined), the call falls back to the server's provider (Groq/Gemini). Resume tailoring (`ResumeTailorService`) never adds
+facts: skills the original resume does not mention are dropped and listed, and the result is returned for review, not saved. Feedback and
+browser errors are stored in our own database (`user_feedback`, `client_errors`) instead of a third-party tracker.
+
+**Why:** the owner asked to use office Claude accounts inside the app. A Claude.ai / Claude Code subscription cannot be used by a third-party
+app; an API key can, and per-person keys keep billing and data terms with each person's Anthropic organisation. In-house error reports need
+no new vendor, secret or data processor.
+
+**Trade-offs:** a person's key lives on our server (encrypted; changing the server's encryption key makes stored keys unreadable, and people
+reconnect). Error reports have no alerting yet; the admin reads the Settings card (docs/OBSERVABILITY.md).
