@@ -17,7 +17,7 @@ public sealed record StaffingDealDto(
     Guid Id, Guid AccountId, Guid? ContactId, string Title, StaffingDealSource Source, string? ExternalReference,
     decimal? EstimatedValue, string? Currency, StaffingDealStage Stage, StaffingDealStage? StageBeforeHold,
     string? NextAction, DateTime? NextActionAt, int Version, IReadOnlyList<StaffingDealActivityDto> Activities,
-    DateTime CreatedAt, DateTime UpdatedAt);
+    DateTime CreatedAt, DateTime UpdatedAt, string? JobDescription = null);
 
 public sealed record CreateStaffingAccountRequest(
     string Name, StaffingAccountSource Source, string? Domain, string? Industry, string? Location, string? SourceReference);

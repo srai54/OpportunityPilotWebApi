@@ -71,6 +71,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
     public DbSet<CandidateProgressLink> CandidateProgressLinks => Set<CandidateProgressLink>();
     public DbSet<ProgressRoleSuggestion> ProgressRoleSuggestions => Set<ProgressRoleSuggestion>();
     public DbSet<Domain.Access.UserAccess> UserAccess => Set<Domain.Access.UserAccess>();
+    public DbSet<CandidateResume> CandidateResumes => Set<CandidateResume>();
     public DbSet<UserEvent> UserEvents => Set<UserEvent>();
     public DbSet<Domain.Circle.CirclePerson> CirclePeople => Set<Domain.Circle.CirclePerson>();
     public DbSet<Domain.Interviews.JobInterview> JobInterviews => Set<Domain.Interviews.JobInterview>();
@@ -186,6 +187,17 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.Property(x => x.Role).HasConversion<int>();
             e.Ignore(x => x.RoleChosen);
             e.HasIndex(x => x.LastSeenAt);
+        });
+
+        modelBuilder.Entity<CandidateResume>(e =>
+        {
+            e.ToTable("candidate_resumes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Data).IsRequired();
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.SalesFeedback).HasMaxLength(CandidateResume.MaxFeedbackLength);
+            e.HasIndex(x => new { x.OwnerId, x.CandidateId, x.DealId }).IsUnique();
         });
 
         modelBuilder.Entity<ProgressRoleSuggestion>(e =>
@@ -594,6 +606,7 @@ public abstract class AppDbContext(DbContextOptions options) : DbContext(options
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Title).HasMaxLength(StaffingDeal.MaxTitleLength).IsRequired();
+            e.Property(x => x.JobDescription).HasMaxLength(StaffingDeal.MaxJobDescriptionLength);
             e.Property(x => x.Source).HasConversion<string>().HasMaxLength(32);
             e.Property(x => x.ExternalReference).HasMaxLength(StaffingDeal.MaxExternalReferenceLength);
             e.Property(x => x.EstimatedValue).HasPrecision(18, 2);

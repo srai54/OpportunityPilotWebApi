@@ -1704,6 +1704,59 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.ToTable("candidate_progress_links", "app");
                 });
 
+            modelBuilder.Entity("OpportunityPilot.Domain.Staffing.CandidateResume", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Data")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("DealId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("MatchScore")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SalesFeedback")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("SalesScore")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "CandidateId", "DealId")
+                        .IsUnique();
+
+                    b.ToTable("candidate_resumes", "app");
+                });
+
             modelBuilder.Entity("OpportunityPilot.Domain.Staffing.ProgressRoleSuggestion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1971,6 +2024,10 @@ namespace OpportunityPilot.Infrastructure.Persistence.Migrations.Postgres
                     b.Property<string>("ExternalReference")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("JobDescription")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
 
                     b.Property<string>("NextAction")
                         .HasMaxLength(500)

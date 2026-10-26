@@ -260,7 +260,7 @@ public sealed class StaffingService(IStaffingRepository staffing, ICurrentUser u
         new(deal.Id, deal.AccountId, deal.ContactId, deal.Title, deal.Source, deal.ExternalReference, deal.EstimatedValue,
             deal.Currency, deal.Stage, deal.StageBeforeHold, deal.NextAction, deal.NextActionAt, deal.Version,
             activities.Select(x => new StaffingDealActivityDto(x.Id, x.Type, x.Detail, x.OccurredAt)).ToList(),
-            deal.CreatedAt, deal.UpdatedAt);
+            deal.CreatedAt, deal.UpdatedAt, deal.JobDescription);
 
     private static RequestValidationException Invalid(string field, string message) =>
         new(new Dictionary<string, string[]> { [field] = [message] });

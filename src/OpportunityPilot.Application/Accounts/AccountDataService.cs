@@ -103,6 +103,7 @@ public sealed class AccountDataService(IAppDbContext db, ICurrentUser user, Time
         db.IntegrationConnections.RemoveRange(await db.IntegrationConnections.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.CandidateProgressLinks.RemoveRange(await db.CandidateProgressLinks.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.ProgressRoleSuggestions.RemoveRange(await db.ProgressRoleSuggestions.Where(x => x.OwnerId == owner).ToListAsync(ct));
+        db.CandidateResumes.RemoveRange(await db.CandidateResumes.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.UserAccess.RemoveRange(await db.UserAccess.Where(x => x.OwnerId == owner).ToListAsync(ct));
         db.SecurityEvents.RemoveRange(await db.SecurityEvents.Where(x => x.OwnerId == owner).ToListAsync(ct));
         // The one record kept: that this owner's data was deleted, and when. It holds nothing else.

@@ -64,6 +64,7 @@ public interface IAppDbContext
     DbSet<CandidateProgressLink> CandidateProgressLinks { get; }
     DbSet<ProgressRoleSuggestion> ProgressRoleSuggestions { get; }
     DbSet<Domain.Access.UserAccess> UserAccess { get; }
+    DbSet<CandidateResume> CandidateResumes { get; }
     DbSet<UserEvent> UserEvents { get; }
     DbSet<Domain.Circle.CirclePerson> CirclePeople { get; }
     DbSet<Domain.Interviews.JobInterview> JobInterviews { get; }
