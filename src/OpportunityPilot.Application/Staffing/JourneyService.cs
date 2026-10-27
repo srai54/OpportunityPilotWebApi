@@ -72,7 +72,7 @@ public sealed class JourneyService(IAppDbContext db, ICurrentUser user, Progress
     private List<TimelineItemDto> Items(Facts f)
     {
         var c = f.Candidate;
-        var items = new List<TimelineItemDto> { new("Joined", "Joined the bench", c.AlignedSalesperson is null ? null : $"Aligned with {c.AlignedSalesperson}.", c.JoinedAt ?? c.CreatedAt, "System", null) };
+        var items = new List<TimelineItemDto> { new("Joined", "Joined", c.AlignedSalesperson is null ? null : $"Aligned with {c.AlignedSalesperson}.", c.JoinedAt ?? c.CreatedAt, "System", null) };
         items.AddRange(f.Entries.Select(e => new TimelineItemDto(KindName(e.Kind), e.Title, e.Hours is > 0 ? $"{e.Detail}{(e.Detail is null ? "" : " · ")}{e.Hours} h".Trim() : e.Detail,
             e.OccurredAt, e.AddedBy.ToString(), e.Id)));
         foreach (var i in f.Interviews)
