@@ -20,7 +20,7 @@ jobs:
       - run: dotnet build OpportunityPilot.sln --configuration Release --no-restore
       - run: dotnet test OpportunityPilot.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory coverage
       - name: Coverage report (artifact)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-coverage
           path: coverage/**/coverage.cobertura.xml
